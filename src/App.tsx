@@ -8,6 +8,8 @@ import Explore from './pages/Explore';
 import Search from './pages/Search';
 import Messages from './pages/Messages';
 import Profile from './pages/Profile';
+import Login from './pages/Login';
+import SignUp from './pages/SignUp';
 
 const App: React.FC = () => {
   return (
@@ -15,6 +17,11 @@ const App: React.FC = () => {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Auth pages — بدون Layout */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<SignUp />} />
+
+            {/* Main app — مع Layout */}
             <Route path="/" element={<Layout />}>
               <Route index element={<Home />} />
               <Route path="explore" element={<Explore />} />
