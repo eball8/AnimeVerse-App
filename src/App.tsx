@@ -4,6 +4,10 @@ import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
+import Explore from './pages/Explore';
+import Search from './pages/Search';
+import Messages from './pages/Messages';
+import Profile from './pages/Profile';
 
 const App: React.FC = () => {
   return (
@@ -13,6 +17,10 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<Home />} />
+              <Route path="explore" element={<Explore />} />
+              <Route path="search" element={<Search />} />
+              <Route path="messages" element={<Messages />} />
+              <Route path="profile" element={<Profile />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
