@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-dark-950 text-white font-sans antialiased;
+    overscroll-behavior-y: none;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary-500/30 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary-500/50;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-2xl bg-gradient-to-r from-primary-500 to-accent-500 text-white text-sm font-bold active:scale-95 transition-transform;
+  }
+  
+  .card {
+    @apply rounded-3xl bg-dark-900/70 border border-white/10 overflow-hidden;
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
