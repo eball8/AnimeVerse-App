@@ -37,7 +37,7 @@ const Watch: React.FC = () => {
         snap.forEach((doc) => fetched.push({ id: doc.id, ...doc.data() }));
         
         if (fetched.length === 0) {
-          setServers([{ id: '1', name: 'سيرفر MF', quality: '1080p', link: '#' }, { id: '2', name: 'سيرفر ST', quality: '720p', link: '#' }]);
+          setServers([{ id: '1', name: 'سيرفر MF', quality: '1080p', link: 'https://test.com' }, { id: '2', name: 'سيرفر ST', quality: '720p', link: 'https://test.com' }]);
         } else {
           setServers(fetched);
         }
@@ -57,8 +57,8 @@ const Watch: React.FC = () => {
     
     try {
       const episodeRef = doc(db, 'episodes', `${animeId}_${episodeNumber}`);
-      
       const serverId = newServerName.replace(/\s+/g, '_');
+      
       await setDoc(doc(episodeRef, 'servers', serverId), {
         name: newServerName,
         quality: newQuality || 'HD',
@@ -74,6 +74,17 @@ const Watch: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // وظيفة تشغيل السيرفر
+  const handlePlayServer = (link: string) => {
+    if (!link || link === '#') {
+      alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
+      return;
+    }
+    // في المتصفح: يفتح الرابط في نافذة جديدة
+    // في تطبيق الأندرويد (APK): سنقوم لاحقاً ببرمجة Android Intent لفتح EZV Player
+    window.open(link, '_blank');
   };
 
   if (loading) {
@@ -112,7 +123,10 @@ const Watch: React.FC = () => {
           <div className="grid grid-cols-2 gap-2">
             {servers.map((server) => (
               <div key={server.id} className="relative group">
-                <button className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95">
+                <button 
+                  onClick={() => handlePlayServer(server.link)}
+                  className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
+                >
                   <span className="text-xs font-bold text-white mb-1">{server.name}</span>
                   <span className="text-[10px] text-slate-400">{server.quality}</span>
                 </button>
