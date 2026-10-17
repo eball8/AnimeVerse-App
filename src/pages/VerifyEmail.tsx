@@ -6,7 +6,6 @@ import { auth } from '../config/firebase';
 
 const VerifyEmail: React.FC = () => {
   const navigate = useNavigate();
-  // 🔥 استدعينا refreshUser هنا
   const { user, signOut, resendVerification, refreshUser } = useAuth(); 
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
@@ -16,10 +15,10 @@ const VerifyEmail: React.FC = () => {
     setError('');
     try {
       if (auth.currentUser) {
-        await auth.currentUser.reload(); // تحديث من السيرفر
+        await auth.currentUser.reload();
         if (auth.currentUser.emailVerified) {
-          refreshUser(); // 🔥 إجبار التطبيق على تحديث الحالة
-          navigate('/'); // الدخول للتطبيق
+          refreshUser();
+          navigate('/');
         } else {
           setError('لم يتم تأكيد البريد بعد. يرجى فتح الرابط في رسالة البريد.');
         }
