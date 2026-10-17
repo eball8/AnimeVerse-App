@@ -1,14 +1,22 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
-  User, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect,
-  getRedirectResult, signOut as fbSignOut, updateProfile as fbUpdateProfile,
+  User,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup, 
+  signInWithRedirect, 
+  getRedirectResult, 
+  signOut as fbSignOut,
+  updateProfile as fbUpdateProfile,
   sendEmailVerification,
+  GoogleAuthProvider,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 interface AuthContextType {
   user: User | null;
@@ -26,28 +34,42 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+  Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getRedirectResult(auth).catch((error) => console.error('Redirect result error:', error));
+    getRedirectResult(auth).catch((error) => {
+      console.error('Redirect result error:', error);
+    });
   }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setUser(fbUser);
+
       if (fbUser) {
-        let p = await getUserProfile(fbUser.uid);
-        if (!p) {
-          p = await createUserProfile(fbUser.uid, {
-            email: fbUser.email || undefined,
-            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-            photoURL: fbUser.photoURL || undefined,
-          });
+        try {
+          let p = await withTimeout(getUserProfile(fbUser.uid), 5000);
+          if (!p) {
+            p = await withTimeout(createUserProfile(fbUser.uid, {
+              email: fbUser.email || undefined,
+              displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+              photoURL: fbUser.photoURL || undefined,
+            }), 5000);
+          }
+          setProfile(p);
+        } catch (e) {
+          console.error('Auth init failed:', e);
+          setProfile(null);
         }
-        setProfile(p);
       } else {
         setProfile(null);
       }
@@ -62,15 +84,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await sendEmailVerification(cred.user);
-    await fbUpdateProfile(cred.user, { displayName });
-    await createUserProfile(cred.user.uid, { email, displayName });
+    try {
+      await sendEmailVerification(cred.user);
+      await fbUpdateProfile(cred.user, { displayName });
+      await createUserProfile(cred.user.uid, { email, displayName });
+    } catch (e) {
+      console.error('Signup extras failed:', e);
+    }
   };
 
+  // 🔥 إصلاح جوجل: فتح متصفح خارجي في الهاتف
   const signInGoogle = async () => {
     if (Capacitor.isNativePlatform()) {
-      // في الهاتف: يفتح المتصفح الخارجي ويطلب الحساب
-      await signInWithRedirect(auth, googleProvider);
+      try {
+        // نفتح رابط تسجيل الدخول في متصفح Chrome الخارجي
+        await Browser.open({
+          url: `https://anime-verse-app.vercel.app/login?google=true`,
+        });
+      } catch (e) {
+        console.error('Browser open failed:', e);
+        // خطة بديلة: استخدام redirect
+        await signInWithRedirect(auth, googleProvider);
+      }
     } else {
       const cred = await signInWithPopup(auth, googleProvider);
       const existing = await getUserProfile(cred.user.uid);
