@@ -6,48 +6,29 @@ import { auth } from '../config/firebase';
 
 const VerifyEmail: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signOut, resendVerification } = useAuth();
+  // 🔥 استدعينا refreshUser هنا
+  const { user, signOut, resendVerification, refreshUser } = useAuth(); 
   const [checking, setChecking] = useState(false);
-  const [resent, setResent] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState('');
 
-  // 🔥 السر هنا: إجبار Firebase على تحديث حالة المستخدم
   const handleCheck = async () => {
     setChecking(true);
     setError('');
     try {
       if (auth.currentUser) {
-        await auth.currentUser.reload(); // تحديث الحالة من السيرفر
+        await auth.currentUser.reload(); // تحديث من السيرفر
         if (auth.currentUser.emailVerified) {
-          navigate('/'); // إذا تم التحقق، ادخل التطبيق
+          refreshUser(); // 🔥 إجبار التطبيق على تحديث الحالة
+          navigate('/'); // الدخول للتطبيق
         } else {
-          setError('لم يتم تأكيد البريد بعد. يرجى فتح الرابط الموجود في رسالة البريد الإلكتروني.');
+          setError('لم يتم تأكيد البريد بعد. يرجى فتح الرابط في رسالة البريد.');
         }
       }
     } catch {
-      setError('حدث خطأ أثناء الاتصال بالخادم. تأكد من الإنترنت وحاول مرة أخرى.');
+      setError('حدث خطأ في الاتصال. حاول مرة أخرى.');
     } finally {
       setChecking(false);
     }
-  };
-
-  const handleResend = async () => {
-    if (cooldown > 0) return;
-    setError('');
-    try {
-      await resendVerification();
-      setResent(true);
-      setCooldown(60);
-      setTimeout(() => setResent(false), 5000);
-    } catch {
-      setError('فشل إرسال الرابط، حاول لاحقاً.');
-    }
-  };
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
   };
 
   return (
@@ -64,9 +45,8 @@ const VerifyEmail: React.FC = () => {
 
         <div className="card p-5 space-y-3 text-center">
           <p className="text-xs text-slate-300 leading-relaxed">
-            افتح الرسالة واضغط على الرابط، ثم ارجع إلى هنا واضغط على زر <b className="text-white">"لقد تحققت من بريدي"</b>.
+            اضغط على الرابط في الرسالة، ثم ارجع هنا واضغط <b className="text-white">"لقد تحققت من بريدي"</b>.
           </p>
-          {resent && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">تم إرسال الرابط مرة أخرى.</p>}
           {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
         </div>
 
@@ -75,11 +55,11 @@ const VerifyEmail: React.FC = () => {
             {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4" /> لقد تحققت من بريدي</>}
           </button>
           
-          <button onClick={handleResend} disabled={cooldown > 0} className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40">
-            {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : <><RefreshCw className="w-4 h-4" /> إعادة إرسال الرابط</>}
+          <button onClick={resendVerification} className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition">
+             <RefreshCw className="w-4 h-4" /> إعادة إرسال الرابط
           </button>
           
-          <button onClick={handleLogout} className="w-full py-3 text-slate-400 text-sm font-bold flex items-center justify-center gap-2 hover:text-white transition">
+          <button onClick={async () => { await signOut(); navigate('/login'); }} className="w-full py-3 text-slate-400 text-sm font-bold flex items-center justify-center gap-2 hover:text-white transition">
             <LogOut className="w-4 h-4" /> تسجيل الخروج
           </button>
         </div>
