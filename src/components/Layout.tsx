@@ -1,13 +1,21 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Search, Compass, User, MessageCircle, Users, Plus } from 'lucide-react';
+import { Home, Compass, User, Users, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Layout: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const navigate = useNavigate();
 
-  const tabs = [
+  // تعريف نوع التبويب بشكل صريح لحل مشكلة TypeScript
+  type Tab = {
+    to?: string;
+    icon?: any;
+    label?: string;
+    isCenter?: boolean;
+  };
+
+  const tabs: Tab[] = [
     { to: '/', icon: Home, label: 'الرئيسية' },
     { to: '/explore', icon: Compass, label: 'استكشاف' },
     { isCenter: true }, // زر المنتصف
