@@ -43,9 +43,10 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
+      # 🔥 تم إصلاح هذا السطر بتحديد الإصدار 7
       - name: Install Capacitor & Sync
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/browser
+          npm install @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0 @capacitor/browser@^7.0.0
           npx cap add android
           npx cap sync
           npx cap copy android
