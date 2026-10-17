@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRight, Play, Star, AlertCircle, Server, Edit3, Plus } from 'lucide-react';
+import { ArrowRight, Play, Star, AlertCircle, Server, Plus, X, Loader2 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -16,11 +16,16 @@ const Watch: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // التحقق من صلاحيات الأدمن (إذا كان البريد هو بريدك)
+  // حالة النافذة المنبثقة
+  const [showModal, setShowModal] = useState(false);
+  const [newServerName, setNewServerName] = useState('');
+  const [newQuality, setNewQuality] = useState('');
+  const [newLink, setNewLink] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // التحقق من صلاحيات الأدمن
   useEffect(() => {
-    if (user?.email === 'eball8361@gmail.com') {
-      setIsAdmin(true);
-    }
+    if (user?.email === 'eball8361@gmail.com') setIsAdmin(true);
   }, [user]);
 
   // جلب السيرفرات من Firebase
@@ -34,12 +39,8 @@ const Watch: React.FC = () => {
         const fetched: any[] = [];
         snap.forEach((doc) => fetched.push({ id: doc.id, ...doc.data() }));
         
-        // إذا لم توجد سيرفرات في Firebase، نستخدم بيانات تجريبية للعرض
         if (fetched.length === 0) {
-          setServers([
-            { id: '1', name: 'سيرفر MF', quality: '1080p', link: '#' },
-            { id: '2', name: 'سيرفر ST', quality: '720p', link: '#' },
-          ]);
+          setServers([{ id: '1', name: 'سيرفر MF', quality: '1080p', link: '#' }, { id: '2', name: 'سيرفر ST', quality: '720p', link: '#' }]);
         } else {
           setServers(fetched);
         }
@@ -52,39 +53,38 @@ const Watch: React.FC = () => {
     fetchServers();
   }, [animeId, episodeNumber]);
 
-  const handleRate = (value: number) => setRating(value);
-  
-  const submitRating = () => {
-    if (rating > 0) {
-      setHasVoted(true);
-    }
-  };
-
-  // وظيفة إضافة السيرفر للأدمن
-  const handleAddServer = async () => {
-    if (!animeId || !episodeNumber) return;
-    const serverId = prompt("أدخل اسم السيرفر (مثال: MF):");
-    const quality = prompt("أدخل الجودة (مثال: 1080p):");
-    const link = prompt("أدخل رابط الفيديو:");
+  // حفظ السيرفر الجديد
+  const handleSaveServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!animeId || !episodeNumber || !newServerName || !newLink) return;
+    setSaving(true);
     
-    if (serverId && quality && link) {
+    try {
+      const serverId = newServerName.replace(/\s+/g, '_');
       await setDoc(doc(db, 'episodes', `${animeId}_${episodeNumber}`, 'servers', serverId), {
-        name: serverId, quality, link
+        name: newServerName,
+        quality: newQuality || 'HD',
+        link: newLink
       });
-      setServers([...servers, { id: serverId, name: serverId, quality, link }]);
+      setServers([...servers, { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink }]);
+      setShowModal(false);
+      setNewServerName(''); setNewQuality(''); setNewLink('');
+    } catch (error) {
+      console.error(error);
+      alert('حدث خطأ أثناء الحفظ');
+    } finally {
+      setSaving(false);
     }
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-dark-950"><div className="w-8 h-8 rounded-full border-2 border-primary-500 border-t-transparent animate-spin" /></div>;
+    return <div className="min-h-screen flex items-center justify-center bg-dark-950"><Loader2 className="w-8 h-8 animate-spin text-primary-500" /></div>;
   }
 
   return (
-    <div className="min-h-screen bg-dark-950 pb-10">
+    <div className="min-h-screen bg-dark-950 pb-10 relative">
       <div className="sticky top-0 z-40 bg-dark-950/90 backdrop-blur-md px-4 py-3 border-b border-white/10 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300">
-          <ArrowRight className="w-5 h-5" />
-        </button>
+        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300"><ArrowRight className="w-5 h-5" /></button>
         <div>
           <h1 className="text-sm font-black text-white">مشاهدة الأنمي</h1>
           <p className="text-[10px] text-slate-400">الحلقة {episodeNumber}</p>
@@ -92,14 +92,12 @@ const Watch: React.FC = () => {
       </div>
 
       <div className="px-4 py-6 space-y-6">
-        {/* Player Area */}
         <div className="w-full aspect-video bg-black rounded-2xl flex flex-col items-center justify-center border border-white/10 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 to-transparent" />
           <Play className="w-12 h-12 text-white/50 mb-2" />
           <p className="text-xs text-slate-400">سيتم فتح المشغل الخارجي (EZV Player) هنا</p>
         </div>
 
-        {/* Servers Section */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -107,8 +105,8 @@ const Watch: React.FC = () => {
               <h3 className="text-sm font-black text-white">السيرفرات المتاحة</h3>
             </div>
             {isAdmin && (
-              <button onClick={handleAddServer} className="flex items-center gap-1 px-3 py-1 rounded-lg bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30">
-                <Plus className="w-3 h-3" /> إضافة
+              <button onClick={() => setShowModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30 active:scale-95">
+                <Plus className="w-4 h-4" /> إضافة
               </button>
             )}
           </div>
@@ -119,35 +117,26 @@ const Watch: React.FC = () => {
                   <span className="text-xs font-bold text-white mb-1">{server.name}</span>
                   <span className="text-[10px] text-slate-400">{server.quality}</span>
                 </button>
-                {isAdmin && (
-                  <button className="absolute top-1 left-1 p-1 bg-black/50 rounded-md text-primary-400 opacity-0 group-hover:opacity-100 transition">
-                    <Edit3 className="w-3 h-3" />
-                  </button>
-                )}
               </div>
             ))}
           </div>
         </section>
 
-        {/* Rating Section */}
         <section className="card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-white flex items-center gap-2">
-              <Star className="w-4 h-4 text-yellow-400" /> قيّم هذه الحلقة
-            </h3>
+            <h3 className="text-sm font-black text-white flex items-center gap-2"><Star className="w-4 h-4 text-yellow-400" /> قيّم هذه الحلقة</h3>
             <span className="text-xs text-slate-400">8.99/10 من 576 شخص</span>
           </div>
-
           {!hasVoted ? (
             <>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-bold text-slate-400">0</span>
-                <input type="range" min="1" max="10" value={rating || 5} onChange={(e) => handleRate(Number(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary-500" />
+                <input type="range" min="1" max="10" value={rating || 5} onChange={(e) => setRating(Number(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary-500" />
                 <span className="text-xs font-bold text-slate-400">10</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-primary-400">{rating || 5} / 10</span>
-                <button onClick={submitRating} className="btn-primary px-4 py-2 text-xs">إرسال التقييم</button>
+                <button onClick={() => setHasVoted(true)} className="btn-primary px-4 py-2 text-xs">إرسال التقييم</button>
               </div>
             </>
           ) : (
@@ -157,6 +146,37 @@ const Watch: React.FC = () => {
           )}
         </section>
       </div>
+
+      {/* النافذة الاحترافية (Modal) */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-black text-white">إضافة سيرفر</h3>
+              <button onClick={() => setShowModal(false)} className="p-1 rounded-lg text-slate-400 hover:bg-white/10"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <form onSubmit={handleSaveServer} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم السيرفر</label>
+                <input required type="text" placeholder="مثال: سيرفر MF" value={newServerName} onChange={e => setNewServerName(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">الجودة</label>
+                <input type="text" placeholder="مثال: 1080p" value={newQuality} onChange={e => setNewQuality(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">الرابط المباشر</label>
+                <input required type="text" placeholder="https://..." value={newLink} onChange={e => setNewLink(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" dir="ltr" />
+              </div>
+              
+              <button type="submit" disabled={saving} className="w-full btn-primary py-3 mt-2 flex items-center justify-center gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ السيرفر'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
