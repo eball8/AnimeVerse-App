@@ -16,6 +16,7 @@ import {
   updatePassword,
   verifyBeforeUpdateEmail,
   reauthenticateWithCredential,
+  signOut,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -137,10 +138,17 @@ const Settings: React.FC = () => {
       const cred = EmailAuthProvider.credential(user.email, currentPassword);
       await reauthenticateWithCredential(user, cred);
       await verifyBeforeUpdateEmail(user, newEmail);
+      
       setMessage(
-        `أرسلنا رابط تأكيد إلى ${newEmail}. افتح البريد واضغط الرابط لتأكيد التغيير.`
+        `✅ أرسلنا رابط تأكيد إلى ${newEmail}. افتح البريد واضغط الرابط. سيتم تسجيل خروجك لتأكيد البريد الجديد.`
       );
-      setTimeout(goMenu, 5000);
+      
+      // بعد 4 ثواني: تسجيل خروج + توجيه للـ Login
+      setTimeout(async () => {
+        await signOut(auth);
+        navigate('/login');
+      }, 4000);
+      
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
