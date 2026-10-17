@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, LogIn, UserPlus, Zap, Loader2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, LogIn, UserPlus, Zap, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Anime } from '../services/animeService';
 import { getTopAnime, getSeasonNow } from '../services/animeService';
@@ -14,7 +14,7 @@ const Home: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadData = () => {
     let cancelled = false;
     setLoading(true);
     setError('');
@@ -25,8 +25,9 @@ const Home: React.FC = () => {
         const [top, season] = results;
         if (top.status === 'fulfilled') setTopAnime(top.value);
         if (season.status === 'fulfilled') setSeasonAnime(season.value);
+        
         if (top.status === 'rejected' && season.status === 'rejected') {
-          setError('فشل تحميل الأنمي. تحقق من اتصالك بالإنترنت.');
+          setError('فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.');
         }
       })
       .finally(() => {
@@ -34,6 +35,10 @@ const Home: React.FC = () => {
       });
 
     return () => { cancelled = true; };
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   if (authLoading) {
@@ -46,7 +51,6 @@ const Home: React.FC = () => {
 
   return (
     <div className="px-4 py-6 space-y-6">
-      {/* Welcome Card */}
       <div className="card p-5 bg-gradient-to-br from-primary-500/20 via-accent-500/10 to-transparent">
         <div className="flex items-center gap-2 mb-2">
           <ShieldCheck className="w-5 h-5 text-primary-400" />
@@ -70,58 +74,61 @@ const Home: React.FC = () => {
         )}
       </div>
 
-      {error && (
-        <div className="card p-3 bg-red-500/10 border border-red-500/30 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-red-300">{error}</p>
+      {error ? (
+        <div className="card p-6 text-center space-y-4">
+          <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
+          <p className="text-sm text-slate-300">{error}</p>
+          <button onClick={loadData} className="btn-primary px-6 py-2 inline-flex items-center gap-2">
+            <RefreshCw className="w-4 h-4" /> إعادة المحاولة
+          </button>
         </div>
+      ) : (
+        <>
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-accent-400" />
+                <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
+              </div>
+              <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
+            </div>
+            
+            {loading ? (
+              <div className="py-10 flex justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {topAnime.map((anime) => (
+                  <AnimeCard key={anime.mal_id} anime={anime} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-primary-400" />
+                <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
+              </div>
+              <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
+            </div>
+            
+            {loading ? (
+              <div className="py-10 flex justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {seasonAnime.map((anime) => (
+                  <AnimeCard key={anime.mal_id} anime={anime} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
       )}
-
-      {/* Top Anime */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-accent-400" />
-            <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
-          </div>
-          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
-        </div>
-        
-        {loading ? (
-          <div className="py-10 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {topAnime.map((anime) => (
-              <AnimeCard key={anime.mal_id} anime={anime} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Seasonal Anime */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-primary-400" />
-            <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
-          </div>
-          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
-        </div>
-        
-        {loading ? (
-          <div className="py-10 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {seasonAnime.map((anime) => (
-              <AnimeCard key={anime.mal_id} anime={anime} />
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 };
