@@ -18,6 +18,12 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInEmail(email, password);
+      // نتحقق هل البريد مُفعّل
+      const u = (await import('../config/firebase')).auth.currentUser;
+      if (u && !u.emailVerified && u.providerData[0]?.providerId === 'password') {
+        navigate('/verify-email');
+        return;
+      }
       navigate('/');
     } catch (err: unknown) {
       const e = err as { code?: string };
