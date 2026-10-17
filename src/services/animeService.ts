@@ -61,3 +61,18 @@ export const searchAnime = async (query: string, limit = 20): Promise<Anime[]> =
   const data = (await res.json()) as JikanResponse<Anime[]>;
   return data.data;
 };
+
+// 🔥 إضافة دوال التصنيفات المفقودة
+export const getGenres = async (): Promise<Array<{ mal_id: number; name: string }>> => {
+  const res = await fetchWithTimeout(`${JIKAN_BASE}/genres/anime?filter=genres`);
+  if (!res.ok) throw new Error('failed-genres');
+  const data = (await res.json()) as JikanResponse<Array<{ mal_id: number; name: string }>>;
+  return data.data;
+};
+
+export const getAnimeByGenre = async (genreId: number, limit = 20): Promise<Anime[]> => {
+  const res = await fetchWithTimeout(`${JIKAN_BASE}/anime?genres=${genreId}&limit=${limit}&order_by=score&sort=desc`);
+  if (!res.ok) throw new Error('failed-genre-anime');
+  const data = (await res.json()) as JikanResponse<Anime[]>;
+  return data.data;
+};
