@@ -27,11 +27,12 @@ const SignUp: React.FC = () => {
     setLoading(true);
     try {
       await signUpEmail(email, password, displayName.trim());
-      navigate('/');
+      // ✅ بعد التسجيل → صفحة التأكيد
+      navigate('/verify-email');
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/email-already-in-use') {
-        setError('هذا البريد مستخدم مسبقاً.');
+        setError('هذا البريد مستخدم مسبقاً. جرّب تسجيل الدخول.');
       } else if (e.code === 'auth/invalid-email') {
         setError('البريد غير صالح.');
       } else if (e.code === 'auth/weak-password') {
@@ -60,7 +61,6 @@ const SignUp: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-6">
-        {/* Logo */}
         <div className="text-center">
           <h1 className="text-3xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent mb-2">
             AnimeVerse
@@ -68,9 +68,7 @@ const SignUp: React.FC = () => {
           <p className="text-sm text-slate-400">أنشئ حسابك الجديد</p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
-          {/* Display Name */}
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">الاسم</label>
             <div className="relative">
@@ -87,7 +85,6 @@ const SignUp: React.FC = () => {
             </div>
           </div>
 
-          {/* Email */}
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
             <div className="relative">
@@ -104,7 +101,6 @@ const SignUp: React.FC = () => {
             </div>
           </div>
 
-          {/* Password */}
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">كلمة السر</label>
             <div className="relative">
@@ -129,10 +125,8 @@ const SignUp: React.FC = () => {
             </div>
           </div>
 
-          {/* Error */}
           {error && <p className="text-xs text-red-400 text-center">{error}</p>}
 
-          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
@@ -141,7 +135,6 @@ const SignUp: React.FC = () => {
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'إنشاء الحساب'}
           </button>
 
-          {/* Divider */}
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-white/10" />
@@ -151,7 +144,6 @@ const SignUp: React.FC = () => {
             </div>
           </div>
 
-          {/* Google */}
           <button
             type="button"
             onClick={handleGoogle}
@@ -167,7 +159,6 @@ const SignUp: React.FC = () => {
             التسجيل بحساب Google
           </button>
 
-          {/* Login Link */}
           <p className="text-center text-xs text-slate-400 mt-4">
             عندك حساب؟{' '}
             <Link to="/login" className="text-primary-400 font-bold hover:underline">
