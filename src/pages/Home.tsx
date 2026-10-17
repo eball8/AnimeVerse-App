@@ -1,36 +1,44 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Sparkles, TrendingUp, LogIn, UserPlus, Loader2 } from 'lucide-react';
+import { ShieldCheck, Sparkles, TrendingUp, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getTopAnime, getSeasonNow } from '../services/animeService';
 import type { Anime } from '../services/animeService';
 import AnimeCard from '../components/AnimeCard';
+
+// بيانات تجريبية مضمونة 100% (لا تحتاج إنترنت)
+const MOCK_ANIME: Anime[] = [
+  {
+    mal_id: 1, title: "Attack on Titan", title_english: "Attack on Titan",
+    synopsis: "Humanity fights for survival against giant humanoid Titans.",
+    images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/10/47347.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/10/47347.jpg" } },
+    airing: true, type: "TV", episodes: 25, score: 8.5, year: 2013, genres: []
+  },
+  {
+    mal_id: 2, title: "Jujutsu Kaisen", title_english: "Jujutsu Kaisen",
+    synopsis: "A boy swallows a cursed talisman and enters the world of sorcery.",
+    images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg" } },
+    airing: true, type: "TV", episodes: 24, score: 8.6, year: 2020, genres: []
+  },
+  {
+    mal_id: 3, title: "One Piece", title_english: "One Piece",
+    synopsis: "A pirate crew searches for the ultimate treasure, the One Piece.",
+    images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/6/73245.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/6/73245.jpg" } },
+    airing: true, type: "TV", episodes: 1000, score: 8.7, year: 1999, genres: []
+  },
+  {
+    mal_id: 4, title: "Demon Slayer", title_english: "Demon Slayer",
+    synopsis: "A young boy becomes a demon slayer to avenge his family.",
+    images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/1286/99889.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/1286/99889.jpg" } },
+    airing: true, type: "TV", episodes: 26, score: 8.5, year: 2019, genres: []
+  }
+];
 
 const Home: React.FC = () => {
   const { user, profile, loading: authLoading } = useAuth();
   
-  const [topAnime, setTopAnime] = useState<Anime[]>([]);
-  const [seasonAnime, setSeasonAnime] = useState<Anime[]>([]);
-  const [loadingAnime, setLoadingAnime] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingAnime(true);
-    
-    Promise.all([getTopAnime(1, 10), getSeasonNow(10)])
-      .then(([top, season]) => {
-        if (!cancelled) {
-          setTopAnime(top);
-          setSeasonAnime(season);
-        }
-      })
-      .catch((e) => console.error('Failed to fetch anime:', e))
-      .finally(() => {
-        if (!cancelled) setLoadingAnime(false);
-      });
-
-    return () => { cancelled = true; };
-  }, []);
+  // نستخدم البيانات التجريبية بدلاً من الـ API
+  const [topAnime] = useState<Anime[]>(MOCK_ANIME);
+  const [seasonAnime] = useState<Anime[]>(MOCK_ANIME);
 
   if (authLoading) {
     return (
@@ -59,19 +67,11 @@ const Home: React.FC = () => {
 
         {!user && (
           <div className="flex gap-2">
-            <Link
-              to="/login"
-              className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-2 text-xs"
-            >
-              <LogIn className="w-4 h-4" />
-              دخول
+            <Link to="/login" className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-2 text-xs">
+              <LogIn className="w-4 h-4" /> دخول
             </Link>
-            <Link
-              to="/signup"
-              className="flex-1 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-bold flex items-center justify-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" />
-              حساب جديد
+            <Link to="/signup" className="flex-1 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-bold flex items-center justify-center gap-2">
+              <UserPlus className="w-4 h-4" /> حساب جديد
             </Link>
           </div>
         )}
@@ -84,22 +84,13 @@ const Home: React.FC = () => {
             <TrendingUp className="w-5 h-5 text-accent-400" />
             <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
           </div>
-          <Link to="/explore" className="text-xs text-primary-400 font-bold">
-            عرض الكل
-          </Link>
+          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
         </div>
-        
-        {loadingAnime ? (
-          <div className="py-10 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {topAnime.map((anime) => (
-              <AnimeCard key={anime.mal_id} anime={anime} />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {topAnime.map((anime) => (
+            <AnimeCard key={anime.mal_id} anime={anime} />
+          ))}
+        </div>
       </section>
 
       {/* Seasonal Anime */}
@@ -109,22 +100,13 @@ const Home: React.FC = () => {
             <Sparkles className="w-5 h-5 text-primary-400" />
             <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
           </div>
-          <Link to="/explore" className="text-xs text-primary-400 font-bold">
-            عرض الكل
-          </Link>
+          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
         </div>
-        
-        {loadingAnime ? (
-          <div className="py-10 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {seasonAnime.map((anime) => (
-              <AnimeCard key={anime.mal_id} anime={anime} />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {seasonAnime.map((anime) => (
+            <AnimeCard key={anime.mal_id} anime={anime} />
+          ))}
+        </div>
       </section>
     </div>
   );
