@@ -24,6 +24,16 @@ jobs:
       - name: Build Web App
         run: npm run build
 
+      # 🔥 إصلاح مسارات ملف index.html لتناسب التطبيق الأصلي
+      - name: Fix HTML Paths for Native
+        run: |
+          cd dist
+          sed -i 's|src="/assets/|src="./assets/|g' index.html
+          sed -i 's|href="/assets/|href="./assets/|g' index.html
+          sed -i 's|src="/|src="./|g' index.html
+          sed -i 's|href="/|href="./|g' index.html
+          cd ..
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -43,7 +53,6 @@ jobs:
 
       - name: Inject Custom AndroidManifest
         run: |
-          # استبدال ملف الأذونات الافتراضي بملفنا المخصص
           cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Build APK with Gradle
