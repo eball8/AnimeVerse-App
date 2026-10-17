@@ -41,6 +41,11 @@ jobs:
           npx cap sync
           npx cap copy android
 
+      - name: Inject Custom AndroidManifest
+        run: |
+          # استبدال ملف الأذونات الافتراضي بملفنا المخصص
+          cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+
       - name: Build APK with Gradle
         run: |
           cd android
