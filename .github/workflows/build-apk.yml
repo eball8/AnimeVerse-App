@@ -43,15 +43,19 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # 🔥 تم إصلاح هذا السطر بتحديد الإصدار 7
+      # 🔥 تم إضافة إضافة جوجل الأصلية هنا
       - name: Install Capacitor & Sync
         run: |
-          npm install @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0 @capacitor/browser@^7.0.0
+          npm install @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0 @capacitor/browser@^7.0.0 @capacitor-firebase/authentication@^7.0.0
           npx cap add android
           npx cap sync
           npx cap copy android
 
-      # 🔥 توليد الأيقونات
+      # 🔥 نسخ ملف google-services.json إلى مجلد الأندرويد
+      - name: Copy Google Services JSON
+        run: |
+          cp android-config/google-services.json android/app/google-services.json
+
       - name: Generate App Icons
         run: |
           npm install @capacitor/assets
@@ -71,9 +75,6 @@ jobs:
 
       - name: Inject Custom AndroidManifest
         run: |
-          # إضافة intent-filter للعودة من المتصفح
-          sed -i 's|<activity|<activity android:launchMode="singleTask"|' android/app/src/main/AndroidManifest.xml
-          sed -i 's|</activity>|    <intent-filter android:autoVerify="true">\n        <action android:name="android.intent.action.VIEW" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <category android:name="android.intent.category.BROWSABLE" />\n        <data android:scheme="https" android:host="anime-verse-app.vercel.app" />\n    </intent-filter>\n</activity>|' android/app/src/main/AndroidManifest.xml
           cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Build APK with Gradle
