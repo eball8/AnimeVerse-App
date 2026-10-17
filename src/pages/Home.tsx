@@ -1,20 +1,40 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, LogIn, UserPlus, Zap } from 'lucide-react';
+import { ShieldCheck, LogIn, UserPlus, Zap, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Anime } from '../services/animeService';
+import { getTopAnime, getSeasonNow } from '../services/animeService';
 import AnimeCard from '../components/AnimeCard';
-
-// بيانات تجريبية مؤقتة
-const MOCK_LATEST: Anime[] = [
-  { mal_id: 1, title: "Jujutsu Kaisen", images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg" } }, airing: true, type: "TV", score: 8.6, genres: [] },
-  { mal_id: 2, title: "Attack on Titan", images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/10/47347.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/10/47347.jpg" } }, airing: false, type: "TV", score: 8.5, genres: [] },
-  { mal_id: 3, title: "Demon Slayer", images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/1286/99889.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/1286/99889.jpg" } }, airing: true, type: "TV", score: 8.5, genres: [] },
-  { mal_id: 4, title: "One Piece", images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/6/73245.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/6/73245.jpg" } }, airing: true, type: "TV", score: 8.7, genres: [] }
-];
 
 const Home: React.FC = () => {
   const { user, profile, loading: authLoading } = useAuth();
+  
+  const [topAnime, setTopAnime] = useState<Anime[]>([]);
+  const [seasonAnime, setSeasonAnime] = useState<Anime[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+
+    Promise.allSettled([getTopAnime(1, 10), getSeasonNow(10)])
+      .then((results) => {
+        if (cancelled) return;
+        const [top, season] = results;
+        if (top.status === 'fulfilled') setTopAnime(top.value);
+        if (season.status === 'fulfilled') setSeasonAnime(season.value);
+        if (top.status === 'rejected' && season.status === 'rejected') {
+          setError('فشل تحميل الأنمي. تحقق من اتصالك بالإنترنت.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
 
   if (authLoading) {
     return (
@@ -50,18 +70,57 @@ const Home: React.FC = () => {
         )}
       </div>
 
-      {/* Latest Updates Grid */}
+      {error && (
+        <div className="card p-3 bg-red-500/10 border border-red-500/30 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-300">{error}</p>
+        </div>
+      )}
+
+      {/* Top Anime */}
       <section>
-        <div className="flex items-center gap-2 mb-3">
-          <Zap className="w-5 h-5 text-accent-400" />
-          <h3 className="text-lg font-black text-white">أحدث الحلقات</h3>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-accent-400" />
+            <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
+          </div>
+          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {MOCK_LATEST.map((anime, index) => (
-            <AnimeCard key={anime.mal_id} anime={anime} episodeNumber={index + 1} />
-          ))}
+        {loading ? (
+          <div className="py-10 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {topAnime.map((anime) => (
+              <AnimeCard key={anime.mal_id} anime={anime} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Seasonal Anime */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-primary-400" />
+            <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
+          </div>
+          <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
         </div>
+        
+        {loading ? (
+          <div className="py-10 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {seasonAnime.map((anime) => (
+              <AnimeCard key={anime.mal_id} anime={anime} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
