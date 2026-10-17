@@ -25,7 +25,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
-  refreshUser: () => void; // 🔥 دالة جديدة لإجبار التطبيق على التحديث
+  refreshUser: () => void; 
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -68,7 +68,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInGoogle = async () => {
-    // استخدام Popup لأنه أفضل طريقة في المتصفحات المخفية
     const cred = await signInWithPopup(auth, googleProvider);
     const existing = await getUserProfile(cred.user.uid);
     if (!existing) {
@@ -96,7 +95,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await sendEmailVerification(auth.currentUser);
   };
 
-  // 🔥 دالة تُجبر React على تحديث حالة المستخدم
   const refreshUser = () => {
     setUser(auth.currentUser ? { ...auth.currentUser } : null);
   };
