@@ -37,8 +37,10 @@ const App: React.FC = () => {
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
               <Route path="anime/:id" element={<AnimeDetail />} />
+              
               {/* مسار المشاهدة الجديد */}
               <Route path="watch/:animeId/:episodeNumber" element={<Watch />} />
+              
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
