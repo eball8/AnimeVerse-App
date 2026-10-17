@@ -21,8 +21,13 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # تأكد من بناء الويب بشكل صحيح
       - name: Build Web App
-        run: npm run build
+        run: |
+          npm run build
+          # تأكد أن مجلد dist موجود وفيه index.html
+          ls -la dist/
+          if [ ! -f dist/index.html ]; then echo "ERROR: index.html missing!"; exit 1; fi
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -30,7 +35,6 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # استخدام بيئة أندرويد الجاهزة في GitHub
       - name: Accept Android Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
