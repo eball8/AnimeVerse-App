@@ -45,12 +45,12 @@ jobs:
 
       - name: Install Capacitor & Sync
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/browser
           npx cap add android
           npx cap sync
           npx cap copy android
 
-      # 🔥 توليد الأيقونات من الصورة
+      # 🔥 توليد الأيقونات
       - name: Generate App Icons
         run: |
           npm install @capacitor/assets
@@ -70,6 +70,9 @@ jobs:
 
       - name: Inject Custom AndroidManifest
         run: |
+          # إضافة intent-filter للعودة من المتصفح
+          sed -i 's|<activity|<activity android:launchMode="singleTask"|' android/app/src/main/AndroidManifest.xml
+          sed -i 's|</activity>|    <intent-filter android:autoVerify="true">\n        <action android:name="android.intent.action.VIEW" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <category android:name="android.intent.category.BROWSABLE" />\n        <data android:scheme="https" android:host="anime-verse-app.vercel.app" />\n    </intent-filter>\n</activity>|' android/app/src/main/AndroidManifest.xml
           cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Build APK with Gradle
