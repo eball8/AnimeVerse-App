@@ -16,19 +16,16 @@ const Watch: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // حالة النافذة المنبثقة
   const [showModal, setShowModal] = useState(false);
   const [newServerName, setNewServerName] = useState('');
   const [newQuality, setNewQuality] = useState('');
   const [newLink, setNewLink] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // التحقق من صلاحيات الأدمن
   useEffect(() => {
     if (user?.email === 'eball8361@gmail.com') setIsAdmin(true);
   }, [user]);
 
-  // جلب السيرفرات من Firebase
   useEffect(() => {
     const fetchServers = async () => {
       if (!animeId || !episodeNumber) return;
@@ -53,25 +50,27 @@ const Watch: React.FC = () => {
     fetchServers();
   }, [animeId, episodeNumber]);
 
-  // حفظ السيرفر الجديد
   const handleSaveServer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!animeId || !episodeNumber || !newServerName || !newLink) return;
     setSaving(true);
     
     try {
+      const episodeRef = doc(db, 'episodes', `${animeId}_${episodeNumber}`);
+      
       const serverId = newServerName.replace(/\s+/g, '_');
-      await setDoc(doc(db, 'episodes', `${animeId}_${episodeNumber}`, 'servers', serverId), {
+      await setDoc(doc(episodeRef, 'servers', serverId), {
         name: newServerName,
         quality: newQuality || 'HD',
         link: newLink
       });
+
       setServers([...servers, { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink }]);
       setShowModal(false);
       setNewServerName(''); setNewQuality(''); setNewLink('');
-    } catch (error) {
-      console.error(error);
-      alert('حدث خطأ أثناء الحفظ');
+    } catch (error: any) {
+      console.error("Firebase Error:", error);
+      alert('حدث خطأ: ' + (error.message || 'تأكد من الصلاحيات'));
     } finally {
       setSaving(false);
     }
@@ -147,7 +146,6 @@ const Watch: React.FC = () => {
         </section>
       </div>
 
-      {/* النافذة الاحترافية (Modal) */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4 animate-in fade-in zoom-in-95">
