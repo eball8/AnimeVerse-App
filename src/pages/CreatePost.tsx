@@ -52,7 +52,7 @@ const CreatePost: React.FC = () => {
     try {
       let mediaUrl = '';
       if (file) {
-        mediaUrl = await uploadVideoToCloudinary(file, (percent) => setProgress(percent));
+        mediaUrl = await uploadVideoToCloudinary(file, (percent: number) => setProgress(percent));
       }
 
       await createPost({
