@@ -12,7 +12,6 @@ import { auth, googleProvider } from '../config/firebase';
 import {
   createUserProfile,
   getUserProfile,
-  updateUserProfile,
 } from '../services/userService';
 import type { UserProfile } from '../types';
 
@@ -31,6 +30,12 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+  Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -39,21 +44,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setUser(fbUser);
+
       if (fbUser) {
-        let p = await getUserProfile(fbUser.uid);
-        if (!p) {
-          p = await createUserProfile(fbUser.uid, {
-            email: fbUser.email || undefined,
-            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-            photoURL: fbUser.photoURL || undefined,
-          });
+        try {
+          // محاولة جلب البروفايل مع timeout 5 ثوان
+          let p = await withTimeout(getUserProfile(fbUser.uid), 5000);
+
+          if (!p) {
+            // ما فيه بروفايل أو timeout — ننشئ واحد
+            try {
+              p = await withTimeout(
+                createUserProfile(fbUser.uid, {
+                  email: fbUser.email || undefined,
+                  displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+                  photoURL: fbUser.photoURL || undefined,
+                }),
+                5000
+              );
+            } catch (e) {
+              console.error('createUserProfile failed:', e);
+            }
+          }
+
+          setProfile(p);
+        } catch (e) {
+          console.error('Auth init failed:', e);
+          setProfile(null);
         }
-        setProfile(p);
       } else {
         setProfile(null);
       }
+
       setLoading(false);
     });
+
     return () => unsub();
   }, []);
 
@@ -63,22 +87,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await fbUpdateProfile(cred.user, { displayName });
-    await createUserProfile(cred.user.uid, {
-      email,
-      displayName,
-    });
+    // نكمل بدون انتظار — حتى لو فشل، الحساب أُنشئ
+    try {
+      await fbUpdateProfile(cred.user, { displayName });
+    } catch (e) {
+      console.error('updateProfile failed:', e);
+    }
+    try {
+      await createUserProfile(cred.user.uid, { email, displayName });
+    } catch (e) {
+      console.error('createUserProfile failed:', e);
+    }
   };
 
   const signInGoogle = async () => {
     const cred = await signInWithPopup(auth, googleProvider);
-    const existing = await getUserProfile(cred.user.uid);
-    if (!existing) {
-      await createUserProfile(cred.user.uid, {
-        email: cred.user.email || undefined,
-        displayName: cred.user.displayName || 'مستخدم AnimeVerse',
-        photoURL: cred.user.photoURL || undefined,
-      });
+    try {
+      const existing = await withTimeout(getUserProfile(cred.user.uid), 5000);
+      if (!existing) {
+        await createUserProfile(cred.user.uid, {
+          email: cred.user.email || undefined,
+          displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+          photoURL: cred.user.photoURL || undefined,
+        });
+      }
+    } catch (e) {
+      console.error('google profile failed:', e);
     }
   };
 
@@ -89,8 +123,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async () => {
     if (!user) return;
-    const p = await getUserProfile(user.uid);
-    setProfile(p);
+    try {
+      const p = await withTimeout(getUserProfile(user.uid), 5000);
+      setProfile(p);
+    } catch {
+      /* ignore */
+    }
   };
 
   const isAdmin = profile?.role === 'admin';
