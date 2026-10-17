@@ -39,11 +39,11 @@ const AnimeDetail: React.FC = () => {
     );
   }
 
-  const imageUrl = anime.images.webp?.large_image_url || anime.images.jpg.large_image_url;
+  // استخدام رابط الصورة المتوافق مع AniList
+  const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
 
   return (
     <div className="min-h-screen bg-dark-950 pb-10">
-      {/* Hero Image */}
       <div className="relative h-[40vh] w-full">
         <div className="absolute inset-0 bg-gradient-to-t from-dark-950 via-dark-950/60 to-transparent z-10" />
         <img
@@ -52,7 +52,6 @@ const AnimeDetail: React.FC = () => {
           className="w-full h-full object-cover"
         />
         
-        {/* Back Button */}
         <button
           onClick={() => navigate(-1)}
           className="absolute top-4 right-4 z-20 p-2 rounded-xl bg-black/50 backdrop-blur-md text-white hover:bg-black/70 transition"
@@ -61,7 +60,6 @@ const AnimeDetail: React.FC = () => {
         </button>
       </div>
 
-      {/* Content */}
       <div className="px-4 relative z-20 -mt-20 space-y-6">
         <div className="flex items-end gap-4">
           <img
@@ -92,7 +90,6 @@ const AnimeDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* Genres */}
         <div className="flex flex-wrap gap-2">
           {anime.genres.map((g) => (
             <span
@@ -104,7 +101,6 @@ const AnimeDetail: React.FC = () => {
           ))}
         </div>
 
-        {/* Synopsis */}
         <div>
           <h3 className="text-sm font-black text-white mb-2">القصة</h3>
           <p className="text-xs text-slate-400 leading-relaxed">
@@ -112,7 +108,6 @@ const AnimeDetail: React.FC = () => {
           </p>
         </div>
 
-        {/* Trailer Button (if available) */}
         {anime.trailer?.url && (
           <a
             href={anime.trailer.url}
@@ -125,7 +120,6 @@ const AnimeDetail: React.FC = () => {
           </a>
         )}
 
-        {/* Placeholder for Episodes (الروابط اللي انت راح تضيفها لاحقاً) */}
         <div className="pt-4 border-t border-white/10">
           <h3 className="text-sm font-black text-white mb-3">الحلقات والروابط</h3>
           <div className="card p-4 text-center">
