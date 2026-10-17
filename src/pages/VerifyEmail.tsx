@@ -12,20 +12,21 @@ const VerifyEmail: React.FC = () => {
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState('');
 
+  // 🔥 السر هنا: إجبار Firebase على تحديث حالة المستخدم
   const handleCheck = async () => {
     setChecking(true);
     setError('');
     try {
       if (auth.currentUser) {
-        await auth.currentUser.reload(); // تحديث حالة المستخدم من السيرفر
+        await auth.currentUser.reload(); // تحديث الحالة من السيرفر
         if (auth.currentUser.emailVerified) {
-          navigate('/');
+          navigate('/'); // إذا تم التحقق، ادخل التطبيق
         } else {
-          setError('لم يتم تفعيل البريد بعد. تحقق من صندوق الوارد أو البريد المزعج (Spam).');
+          setError('لم يتم تأكيد البريد بعد. يرجى فتح الرابط الموجود في رسالة البريد الإلكتروني.');
         }
       }
     } catch {
-      setError('حدث خطأ أثناء التحقق. حاول مرة أخرى.');
+      setError('حدث خطأ أثناء الاتصال بالخادم. تأكد من الإنترنت وحاول مرة أخرى.');
     } finally {
       setChecking(false);
     }
@@ -57,25 +58,27 @@ const VerifyEmail: React.FC = () => {
             <Mail className="w-10 h-10 text-primary-400" />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">افتح بريدك الإلكتروني</h1>
-          <p className="text-sm text-slate-400 leading-relaxed">أرسلنا رابط تأكيد إلى:</p>
+          <p className="text-sm text-slate-400 leading-relaxed">أرسلنا رابط التأكيد إلى:</p>
           <p dir="ltr" className="text-sm font-bold text-primary-400 mt-1">{user?.email}</p>
         </div>
 
-        <div className="card p-5 space-y-3">
-          <p className="text-xs text-slate-300 leading-relaxed text-center">
-            اضغط على الرابط في الرسالة، ثم ارجع هنا واضغط <b className="text-white">"لقد تحققت من بريدي"</b>.
+        <div className="card p-5 space-y-3 text-center">
+          <p className="text-xs text-slate-300 leading-relaxed">
+            افتح الرسالة واضغط على الرابط، ثم ارجع إلى هنا واضغط على زر <b className="text-white">"لقد تحققت من بريدي"</b>.
           </p>
-          {resent && <p className="text-xs text-emerald-400 text-center">تم إرسال الرابط مرة أخرى.</p>}
-          {error && <p className="text-xs text-red-400 text-center">{error}</p>}
+          {resent && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">تم إرسال الرابط مرة أخرى.</p>}
+          {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
         </div>
 
         <div className="space-y-3">
           <button onClick={handleCheck} disabled={checking} className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50">
             {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4" /> لقد تحققت من بريدي</>}
           </button>
+          
           <button onClick={handleResend} disabled={cooldown > 0} className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40">
             {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : <><RefreshCw className="w-4 h-4" /> إعادة إرسال الرابط</>}
           </button>
+          
           <button onClick={handleLogout} className="w-full py-3 text-slate-400 text-sm font-bold flex items-center justify-center gap-2 hover:text-white transition">
             <LogOut className="w-4 h-4" /> تسجيل الخروج
           </button>
