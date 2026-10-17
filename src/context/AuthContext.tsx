@@ -1,17 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   User,
-  onAuthStateChanged,
+  onIdTokenChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup, 
   signOut as fbSignOut,
   updateProfile as fbUpdateProfile,
   sendEmailVerification,
 } from 'firebase/auth';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
+import { Capacitor } from '@capacitor/core';
 
 interface AuthContextType {
   user: User | null;
@@ -25,7 +26,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
-  refreshUser: () => void; 
+  refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,18 +37,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+    const unsub = onIdTokenChanged(auth, async (fbUser) => {
       setUser(fbUser);
       if (fbUser) {
-        let p = await getUserProfile(fbUser.uid);
-        if (!p) {
-          p = await createUserProfile(fbUser.uid, {
-            email: fbUser.email || undefined,
-            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-            photoURL: fbUser.photoURL || undefined,
-          });
+        try {
+          let p = await getUserProfile(fbUser.uid);
+          if (!p) {
+            p = await createUserProfile(fbUser.uid, {
+              email: fbUser.email || undefined,
+              displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+              photoURL: fbUser.photoURL || undefined,
+            });
+          }
+          setProfile(p);
+        } catch (e) {
+          console.error('Profile fetch failed:', e);
+          setProfile(null);
         }
-        setProfile(p);
       } else {
         setProfile(null);
       }
@@ -62,24 +68,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await sendEmailVerification(cred.user);
-    await fbUpdateProfile(cred.user, { displayName });
-    await createUserProfile(cred.user.uid, { email, displayName });
+    sendEmailVerification(cred.user).catch(console.error);
+    fbUpdateProfile(cred.user, { displayName }).catch(console.error);
   };
 
+  // 🔥 استخدام الإضافة الأصلية لجوجل
   const signInGoogle = async () => {
-    const cred = await signInWithPopup(auth, googleProvider);
-    const existing = await getUserProfile(cred.user.uid);
-    if (!existing) {
-      await createUserProfile(cred.user.uid, {
-        email: cred.user.email || undefined,
-        displayName: cred.user.displayName || 'مستخدم AnimeVerse',
-        photoURL: cred.user.photoURL || undefined,
-      });
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // في الهاتف: نستخدم Native Sign-in
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        if (result.user) {
+           // التطبيق سيستمع تلقائياً لتغير الحالة عبر onIdTokenChanged
+           console.log('Google Native Sign-in success:', result.user);
+        }
+      } else {
+        // في المتصفح: نستخدم Popup
+        const { signInWithPopup } = await import('firebase/auth');
+        const cred = await signInWithPopup(auth, googleProvider);
+        const existing = await getUserProfile(cred.user.uid);
+        if (!existing) {
+          await createUserProfile(cred.user.uid, {
+            email: cred.user.email || undefined,
+            displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+            photoURL: cred.user.photoURL || undefined,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      throw error;
     }
   };
 
   const signOut = async () => {
+    if (Capacitor.isNativePlatform()) {
+      await FirebaseAuthentication.signOut();
+    }
     await fbSignOut(auth);
     setProfile(null);
   };
