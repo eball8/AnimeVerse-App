@@ -15,6 +15,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import Settings from './pages/Settings';
 import AuthAction from './pages/AuthAction';
 import AnimeDetail from './pages/AnimeDetail';
+import Watch from './pages/Watch';
 
 const App: React.FC = () => {
   return (
@@ -35,8 +36,9 @@ const App: React.FC = () => {
               <Route path="messages" element={<Messages />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
-              {/* مسار تفاصيل الأنمي بدون شريط التنقل السفلي */}
               <Route path="anime/:id" element={<AnimeDetail />} />
+              {/* مسار المشاهدة الجديد */}
+              <Route path="watch/:animeId/:episodeNumber" element={<Watch />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
