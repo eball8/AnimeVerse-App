@@ -5,8 +5,6 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup, 
-  signInWithRedirect, 
-  getRedirectResult, 
   signOut as fbSignOut,
   updateProfile as fbUpdateProfile,
   sendEmailVerification,
@@ -14,7 +12,6 @@ import {
 import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
-import { Capacitor } from '@capacitor/core';
 
 interface AuthContextType {
   user: User | null;
@@ -28,53 +25,29 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
+  refreshUser: () => void; // 🔥 دالة جديدة لإجبار التطبيق على التحديث
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
-  Promise.race([
-    promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // هذا الجزء يعالج العودة من متصفح جوجل
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result && result.user) {
-          console.log('Returned from Google Login successfully');
-        }
-      })
-      .catch((error) => {
-        console.error('Redirect result error:', error);
-      });
-  }, []);
-
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setUser(fbUser);
-
       if (fbUser) {
-        try {
-          let p = await withTimeout(getUserProfile(fbUser.uid), 5000);
-          if (!p) {
-            p = await withTimeout(createUserProfile(fbUser.uid, {
-              email: fbUser.email || undefined,
-              displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-              photoURL: fbUser.photoURL || undefined,
-            }), 5000);
-          }
-          setProfile(p);
-        } catch (e) {
-          console.error('Auth init failed:', e);
-          setProfile(null);
+        let p = await getUserProfile(fbUser.uid);
+        if (!p) {
+          p = await createUserProfile(fbUser.uid, {
+            email: fbUser.email || undefined,
+            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+            photoURL: fbUser.photoURL || undefined,
+          });
         }
+        setProfile(p);
       } else {
         setProfile(null);
       }
@@ -89,31 +62,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    try {
-      await sendEmailVerification(cred.user);
-      await fbUpdateProfile(cred.user, { displayName });
-      await createUserProfile(cred.user.uid, { email, displayName });
-    } catch (e) {
-      console.error('Signup extras failed:', e);
-    }
+    await sendEmailVerification(cred.user);
+    await fbUpdateProfile(cred.user, { displayName });
+    await createUserProfile(cred.user.uid, { email, displayName });
   };
 
-  // 🔥 التعديل السحري لجوجل في تطبيقات الهاتف
   const signInGoogle = async () => {
-    if (Capacitor.isNativePlatform()) {
-      // في الهاتف: نستخدم Redirect لفتح متصفح الهاتف
-      await signInWithRedirect(auth, googleProvider);
-    } else {
-      // في المتصفح العادي: نستخدم Popup
-      const cred = await signInWithPopup(auth, googleProvider);
-      const existing = await getUserProfile(cred.user.uid);
-      if (!existing) {
-        await createUserProfile(cred.user.uid, {
-          email: cred.user.email || undefined,
-          displayName: cred.user.displayName || 'مستخدم AnimeVerse',
-          photoURL: cred.user.photoURL || undefined,
-        });
-      }
+    // استخدام Popup لأنه أفضل طريقة في المتصفحات المخفية
+    const cred = await signInWithPopup(auth, googleProvider);
+    const existing = await getUserProfile(cred.user.uid);
+    if (!existing) {
+      await createUserProfile(cred.user.uid, {
+        email: cred.user.email || undefined,
+        displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+        photoURL: cred.user.photoURL || undefined,
+      });
     }
   };
 
@@ -133,11 +96,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await sendEmailVerification(auth.currentUser);
   };
 
+  // 🔥 دالة تُجبر React على تحديث حالة المستخدم
+  const refreshUser = () => {
+    setUser(auth.currentUser ? { ...auth.currentUser } : null);
+  };
+
   const isAdmin = profile?.role === 'admin';
   const isModerator = profile?.role === 'moderator' || isAdmin;
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isModerator, signInEmail, signUpEmail, signInGoogle, signOut, refreshProfile, resendVerification }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isModerator, signInEmail, signUpEmail, signInGoogle, signOut, refreshProfile, resendVerification, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
