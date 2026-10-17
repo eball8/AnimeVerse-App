@@ -13,6 +13,7 @@ import SignUp from './pages/SignUp';
 import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import Settings from './pages/Settings';
+import AuthAction from './pages/AuthAction';
 
 const App: React.FC = () => {
   return (
@@ -24,6 +25,7 @@ const App: React.FC = () => {
             <Route path="/signup" element={<SignUp />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/auth/action" element={<AuthAction />} />
 
             <Route path="/" element={<Layout />}>
               <Route index element={<Home />} />
