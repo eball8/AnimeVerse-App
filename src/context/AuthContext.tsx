@@ -4,7 +4,9 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
+  signInWithPopup, // نتركه للويب
+  signInWithRedirect, // 🔥 نضيفه للهاتف
+  getRedirectResult, // 🔥 لمعالجة العودة من المتصفح
   signOut as fbSignOut,
   updateProfile as fbUpdateProfile,
   sendEmailVerification,
@@ -12,6 +14,7 @@ import {
 import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
+import { Capacitor } from '@capacitor/core';
 
 interface AuthContextType {
   user: User | null;
@@ -40,6 +43,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // معالجة العودة من تسجيل الدخول بغوغل (للهاتف)
+  useEffect(() => {
+    getRedirectResult(auth).catch((error) => {
+      console.error('Redirect result error:', error);
+    });
+  }, []);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setUser(fbUser);
@@ -62,7 +72,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.error('createUserProfile failed:', e);
             }
           }
-
           setProfile(p);
         } catch (e) {
           console.error('Auth init failed:', e);
@@ -71,7 +80,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setProfile(null);
       }
-
       setLoading(false);
     });
 
@@ -84,42 +92,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-
-    // نرسل رابط التأكيد للبريد
     try {
       await sendEmailVerification(cred.user);
-    } catch (e) {
-      console.error('sendEmailVerification failed:', e);
-    }
-
-    // نحدّث الاسم
-    try {
       await fbUpdateProfile(cred.user, { displayName });
-    } catch (e) {
-      console.error('updateProfile failed:', e);
-    }
-
-    // ننشئ البروفايل في Firestore
-    try {
       await createUserProfile(cred.user.uid, { email, displayName });
     } catch (e) {
-      console.error('createUserProfile failed:', e);
+      console.error('Signup extras failed:', e);
     }
   };
 
+  // 🔥 إصلاح مشكلة غوغل للهاتف
   const signInGoogle = async () => {
-    const cred = await signInWithPopup(auth, googleProvider);
-    try {
-      const existing = await withTimeout(getUserProfile(cred.user.uid), 5000);
-      if (!existing) {
-        await createUserProfile(cred.user.uid, {
-          email: cred.user.email || undefined,
-          displayName: cred.user.displayName || 'مستخدم AnimeVerse',
-          photoURL: cred.user.photoURL || undefined,
-        });
+    if (Capacitor.isNativePlatform()) {
+      // في الهاتف: نستخدم Redirect
+      await signInWithRedirect(auth, googleProvider);
+    } else {
+      // في المتصفح: نستخدم Popup
+      const cred = await signInWithPopup(auth, googleProvider);
+      try {
+        const existing = await withTimeout(getUserProfile(cred.user.uid), 5000);
+        if (!existing) {
+          await createUserProfile(cred.user.uid, {
+            email: cred.user.email || undefined,
+            displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+            photoURL: cred.user.photoURL || undefined,
+          });
+        }
+      } catch (e) {
+        console.error('google profile failed:', e);
       }
-    } catch (e) {
-      console.error('google profile failed:', e);
     }
   };
 
