@@ -11,24 +11,23 @@ const Explore: React.FC = () => {
   const [loadingGenres, setLoadingGenres] = useState(true);
   const [loadingAnime, setLoadingAnime] = useState(false);
 
-  // جلب التصنيفات عند فتح الصفحة
   useEffect(() => {
     getGenres()
-      .then((data) => setGenres(data))
-      .catch((e) => console.error(e))
+      .then((data: Array<{ mal_id: number; name: string }>) => setGenres(data))
+      .catch((e: any) => console.error(e))
       .finally(() => setLoadingGenres(false));
   }, []);
 
-  // جلب الأنمي عند اختيار تصنيف
   useEffect(() => {
     if (!selectedGenre) return;
     let cancelled = false;
     setLoadingAnime(true);
+    
     getAnimeByGenre(selectedGenre, 24)
-      .then((data) => {
+      .then((data: Anime[]) => {
         if (!cancelled) setAnimeList(data);
       })
-      .catch((e) => console.error(e))
+      .catch((e: any) => console.error(e))
       .finally(() => {
         if (!cancelled) setLoadingAnime(false);
       });
@@ -46,7 +45,6 @@ const Explore: React.FC = () => {
 
   return (
     <div className="px-4 py-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <Compass className="w-6 h-6 text-primary-400" />
         <h2 className="text-xl font-black text-white">استكشاف</h2>
