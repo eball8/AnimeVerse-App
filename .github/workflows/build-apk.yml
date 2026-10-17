@@ -21,10 +21,11 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # 1. بناء الويب
       - name: Build Web App
         run: npm run build
 
-      # 🔥 إصلاح مسارات ملف index.html لتناسب التطبيق الأصلي
+      # 2. إصلاح مسارات الملفات لتتوافق مع الأندرويد
       - name: Fix HTML Paths for Native
         run: |
           cd dist
@@ -44,6 +45,7 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
+      # 3. تثبيت Capacitor ونسخ الملفات
       - name: Install Capacitor & Sync
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
@@ -51,16 +53,19 @@ jobs:
           npx cap sync
           npx cap copy android
 
+      # 4. استبدال ملف الأذونات
       - name: Inject Custom AndroidManifest
         run: |
           cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
+      # 5. بناء التطبيق
       - name: Build APK with Gradle
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      # 6. رفع الملف
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
