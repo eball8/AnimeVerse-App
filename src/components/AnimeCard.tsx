@@ -9,6 +9,8 @@ interface Props {
 
 const AnimeCard: React.FC<Props> = ({ anime }) => {
   const navigate = useNavigate();
+  // استخدام رابط الصورة المتوافق مع AniList
+  const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
 
   return (
     <button
@@ -17,7 +19,7 @@ const AnimeCard: React.FC<Props> = ({ anime }) => {
     >
       <div className="relative aspect-[2/3] rounded-2xl overflow-hidden bg-dark-900 border border-white/5">
         <img
-          src={anime.images.webp?.large_image_url || anime.images.jpg.large_image_url}
+          src={imageUrl}
           alt={anime.title}
           loading="lazy"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
