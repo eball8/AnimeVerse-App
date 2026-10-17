@@ -1,14 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
-  User,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup, // نتركه للويب
-  signInWithRedirect, // 🔥 نضيفه للهاتف
-  getRedirectResult, // 🔥 لمعالجة العودة من المتصفح
-  signOut as fbSignOut,
-  updateProfile as fbUpdateProfile,
+  User, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect,
+  getRedirectResult, signOut as fbSignOut, updateProfile as fbUpdateProfile,
   sendEmailVerification,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
@@ -32,57 +26,33 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
-  Promise.race([
-    promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // معالجة العودة من تسجيل الدخول بغوغل (للهاتف)
   useEffect(() => {
-    getRedirectResult(auth).catch((error) => {
-      console.error('Redirect result error:', error);
-    });
+    getRedirectResult(auth).catch((error) => console.error('Redirect result error:', error));
   }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setUser(fbUser);
-
       if (fbUser) {
-        try {
-          let p = await withTimeout(getUserProfile(fbUser.uid), 5000);
-
-          if (!p) {
-            try {
-              p = await withTimeout(
-                createUserProfile(fbUser.uid, {
-                  email: fbUser.email || undefined,
-                  displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-                  photoURL: fbUser.photoURL || undefined,
-                }),
-                5000
-              );
-            } catch (e) {
-              console.error('createUserProfile failed:', e);
-            }
-          }
-          setProfile(p);
-        } catch (e) {
-          console.error('Auth init failed:', e);
-          setProfile(null);
+        let p = await getUserProfile(fbUser.uid);
+        if (!p) {
+          p = await createUserProfile(fbUser.uid, {
+            email: fbUser.email || undefined,
+            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+            photoURL: fbUser.photoURL || undefined,
+          });
         }
+        setProfile(p);
       } else {
         setProfile(null);
       }
       setLoading(false);
     });
-
     return () => unsub();
   }, []);
 
@@ -92,34 +62,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    try {
-      await sendEmailVerification(cred.user);
-      await fbUpdateProfile(cred.user, { displayName });
-      await createUserProfile(cred.user.uid, { email, displayName });
-    } catch (e) {
-      console.error('Signup extras failed:', e);
-    }
+    await sendEmailVerification(cred.user);
+    await fbUpdateProfile(cred.user, { displayName });
+    await createUserProfile(cred.user.uid, { email, displayName });
   };
 
-  // 🔥 إصلاح مشكلة غوغل للهاتف
   const signInGoogle = async () => {
     if (Capacitor.isNativePlatform()) {
-      // في الهاتف: نستخدم Redirect
+      // في الهاتف: يفتح المتصفح الخارجي ويطلب الحساب
       await signInWithRedirect(auth, googleProvider);
     } else {
-      // في المتصفح: نستخدم Popup
       const cred = await signInWithPopup(auth, googleProvider);
-      try {
-        const existing = await withTimeout(getUserProfile(cred.user.uid), 5000);
-        if (!existing) {
-          await createUserProfile(cred.user.uid, {
-            email: cred.user.email || undefined,
-            displayName: cred.user.displayName || 'مستخدم AnimeVerse',
-            photoURL: cred.user.photoURL || undefined,
-          });
-        }
-      } catch (e) {
-        console.error('google profile failed:', e);
+      const existing = await getUserProfile(cred.user.uid);
+      if (!existing) {
+        await createUserProfile(cred.user.uid, {
+          email: cred.user.email || undefined,
+          displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+          photoURL: cred.user.photoURL || undefined,
+        });
       }
     }
   };
@@ -131,12 +91,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async () => {
     if (!user) return;
-    try {
-      const p = await withTimeout(getUserProfile(user.uid), 5000);
-      setProfile(p);
-    } catch {
-      /* ignore */
-    }
+    const p = await getUserProfile(user.uid);
+    setProfile(p);
   };
 
   const resendVerification = async () => {
@@ -148,21 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isModerator = profile?.role === 'moderator' || isAdmin;
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        profile,
-        loading,
-        isAdmin,
-        isModerator,
-        signInEmail,
-        signUpEmail,
-        signInGoogle,
-        signOut,
-        refreshProfile,
-        resendVerification,
-      }}
-    >
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isModerator, signInEmail, signUpEmail, signInGoogle, signOut, refreshProfile, resendVerification }}>
       {children}
     </AuthContext.Provider>
   );
