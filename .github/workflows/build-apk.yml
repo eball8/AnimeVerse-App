@@ -30,21 +30,34 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android Licenses
+      - name: Setup Android SDK (Direct Download)
         run: |
-          yes | sdkmanager --licenses
+          # تحميل أدوات أندرويد مباشرة
+          export ANDROID_HOME=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME
+          cd $ANDROID_HOME
+          
+          # تحميل sdkmanager
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O commandlinetools.zip
+          unzip -q commandlinetools.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/NOTICE.txt cmdline-tools/source.properties cmdline-tools/latest/ 2>/dev/null || true
+          
+          # قبول التراخيص
+          yes | cmdline-tools/latest/bin/sdkmanager --licenses || true
+          
+          # تثبيت المنصات المطلوبة
+          cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
 
-      - name: Install Capacitor
+      - name: Install Capacitor & Build APK
         run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
+          
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap add android
+          npx cap add android || true
           npx cap sync
-
-      - name: Build APK with Gradle
-        run: |
+          
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
