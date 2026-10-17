@@ -1,4 +1,4 @@
-const ANILIST_URL = 'https://graphql.anilist.co';
+const JIKAN_BASE = 'https://api.jikan.moe/v4';
 
 export interface Anime {
   mal_id: number;
@@ -8,6 +8,7 @@ export interface Anime {
   synopsis?: string;
   images: {
     jpg: { image_url: string; large_image_url: string; };
+    webp?: { image_url: string; large_image_url: string; };
   };
   trailer?: { youtube_id?: string; url?: string; };
   type?: string;
@@ -15,105 +16,61 @@ export interface Anime {
   status?: string;
   airing: boolean;
   score?: number;
+  rank?: number;
+  popularity?: number;
+  season?: string;
   year?: number;
   genres: Array<{ mal_id: number; name: string }>;
+  studios: Array<{ mal_id: number; name: string }>;
 }
 
-const mapAniListToAnime = (media: any): Anime => ({
-  mal_id: media.id,
-  title: media.title.romaji || media.title.english || 'غير معروف',
-  title_english: media.title.english,
-  title_japanese: media.title.native,
-  synopsis: media.description?.replace(/<[^>]*>?/gm, '') || 'لا يوجد وصف.',
-  images: {
-    jpg: {
-      image_url: media.coverImage.large,
-      large_image_url: media.coverImage.extraLarge,
-    },
-  },
-  trailer: media.trailer ? { url: media.trailer.site === 'youtube' ? `https://youtube.com/watch?v=${media.trailer.id}` : undefined } : undefined,
-  type: media.format,
-  episodes: media.episodes,
-  status: media.status,
-  airing: media.status === 'RELEASING',
-  score: media.averageScore ? media.averageScore / 10 : undefined,
-  year: media.seasonYear,
-  genres: media.genres?.map((g: string, i: number) => ({ mal_id: i, name: g })) || [],
-});
+interface JikanResponse<T> { data: T; }
 
-const fetchFromAniList = async (query: string, variables: any): Promise<Anime[]> => {
-  const response = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!response.ok) throw new Error('failed-api');
-  const data = await response.json();
-  return data.data.Page.media.map(mapAniListToAnime);
-};
-
+// جلب الأنمي الأكثر رواجاً
 export const getTopAnime = async (page = 1, limit = 20): Promise<Anime[]> => {
-  const query = `
-    query ($page: Int, $perPage: Int) {
-      Page(page: $page, perPage: $perPage) {
-        media(sort: TRENDING_DESC, type: ANIME) {
-          id title { romaji english native } description coverImage { large extraLarge }
-          format episodes status averageScore seasonYear trailer { id site }
-          genres
-        }
-      }
-    }
-  `;
-  return fetchFromAniList(query, { page, perPage: limit });
+  const res = await fetch(`${JIKAN_BASE}/top/anime?page=${page}&limit=${limit}`);
+  if (!res.ok) throw new Error('failed-top-anime');
+  const data = (await res.json()) as JikanResponse<Anime[]>;
+  return data.data;
 };
 
+// جلب الأنمي الجديد (الموسمي)
 export const getSeasonNow = async (limit = 20): Promise<Anime[]> => {
-  const query = `
-    query ($perPage: Int) {
-      Page(page: 1, perPage: $perPage) {
-        media(season: CURRENT, type: ANIME, sort: POPULARITY_DESC) {
-          id title { romaji english native } description coverImage { large extraLarge }
-          format episodes status averageScore seasonYear trailer { id site }
-          genres
-        }
-      }
-    }
-  `;
-  return fetchFromAniList(query, { perPage: limit });
+  const res = await fetch(`${JIKAN_BASE}/seasons/now?limit=${limit}`);
+  if (!res.ok) throw new Error('failed-season');
+  const data = (await res.json()) as JikanResponse<Anime[]>;
+  return data.data;
 };
 
-export const getAnimeById = async (id: number): Promise<Anime> => {
-  const query = `
-    query ($id: Int) {
-      Media(id: $id, type: ANIME) {
-        id title { romaji english native } description coverImage { large extraLarge }
-        format episodes status averageScore seasonYear trailer { id site }
-        genres
-      }
-    }
-  `;
-  const response = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ query, variables: { id } }),
-  });
-  if (!response.ok) throw new Error('failed-api');
-  const data = await response.json();
-  return mapAniListToAnime(data.data.Media);
+// جلب تفاصيل أنمي محدد
+export const getAnimeById = async (malId: number): Promise<Anime> => {
+  const res = await fetch(`${JIKAN_BASE}/anime/${malId}/full`);
+  if (!res.ok) throw new Error('failed-anime-detail');
+  const data = (await res.json()) as JikanResponse<Anime>;
+  return data.data;
 };
 
+// البحث
 export const searchAnime = async (query: string, limit = 20): Promise<Anime[]> => {
   if (!query.trim()) return [];
-  const gql = `
-    query ($search: String, $perPage: Int) {
-      Page(page: 1, perPage: $perPage) {
-        media(search: $search, type: ANIME) {
-          id title { romaji english native } description coverImage { large extraLarge }
-          format episodes status averageScore seasonYear trailer { id site }
-          genres
-        }
-      }
-    }
-  `;
-  return fetchFromAniList(gql, { search: query, perPage: limit });
+  const res = await fetch(`${JIKAN_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&sfw=true`);
+  if (!res.ok) throw new Error('failed-search');
+  const data = (await res.json()) as JikanResponse<Anime[]>;
+  return data.data;
+};
+
+// جلب قائمة التصنيفات (Genres)
+export const getGenres = async (): Promise<Array<{ mal_id: number; name: string }>> => {
+  const res = await fetch(`${JIKAN_BASE}/genres/anime?filter=genres`);
+  if (!res.ok) throw new Error('failed-genres');
+  const data = (await res.json()) as JikanResponse<Array<{ mal_id: number; name: string }>>;
+  return data.data;
+};
+
+// جلب أنمي حسب التصنيف
+export const getAnimeByGenre = async (genreId: number, limit = 20): Promise<Anime[]> => {
+  const res = await fetch(`${JIKAN_BASE}/anime?genres=${genreId}&limit=${limit}&order_by=score&sort=desc`);
+  if (!res.ok) throw new Error('failed-genre-anime');
+  const data = (await res.json()) as JikanResponse<Anime[]>;
+  return data.data;
 };
