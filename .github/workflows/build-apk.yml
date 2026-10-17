@@ -21,13 +21,8 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      # تأكد من بناء الويب بشكل صحيح
       - name: Build Web App
-        run: |
-          npm run build
-          # تأكد أن مجلد dist موجود وفيه index.html
-          ls -la dist/
-          if [ ! -f dist/index.html ]; then echo "ERROR: index.html missing!"; exit 1; fi
+        run: npm run build
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -39,12 +34,16 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Install Capacitor & Build APK
+      - name: Install Capacitor & Sync
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android
           npx cap sync
-          
+          # إجبار Capacitor على نسخ ملفات الويب إلى مجلد أندرويد
+          npx cap copy android
+
+      - name: Build APK with Gradle
+        run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
