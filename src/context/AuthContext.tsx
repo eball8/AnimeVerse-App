@@ -10,13 +10,11 @@ import {
   signOut as fbSignOut,
   updateProfile as fbUpdateProfile,
   sendEmailVerification,
-  GoogleAuthProvider,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
 import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
 
 interface AuthContextType {
   user: User | null;
@@ -45,10 +43,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // هذا الجزء يعالج العودة من متصفح جوجل
   useEffect(() => {
-    getRedirectResult(auth).catch((error) => {
-      console.error('Redirect result error:', error);
-    });
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result && result.user) {
+          console.log('Returned from Google Login successfully');
+        }
+      })
+      .catch((error) => {
+        console.error('Redirect result error:', error);
+      });
   }, []);
 
   useEffect(() => {
@@ -93,20 +98,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 🔥 إصلاح جوجل: فتح متصفح خارجي في الهاتف
+  // 🔥 التعديل السحري لجوجل في تطبيقات الهاتف
   const signInGoogle = async () => {
     if (Capacitor.isNativePlatform()) {
-      try {
-        // نفتح رابط تسجيل الدخول في متصفح Chrome الخارجي
-        await Browser.open({
-          url: `https://anime-verse-app.vercel.app/login?google=true`,
-        });
-      } catch (e) {
-        console.error('Browser open failed:', e);
-        // خطة بديلة: استخدام redirect
-        await signInWithRedirect(auth, googleProvider);
-      }
+      // في الهاتف: نستخدم Redirect لفتح متصفح الهاتف
+      await signInWithRedirect(auth, googleProvider);
     } else {
+      // في المتصفح العادي: نستخدم Popup
       const cred = await signInWithPopup(auth, googleProvider);
       const existing = await getUserProfile(cred.user.uid);
       if (!existing) {
