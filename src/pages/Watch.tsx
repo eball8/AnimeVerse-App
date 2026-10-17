@@ -4,6 +4,7 @@ import { ArrowRight, Play, Star, AlertCircle, Server, Plus, X, Loader2 } from 'l
 import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { Capacitor } from '@capacitor/core';
 
 const Watch: React.FC = () => {
   const { animeId, episodeNumber } = useParams<{ animeId: string, episodeNumber: string }>();
@@ -76,15 +77,20 @@ const Watch: React.FC = () => {
     }
   };
 
-  // وظيفة تشغيل السيرفر
+  // وظيفة تشغيل السيرفر (تدعم التطبيق والمتصفح)
   const handlePlayServer = (link: string) => {
     if (!link || link === '#') {
       alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
       return;
     }
-    // في المتصفح: يفتح الرابط في نافذة جديدة
-    // في تطبيق الأندرويد (APK): سنقوم لاحقاً ببرمجة Android Intent لفتح EZV Player
-    window.open(link, '_blank');
+    
+    if (Capacitor.isNativePlatform()) {
+      // داخل التطبيق (APK): استخدام Intent لفتح المشغل الخارجي
+      window.location.href = link;
+    } else {
+      // في المتصفح: فتح في نافذة جديدة
+      window.open(link, '_blank');
+    }
   };
 
   if (loading) {
