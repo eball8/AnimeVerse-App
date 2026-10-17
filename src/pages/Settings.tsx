@@ -14,7 +14,7 @@ import {
   EmailAuthProvider,
   linkWithCredential,
   updatePassword,
-  updateEmail,
+  verifyBeforeUpdateEmail,
   reauthenticateWithCredential,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
@@ -28,7 +28,6 @@ const Settings: React.FC = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  // حقول الإدخال
   const [password, setPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -75,7 +74,7 @@ const Settings: React.FC = () => {
       const credential = EmailAuthProvider.credential(user.email, password);
       await linkWithCredential(user, credential);
       setMessage('تم إضافة كلمة السر بنجاح!');
-      setTimeout(goMenu, 2000);
+      setTimeout(goMenu, 2500);
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/provider-already-linked') {
@@ -106,7 +105,7 @@ const Settings: React.FC = () => {
       await reauthenticateWithCredential(user, cred);
       await updatePassword(user, newPassword);
       setMessage('تم تغيير كلمة السر بنجاح!');
-      setTimeout(goMenu, 2000);
+      setTimeout(goMenu, 2500);
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
@@ -119,7 +118,7 @@ const Settings: React.FC = () => {
     }
   };
 
-  // تغيير البريد
+  // تغيير البريد — بإرسال رابط تأكيد للبريد الجديد
   const handleChangeEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -128,20 +127,30 @@ const Settings: React.FC = () => {
       setError('بريد غير صالح.');
       return;
     }
+    if (newEmail === user.email) {
+      setError('هذا بريدك الحالي.');
+      return;
+    }
     setBusy(true);
     try {
       if (!user.email) throw new Error('no-email');
       const cred = EmailAuthProvider.credential(user.email, currentPassword);
       await reauthenticateWithCredential(user, cred);
-      await updateEmail(user, newEmail);
-      setMessage('تم تغيير البريد بنجاح!');
-      setTimeout(goMenu, 2000);
+      await verifyBeforeUpdateEmail(user, newEmail);
+      setMessage(
+        `أرسلنا رابط تأكيد إلى ${newEmail}. افتح البريد واضغط الرابط لتأكيد التغيير.`
+      );
+      setTimeout(goMenu, 5000);
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
         setError('كلمة السر غير صحيحة.');
       } else if (e.code === 'auth/email-already-in-use') {
         setError('البريد مستخدم بحساب آخر.');
+      } else if (e.code === 'auth/requires-recent-login') {
+        setError('يجب إعادة تسجيل الدخول أولاً.');
+      } else if (e.code === 'auth/invalid-email') {
+        setError('البريد غير صالح.');
       } else {
         setError('حدث خطأ، حاول مرة أخرى.');
       }
@@ -170,7 +179,9 @@ const Settings: React.FC = () => {
               <Mail className="w-3 h-3" />
               <span>البريد الحالي</span>
             </div>
-            <div dir="ltr" className="text-sm font-bold text-white">{user.email}</div>
+            <div dir="ltr" className="text-sm font-bold text-white break-all">
+              {user.email}
+            </div>
           </div>
 
           {!hasPassword ? (
@@ -178,8 +189,8 @@ const Settings: React.FC = () => {
               onClick={() => setMode('add-password')}
               className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
             >
-              <Lock className="w-5 h-5 text-primary-400" />
-              <div className="flex-1">
+              <Lock className="w-5 h-5 text-primary-400 shrink-0" />
+              <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold text-white">إضافة كلمة سر</div>
                 <div className="text-[10px] text-slate-500">
                   تسمح لك بالدخول بالبريد + كلمة السر
@@ -192,14 +203,14 @@ const Settings: React.FC = () => {
                 onClick={() => setMode('change-password')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
               >
-                <Lock className="w-5 h-5 text-primary-400" />
+                <Lock className="w-5 h-5 text-primary-400 shrink-0" />
                 <span className="text-sm font-bold text-white">تغيير كلمة السر</span>
               </button>
               <button
                 onClick={() => setMode('change-email')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
               >
-                <Mail className="w-5 h-5 text-primary-400" />
+                <Mail className="w-5 h-5 text-primary-400 shrink-0" />
                 <span className="text-sm font-bold text-white">تغيير البريد الإلكتروني</span>
               </button>
             </>
@@ -207,8 +218,8 @@ const Settings: React.FC = () => {
         </div>
 
         {profile && (
-          <p className="text-[10px] text-slate-500 text-center px-4">
-            بعض التعديلات تحتاج إعادة تسجيل الدخول. لأمان حسابك، سنطلب كلمة السر.
+          <p className="text-[10px] text-slate-500 text-center px-4 leading-relaxed">
+            💡 بعض التعديلات تحتاج تأكيد عبر البريد. لأمان حسابك، سنطلب كلمة السر.
           </p>
         )}
       </div>
@@ -222,7 +233,7 @@ const Settings: React.FC = () => {
         <form onSubmit={handleAddPassword} className="card p-6 space-y-4">
           <div>
             <h3 className="text-lg font-black text-white mb-1">إضافة كلمة سر</h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 leading-relaxed">
               أضف كلمة سر حتى تتمكن من الدخول بالبريد أو بـ Google.
             </p>
           </div>
@@ -252,15 +263,15 @@ const Settings: React.FC = () => {
           </div>
 
           {error && (
-            <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-              <p className="text-xs text-red-300">{error}</p>
+            <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-300 leading-relaxed">{error}</p>
             </div>
           )}
           {message && (
-            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <p className="text-xs text-emerald-300">{message}</p>
+            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-emerald-300 leading-relaxed">{message}</p>
             </div>
           )}
 
@@ -340,7 +351,12 @@ const Settings: React.FC = () => {
     // change-email
     return (
       <form onSubmit={handleChangeEmail} className="card p-6 space-y-4">
-        <h3 className="text-lg font-black text-white">تغيير البريد</h3>
+        <div>
+          <h3 className="text-lg font-black text-white mb-1">تغيير البريد الإلكتروني</h3>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            لأمان حسابك، سنرسل رابط تأكيد إلى البريد الجديد. لن يتغيّر بريدك حتى تضغط على الرابط.
+          </p>
+        </div>
 
         <div>
           <label className="block text-xs font-bold text-slate-300 mb-2">البريد الجديد</label>
@@ -350,6 +366,7 @@ const Settings: React.FC = () => {
             onChange={(e) => setNewEmail(e.target.value)}
             required
             dir="ltr"
+            placeholder="new@example.com"
             className="w-full px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
           />
         </div>
@@ -362,12 +379,23 @@ const Settings: React.FC = () => {
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
             dir="ltr"
+            placeholder="••••••••"
             className="w-full px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
           />
         </div>
 
-        {error && <p className="text-xs text-red-400 text-center">{error}</p>}
-        {message && <p className="text-xs text-emerald-400 text-center">{message}</p>}
+        {error && (
+          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+          </div>
+        )}
+        {message && (
+          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-emerald-300 leading-relaxed">{message}</p>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -382,7 +410,7 @@ const Settings: React.FC = () => {
             disabled={busy}
             className="flex-1 btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تغيير'}
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'إرسال الرابط'}
           </button>
         </div>
       </form>
