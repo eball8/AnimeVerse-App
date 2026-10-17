@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  base: './', // 🔥 هذا هو السطر السحري الذي يحل المشكلة
+  base: './', 
   plugins: [react()],
   resolve: {
     alias: {
@@ -18,5 +18,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     chunkSizeWarningLimit: 1500,
+    // 🔥 هذا هو السطر السحري الذي يجعل الملفات متوافقة مع WebView
+    target: 'es2015', 
   },
 });
