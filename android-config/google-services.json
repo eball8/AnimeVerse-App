@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "561138099709",
+    "project_id": "animeverse-app-75254",
+    "storage_bucket": "animeverse-app-75254.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:561138099709:android:760e69b177e16da864a594",
+        "android_client_info": {
+          "package_name": "com.animeverse.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "561138099709-9ml7h0nkgg7tk901bt58ucsqndh08t6n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZDZwi64hzeOIQ8S0oalzK-8LpTG4nBPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "561138099709-9ml7h0nkgg7tk901bt58ucsqndh08t6n.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
