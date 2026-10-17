@@ -83,17 +83,25 @@ const Watch: React.FC = () => {
       return;
     }
 
-    // رابط Intent لفتح الفيديو في مشغل خارجي (مثل EZV Player)
-    // يمكنك تغيير اسم الحزمة (com.ezv.player) إذا كان اسم التطبيق مختلفاً
-    const intentUrl = `intent://${link.replace('https://', '').replace('http://', '')}#Intent;scheme=https;package=com.ezv.player;end`;
-    
-    // محاولة فتح Intent
-    window.location.href = intentUrl;
+    // اسم حزمة EZV Player الصحيح
+    const packageName = 'com.player.easy';
+    // إنشاء رابط الـ Intent
+    const intentUrl = `intent://${link.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=${packageName};end`;
 
-    // كخطة بديلة (في حال لم يفتح المشغل)، نفتح الرابط في المتصفح بعد ثانية
-    setTimeout(() => {
+    try {
+      // محاولة فتح التطبيق
+      window.location.href = intentUrl;
+
+      // خطة بديلة: إذا لم يفتح التطبيق خلال 1.5 ثانية، افتح المتصفح
+      setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          window.open(link, '_blank');
+        }
+      }, 1500);
+      
+    } catch (e) {
       window.open(link, '_blank');
-    }, 1000);
+    }
   };
 
   if (loading) {
