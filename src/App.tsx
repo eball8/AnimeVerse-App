@@ -14,6 +14,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import Settings from './pages/Settings';
 import AuthAction from './pages/AuthAction';
+import AnimeDetail from './pages/AnimeDetail';
 
 const App: React.FC = () => {
   return (
@@ -34,6 +35,8 @@ const App: React.FC = () => {
               <Route path="messages" element={<Messages />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
+              {/* مسار تفاصيل الأنمي بدون شريط التنقل السفلي */}
+              <Route path="anime/:id" element={<AnimeDetail />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
