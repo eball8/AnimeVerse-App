@@ -9,7 +9,6 @@ interface Props {
 
 const AnimeCard: React.FC<Props> = ({ anime }) => {
   const navigate = useNavigate();
-  // استخدام رابط الصورة المتوافق مع AniList
   const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
 
   return (
@@ -24,21 +23,13 @@ const AnimeCard: React.FC<Props> = ({ anime }) => {
           loading="lazy"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
-        
         {anime.score && (
           <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/70 backdrop-blur-sm flex items-center gap-1">
             <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
             <span className="text-[10px] font-bold text-white">{anime.score}</span>
           </div>
         )}
-        
-        {anime.airing && (
-          <div className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-emerald-500/90 backdrop-blur-sm">
-            <span className="text-[10px] font-bold text-white">يعرض حالياً</span>
-          </div>
-        )}
       </div>
-
       <div>
         <h3 className="text-sm font-bold text-white line-clamp-2 leading-tight group-hover:text-primary-400 transition-colors">
           {anime.title_english || anime.title}
