@@ -1,7 +1,8 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
-const gradlePath = path.join(__dirname, '../android/app/build.gradle');
+// نستخدم process.cwd() لأن السكريبت يعمل من المجلد الرئيسي للمشروع
+const gradlePath = path.join(process.cwd(), 'android/app/build.gradle');
 
 try {
   let gradle = fs.readFileSync(gradlePath, 'utf8');
