@@ -18,7 +18,6 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInEmail(email, password);
-      // نتحقق هل البريد مُفعّل
       const u = (await import('../config/firebase')).auth.currentUser;
       if (u && !u.emailVerified && u.providerData[0]?.providerId === 'password') {
         navigate('/verify-email');
@@ -113,6 +112,12 @@ const Login: React.FC = () => {
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تسجيل الدخول'}
           </button>
+
+          <div className="text-center">
+            <Link to="/forgot-password" className="text-xs text-slate-400 hover:text-primary-400 font-bold">
+              نسيت كلمة السر؟
+            </Link>
+          </div>
 
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
