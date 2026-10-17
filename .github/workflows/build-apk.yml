@@ -39,7 +39,6 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android
           npx cap sync
-          # إجبار Capacitor على نسخ ملفات الويب إلى مجلد أندرويد
           npx cap copy android
 
       - name: Build APK with Gradle
