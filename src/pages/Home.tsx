@@ -1,12 +1,38 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Sparkles, TrendingUp, LogIn, UserPlus } from 'lucide-react';
+import { ShieldCheck, Sparkles, TrendingUp, LogIn, UserPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getTopAnime, getSeasonNow } from '../services/animeService';
+import type { Anime } from '../services/animeService';
+import AnimeCard from '../components/AnimeCard';
 
 const Home: React.FC = () => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
+  
+  const [topAnime, setTopAnime] = useState<Anime[]>([]);
+  const [seasonAnime, setSeasonAnime] = useState<Anime[]>([]);
+  const [loadingAnime, setLoadingAnime] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingAnime(true);
+    
+    Promise.all([getTopAnime(1, 10), getSeasonNow(10)])
+      .then(([top, season]) => {
+        if (!cancelled) {
+          setTopAnime(top);
+          setSeasonAnime(season);
+        }
+      })
+      .catch((e) => console.error('Failed to fetch anime:', e))
+      .finally(() => {
+        if (!cancelled) setLoadingAnime(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  if (authLoading) {
     return (
       <div className="py-24 flex justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-primary-500 border-t-transparent animate-spin" />
@@ -31,7 +57,6 @@ const Home: React.FC = () => {
             : 'سجّل دخولك لتجربة كاملة: مشاهدة الأنمي، المجتمع، والرسائل المشفّرة.'}
         </p>
 
-        {/* Auth Buttons (only if not logged in) */}
         {!user && (
           <div className="flex gap-2">
             <Link
@@ -52,7 +77,7 @@ const Home: React.FC = () => {
         )}
       </div>
 
-      {/* Trending */}
+      {/* Trending Anime */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -63,20 +88,43 @@ const Home: React.FC = () => {
             عرض الكل
           </Link>
         </div>
-        <div className="card p-6 text-center text-slate-500 text-sm">
-          <Sparkles className="w-8 h-8 mx-auto mb-2 text-primary-500/40" />
-          <p>سيتم تحميل الأنمي هنا قريباً...</p>
-        </div>
+        
+        {loadingAnime ? (
+          <div className="py-10 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {topAnime.map((anime) => (
+              <AnimeCard key={anime.mal_id} anime={anime} />
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Latest Episodes */}
+      {/* Seasonal Anime */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-black text-white">✨ أحدث الحلقات</h3>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary-400" />
+            <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
+          </div>
+          <Link to="/explore" className="text-xs text-primary-400 font-bold">
+            عرض الكل
+          </Link>
         </div>
-        <div className="card p-6 text-center text-slate-500 text-sm">
-          <p>قيد الإنشاء...</p>
-        </div>
+        
+        {loadingAnime ? (
+          <div className="py-10 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {seasonAnime.map((anime) => (
+              <AnimeCard key={anime.mal_id} anime={anime} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
