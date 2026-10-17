@@ -1,9 +1,17 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { User, Settings, LogOut, LogIn, UserPlus } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  User,
+  Settings,
+  LogOut,
+  LogIn,
+  UserPlus,
+  Share2,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Profile: React.FC = () => {
+  const navigate = useNavigate();
   const { user, profile, signOut, loading } = useAuth();
 
   if (loading) {
@@ -14,7 +22,6 @@ const Profile: React.FC = () => {
     );
   }
 
-  // Not logged in
   if (!user) {
     return (
       <div className="px-4 py-6 space-y-4">
@@ -47,11 +54,37 @@ const Profile: React.FC = () => {
     );
   }
 
-  // Logged in
+  const handleShare = async () => {
+    if (!profile) return;
+    const url = `${window.location.origin}/u/${profile.username}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: profile.displayName,
+          text: `تابع ${profile.displayName} على AnimeVerse`,
+          url,
+        });
+      } catch {
+        /* ignore */
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      alert('تم نسخ رابط الملف الشخصي');
+    }
+  };
+
   return (
     <div className="px-4 py-6 space-y-4">
       {/* Profile Card */}
-      <div className="card p-6 text-center">
+      <div className="card p-6 text-center relative">
+        <button
+          onClick={handleShare}
+          className="absolute top-3 left-3 p-2 rounded-xl hover:bg-white/10 text-slate-400"
+          aria-label="مشاركة"
+        >
+          <Share2 className="w-4 h-4" />
+        </button>
+
         <img
           src={
             profile?.photoURL ||
@@ -85,13 +118,12 @@ const Profile: React.FC = () => {
 
       {/* Menu */}
       <div className="card divide-y divide-white/5">
-        <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right">
-          <User className="w-5 h-5 text-primary-400" />
-          <span className="text-sm font-bold text-white">معلومات الحساب</span>
-        </button>
-        <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right">
+        <button
+          onClick={() => navigate('/settings')}
+          className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
+        >
           <Settings className="w-5 h-5 text-primary-400" />
-          <span className="text-sm font-bold text-white">الإعدادات</span>
+          <span className="text-sm font-bold text-white">إعدادات الحساب</span>
         </button>
         <button
           onClick={signOut}
