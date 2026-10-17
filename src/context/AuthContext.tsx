@@ -7,12 +7,10 @@ import {
   signInWithPopup,
   signOut as fbSignOut,
   updateProfile as fbUpdateProfile,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
-import {
-  createUserProfile,
-  getUserProfile,
-} from '../services/userService';
+import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
 
 interface AuthContextType {
@@ -26,6 +24,7 @@ interface AuthContextType {
   signInGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  resendVerification: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,11 +46,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fbUser) {
         try {
-          // محاولة جلب البروفايل مع timeout 5 ثوان
           let p = await withTimeout(getUserProfile(fbUser.uid), 5000);
 
           if (!p) {
-            // ما فيه بروفايل أو timeout — ننشئ واحد
             try {
               p = await withTimeout(
                 createUserProfile(fbUser.uid, {
@@ -87,12 +84,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUpEmail = async (email: string, password: string, displayName: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    // نكمل بدون انتظار — حتى لو فشل، الحساب أُنشئ
+
+    // نرسل رابط التأكيد للبريد
+    try {
+      await sendEmailVerification(cred.user);
+    } catch (e) {
+      console.error('sendEmailVerification failed:', e);
+    }
+
+    // نحدّث الاسم
     try {
       await fbUpdateProfile(cred.user, { displayName });
     } catch (e) {
       console.error('updateProfile failed:', e);
     }
+
+    // ننشئ البروفايل في Firestore
     try {
       await createUserProfile(cred.user.uid, { email, displayName });
     } catch (e) {
@@ -131,6 +138,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resendVerification = async () => {
+    if (!auth.currentUser) throw new Error('no-user');
+    await sendEmailVerification(auth.currentUser);
+  };
+
   const isAdmin = profile?.role === 'admin';
   const isModerator = profile?.role === 'moderator' || isAdmin;
 
@@ -147,6 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInGoogle,
         signOut,
         refreshProfile,
+        resendVerification,
       }}
     >
       {children}
