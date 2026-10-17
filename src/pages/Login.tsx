@@ -19,7 +19,8 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInEmail(email, password);
-      // التحقق من تأكيد البريد
+      
+      // التحقق مما إذا كان البريد الإلكتروني قد تم تفعيله
       const u = auth.currentUser;
       if (u && !u.emailVerified && u.providerData[0]?.providerId === 'password') {
         navigate('/verify-email');
@@ -29,13 +30,13 @@ const Login: React.FC = () => {
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') {
-        setError('البريد أو كلمة السر غير صحيحة.');
+        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
       } else if (e.code === 'auth/user-not-found') {
-        setError('لا يوجد حساب بهذا البريد.');
+        setError('لا يوجد حساب بهذا البريد الإلكتروني.');
       } else if (e.code === 'auth/too-many-requests') {
-        setError('محاولات كثيرة. جرب لاحقاً.');
+        setError('محاولات كثيرة. يرجى المحاولة لاحقاً.');
       } else {
-        setError('حدث خطأ، حاول مرة أخرى.');
+        setError('حدث خطأ أثناء تسجيل الدخول. تحقق من اتصالك بالإنترنت.');
       }
     } finally {
       setLoading(false);
@@ -47,13 +48,13 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInGoogle();
-      // التوجيه سيتم تلقائياً في AuthContext إذا كان في الهاتف
+      // ملاحظة: في الهاتف، سيتم فتح المتصفح الخارجي.
+      // التطبيق سيتوقف هنا حتى يعود المستخدم من المتصفح، ثم سيتولى AuthContext إكمال الدخول.
       if (!window.location.href.includes('android')) {
         navigate('/');
       }
     } catch {
-      setError('فشل تسجيل الدخول بـ Google.');
-    } finally {
+      setError('فشل تسجيل الدخول بواسطة Google. حاول مرة أخرى.');
       setLoading(false);
     }
   };
@@ -86,7 +87,7 @@ const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">كلمة السر</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">كلمة المرور</label>
             <div className="relative">
               <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -108,7 +109,7 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-400 text-center">{error}</p>}
+          {error && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
 
           <button
             type="submit"
@@ -120,7 +121,7 @@ const Login: React.FC = () => {
 
           <div className="text-center">
             <Link to="/forgot-password" className="text-xs text-slate-400 hover:text-primary-400 font-bold">
-              نسيت كلمة السر؟
+              نسيت كلمة المرور؟
             </Link>
           </div>
 
