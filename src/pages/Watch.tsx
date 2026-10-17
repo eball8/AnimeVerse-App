@@ -4,7 +4,6 @@ import { ArrowRight, Play, Star, AlertCircle, Server, Plus, X, Loader2 } from 'l
 import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { Capacitor } from '@capacitor/core';
 
 const Watch: React.FC = () => {
   const { animeId, episodeNumber } = useParams<{ animeId: string, episodeNumber: string }>();
@@ -77,20 +76,24 @@ const Watch: React.FC = () => {
     }
   };
 
-  // وظيفة تشغيل السيرفر (تدعم التطبيق والمتصفح)
+  // وظيفة تشغيل السيرفر (استخدام Intent لفتح EZV Player)
   const handlePlayServer = (link: string) => {
     if (!link || link === '#') {
       alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
       return;
     }
+
+    // رابط Intent لفتح الفيديو في مشغل خارجي (مثل EZV Player)
+    // يمكنك تغيير اسم الحزمة (com.ezv.player) إذا كان اسم التطبيق مختلفاً
+    const intentUrl = `intent://${link.replace('https://', '').replace('http://', '')}#Intent;scheme=https;package=com.ezv.player;end`;
     
-    if (Capacitor.isNativePlatform()) {
-      // داخل التطبيق (APK): استخدام Intent لفتح المشغل الخارجي
-      window.location.href = link;
-    } else {
-      // في المتصفح: فتح في نافذة جديدة
+    // محاولة فتح Intent
+    window.location.href = intentUrl;
+
+    // كخطة بديلة (في حال لم يفتح المشغل)، نفتح الرابط في المتصفح بعد ثانية
+    setTimeout(() => {
       window.open(link, '_blank');
-    }
+    }, 1000);
   };
 
   if (loading) {
