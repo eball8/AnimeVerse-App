@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'; // 👈 غيرنا BrowserRouter إلى HashRouter
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
@@ -16,6 +16,8 @@ import Settings from './pages/Settings';
 import AuthAction from './pages/AuthAction';
 import AnimeDetail from './pages/AnimeDetail';
 import Watch from './pages/Watch';
+import Community from './pages/Community';
+import CreatePost from './pages/CreatePost';
 
 const App: React.FC = () => {
   return (
@@ -28,11 +30,13 @@ const App: React.FC = () => {
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/auth/action" element={<AuthAction />} />
+            <Route path="/create-post" element={<CreatePost />} />
 
             <Route path="/" element={<Layout />}>
               <Route index element={<Home />} />
               <Route path="explore" element={<Explore />} />
               <Route path="search" element={<Search />} />
+              <Route path="community" element={<Community />} />
               <Route path="messages" element={<Messages />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
