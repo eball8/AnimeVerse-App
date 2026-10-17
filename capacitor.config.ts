@@ -4,14 +4,13 @@ const config: CapacitorConfig = {
   appId: 'com.animeverse.app',
   appName: 'AnimeVerse',
   webDir: 'dist',
-  bundledWebRuntime: false,
-  android: {
-    allowMixedContent: true,
-  },
   server: {
     androidScheme: 'https',
     cleartext: true,
   },
+  android: {
+    allowMixedContent: true,
+  }
 };
 
 export default config;
