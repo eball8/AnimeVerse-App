@@ -1,7 +1,7 @@
 const ANILIST_URL = 'https://graphql.anilist.co';
 
 export interface Anime {
-  mal_id: number; // سنستخدمه كـ ID أساسي
+  mal_id: number;
   title: string;
   title_english?: string;
   title_japanese?: string;
@@ -19,7 +19,6 @@ export interface Anime {
   genres: Array<{ mal_id: number; name: string }>;
 }
 
-// دالة مساعدة لتحويل بيانات AniList إلى الشكل الذي يتوقعه تطبيقنا
 const mapAniListToAnime = (media: any): Anime => ({
   mal_id: media.id,
   title: media.title.romaji || media.title.english || 'غير معروف',
@@ -42,7 +41,6 @@ const mapAniListToAnime = (media: any): Anime => ({
   genres: media.genres?.map((g: string, i: number) => ({ mal_id: i, name: g })) || [],
 });
 
-// استعلام GraphQL لجلب الأنمي
 const fetchFromAniList = async (query: string, variables: any): Promise<Anime[]> => {
   const response = await fetch(ANILIST_URL, {
     method: 'POST',
@@ -54,7 +52,6 @@ const fetchFromAniList = async (query: string, variables: any): Promise<Anime[]>
   return data.data.Page.media.map(mapAniListToAnime);
 };
 
-// الأنمي الأكثر رواجاً
 export const getTopAnime = async (page = 1, limit = 20): Promise<Anime[]> => {
   const query = `
     query ($page: Int, $perPage: Int) {
@@ -70,7 +67,6 @@ export const getTopAnime = async (page = 1, limit = 20): Promise<Anime[]> => {
   return fetchFromAniList(query, { page, perPage: limit });
 };
 
-// الأنمي الموسمي (يعرض حالياً)
 export const getSeasonNow = async (limit = 20): Promise<Anime[]> => {
   const query = `
     query ($perPage: Int) {
@@ -86,7 +82,6 @@ export const getSeasonNow = async (limit = 20): Promise<Anime[]> => {
   return fetchFromAniList(query, { perPage: limit });
 };
 
-// تفاصيل أنمي واحد
 export const getAnimeById = async (id: number): Promise<Anime> => {
   const query = `
     query ($id: Int) {
@@ -107,7 +102,6 @@ export const getAnimeById = async (id: number): Promise<Anime> => {
   return mapAniListToAnime(data.data.Media);
 };
 
-// البحث
 export const searchAnime = async (query: string, limit = 20): Promise<Anime[]> => {
   if (!query.trim()) return [];
   const gql = `
