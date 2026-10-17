@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { auth } from '../config/firebase';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -18,7 +19,8 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInEmail(email, password);
-      const u = (await import('../config/firebase')).auth.currentUser;
+      // التحقق من تأكيد البريد
+      const u = auth.currentUser;
       if (u && !u.emailVerified && u.providerData[0]?.providerId === 'password') {
         navigate('/verify-email');
         return;
@@ -45,7 +47,10 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       await signInGoogle();
-      navigate('/');
+      // التوجيه سيتم تلقائياً في AuthContext إذا كان في الهاتف
+      if (!window.location.href.includes('android')) {
+        navigate('/');
+      }
     } catch {
       setError('فشل تسجيل الدخول بـ Google.');
     } finally {
