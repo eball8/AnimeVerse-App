@@ -13,9 +13,10 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^7.0.0",
     "@capacitor/android": "^7.0.0",
+    "@capacitor/browser": "^7.0.0",
     "@capacitor/camera": "^7.0.0",
-    "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/filesystem": "^7.0.0",
     "@capacitor/local-notifications": "^7.0.0",
@@ -29,6 +30,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^2.0.0",
+    "@capacitor/cli": "^7.0.0",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
