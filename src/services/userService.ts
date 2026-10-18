@@ -15,6 +15,9 @@ import type { UserProfile } from '../types';
 
 const USERS_COLLECTION = 'users';
 
+const removeUndefined = <T extends Record<string, unknown>>(obj: T): T =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
+
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
   const snap = await getDoc(doc(db, USERS_COLLECTION, uid));
   return snap.exists() ? ({ uid, ...snap.data() } as UserProfile) : null;
@@ -47,7 +50,7 @@ export const createUserProfile = async (
     updatedAt: now,
   };
 
-  await setDoc(doc(db, USERS_COLLECTION, uid), profile);
+  await setDoc(doc(db, USERS_COLLECTION, uid), removeUndefined(profile));
   return { uid, ...profile };
 };
 
@@ -56,7 +59,7 @@ export const updateUserProfile = async (
   updates: Partial<UserProfile>
 ): Promise<void> => {
   await updateDoc(doc(db, USERS_COLLECTION, uid), {
-    ...updates,
+    ...removeUndefined(updates),
     updatedAt: serverTimestamp(),
   });
 };
