@@ -75,6 +75,12 @@ jobs:
         run: |
           cp android-config/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
+      - name: Inject Native Gallery Plugin
+        run: |
+          mkdir -p android/app/src/main/java/com/animeverse/app
+          cp android-config/native/GalleryPlugin.java android/app/src/main/java/com/animeverse/app/GalleryPlugin.java
+          cp android-config/native/MainActivity.java android/app/src/main/java/com/animeverse/app/MainActivity.java
+
       - name: Build APK with Gradle
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/android/release.keystore
