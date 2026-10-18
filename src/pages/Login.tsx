@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Loader2, X } from 'lucide-react';
@@ -79,8 +80,8 @@ const Login: React.FC = () => {
       if (!window.location.href.includes('android')) {
         navigate('/');
       }
-    } catch {
-      setError('فشل تسجيل الدخول بواسطة Google. حاول مرة أخرى.');
+    } catch (e: any) {
+      if (!e?.cancelled) setError('فشل تسجيل الدخول بواسطة Google. حاول مرة أخرى.');
       setLoading(false);
     }
   };
