@@ -1,6 +1,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { Loader2 } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -19,6 +20,20 @@ import Watch from './pages/Watch';
 import Community from './pages/Community';
 import CreatePost from './pages/CreatePost';
 
+// أي شخص غير مسجّل يُحوَّل مباشرة إلى شاشة الدخول
+const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-dark-950">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
+
 const App: React.FC = () => {
   return (
     <ThemeProvider>
@@ -30,9 +45,9 @@ const App: React.FC = () => {
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/auth/action" element={<AuthAction />} />
-            <Route path="/create-post" element={<CreatePost />} />
+            <Route path="/create-post" element={<RequireAuth><CreatePost /></RequireAuth>} />
 
-            <Route path="/" element={<Layout />}>
+            <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Home />} />
               <Route path="explore" element={<Explore />} />
               <Route path="search" element={<Search />} />
