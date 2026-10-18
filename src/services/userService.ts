@@ -30,7 +30,6 @@ export const createUserProfile = async (
   const now = serverTimestamp() as Timestamp;
 
   const profile: Omit<UserProfile, 'uid'> = {
-    email: data.email,
     username: data.username || `user_${uid.slice(0, 8)}`,
     displayName: data.displayName || 'مستخدم AnimeVerse',
     photoURL: data.photoURL,
@@ -51,7 +50,18 @@ export const createUserProfile = async (
   };
 
   await setDoc(doc(db, USERS_COLLECTION, uid), removeUndefined(profile));
-  return { uid, ...profile };
+  // الإيميل يُحفظ في مجموعة خاصة حسب قواعد Firestore
+  if (data.email) {
+    try {
+      await setDoc(doc(db, 'userPrivate', uid), {
+        email: data.email,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('userPrivate write failed:', e);
+    }
+  }
+  return { uid, email: data.email, ...profile };
 };
 
 export const updateUserProfile = async (
