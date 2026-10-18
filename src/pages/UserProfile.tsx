@@ -9,6 +9,7 @@ import {
   getFollowCounts, getFollowState, followUser, unfollowUser, cancelRequest,
 } from '../services/followService';
 import type { FollowState } from '../services/followService';
+import { notify } from '../services/notificationService';
 
 const UserProfilePage: React.FC = () => {
   const { uid } = useParams<{ uid: string }>();
@@ -82,6 +83,12 @@ const UserProfilePage: React.FC = () => {
         );
         setState(next);
         if (next === 'following') setCounts((c) => ({ ...c, followers: c.followers + 1 }));
+        // إشعار لصاحب الحساب
+        notify(
+          p.uid,
+          next === 'following' ? 'follow' : 'request',
+          next === 'following' ? 'بدأ بمتابعتك' : 'أرسل لك طلب متابعة'
+        );
       }
     } catch (e: any) {
       console.error(e);
@@ -166,7 +173,13 @@ const UserProfilePage: React.FC = () => {
               : 'rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold'
           }`}
         >
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Icon className="w-4 h-4" /> {label}</>}
+          {busy ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <>
+              <Icon className="w-4 h-4" /> {label}
+            </>
+          )}
         </button>
 
         {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mt-3">{error}</p>}
