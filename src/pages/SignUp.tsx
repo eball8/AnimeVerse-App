@@ -57,8 +57,8 @@ const SignUp: React.FC = () => {
     try {
       await signInGoogle();
       navigate('/');
-    } catch {
-      setError('فشل تسجيل الدخول بـ Google.');
+    } catch (e: any) {
+      if (!e?.cancelled) setError('فشل تسجيل الدخول بـ Google.');
     } finally {
       setLoading(false);
     }
