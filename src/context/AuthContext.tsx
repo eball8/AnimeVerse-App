@@ -75,10 +75,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInGoogle = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
-        // 🔥 تمرير الـ Web Client ID صراحةً
-        const result = await FirebaseAuthentication.signInWithGoogle({
-          clientId: '561138099709-9m17h0nkgg7tk901bt58ucsqndh08t6n.apps.googleusercontent.com'
-        });
+        // 🔥 تم إزالة clientId لأن المكتبة تقرأه من ملف google-services.json تلقائياً
+        const result = await FirebaseAuthentication.signInWithGoogle();
         if (result.user) {
            console.log('Google Native Sign-in success:', result.user);
         }
