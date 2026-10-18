@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, LogIn, UserPlus, Zap, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { ShieldCheck, LogIn, UserPlus, Zap, Loader2, AlertCircle, RefreshCw, Film } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Anime } from '../services/animeService';
 import { getTopAnime, getSeasonNow } from '../services/animeService';
+import { listCustomAnime } from '../services/customAnimeService';
 import AnimeCard from '../components/AnimeCard';
+import AnnouncementBanner from '../components/AnnouncementBanner';
 
 const Home: React.FC = () => {
   const { user, profile, loading: authLoading } = useAuth();
-  
+
   const [topAnime, setTopAnime] = useState<Anime[]>([]);
   const [seasonAnime, setSeasonAnime] = useState<Anime[]>([]);
+  const [customAnime, setCustomAnime] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -19,13 +22,14 @@ const Home: React.FC = () => {
     setLoading(true);
     setError('');
 
-    Promise.allSettled([getTopAnime(1, 10), getSeasonNow(10)])
+    Promise.allSettled([getTopAnime(1, 10), getSeasonNow(10), listCustomAnime(10)])
       .then((results) => {
         if (cancelled) return;
-        const [top, season] = results;
+        const [top, season, custom] = results;
         if (top.status === 'fulfilled') setTopAnime(top.value);
         if (season.status === 'fulfilled') setSeasonAnime(season.value);
-        
+        if (custom.status === 'fulfilled') setCustomAnime(custom.value);
+
         if (top.status === 'rejected' && season.status === 'rejected') {
           setError('فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.');
         }
@@ -34,7 +38,9 @@ const Home: React.FC = () => {
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   };
 
   useEffect(() => {
@@ -51,6 +57,8 @@ const Home: React.FC = () => {
 
   return (
     <div className="px-4 py-6 space-y-6">
+      <AnnouncementBanner />
+
       <div className="card p-5 bg-gradient-to-br from-primary-500/20 via-accent-500/10 to-transparent">
         <div className="flex items-center gap-2 mb-2">
           <ShieldCheck className="w-5 h-5 text-primary-400" />
@@ -64,10 +72,16 @@ const Home: React.FC = () => {
         </p>
         {!user && (
           <div className="flex gap-2">
-            <Link to="/login" className="flex-1 btn-primary py-2 flex items-center justify-center gap-1.5 text-xs">
+            <Link
+              to="/login"
+              className="flex-1 btn-primary py-2 flex items-center justify-center gap-1.5 text-xs"
+            >
               <LogIn className="w-3.5 h-3.5" /> دخول
             </Link>
-            <Link to="/signup" className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-bold flex items-center justify-center gap-1.5">
+            <Link
+              to="/signup"
+              className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+            >
               <UserPlus className="w-3.5 h-3.5" /> حساب
             </Link>
           </div>
@@ -84,15 +98,31 @@ const Home: React.FC = () => {
         </div>
       ) : (
         <>
+          {customAnime.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Film className="w-5 h-5 text-primary-400" />
+                <h3 className="text-lg font-black text-white">حصرياً على AnimeVerse</h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {customAnime.map((anime) => (
+                  <AnimeCard key={String(anime.mal_id)} anime={anime} />
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5 text-accent-400" />
                 <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
               </div>
-              <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
+              <Link to="/explore" className="text-xs text-primary-400 font-bold">
+                عرض الكل
+              </Link>
             </div>
-            
+
             {loading ? (
               <div className="py-10 flex justify-center">
                 <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
@@ -112,9 +142,11 @@ const Home: React.FC = () => {
                 <Zap className="w-5 h-5 text-primary-400" />
                 <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
               </div>
-              <Link to="/explore" className="text-xs text-primary-400 font-bold">عرض الكل</Link>
+              <Link to="/explore" className="text-xs text-primary-400 font-bold">
+                عرض الكل
+              </Link>
             </div>
-            
+
             {loading ? (
               <div className="py-10 flex justify-center">
                 <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
