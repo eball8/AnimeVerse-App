@@ -45,7 +45,8 @@ service cloud.firestore {
         && request.resource.data.accountType in ['public', 'private']
         && validText(request.resource.data.displayName, 1, 50)
         && validText(request.resource.data.username, 3, 30);
-      allow update: if isOwner(uid)
+
+      allow update: if isAdmin() || (isOwner(uid)
         && !request.resource.data.diff(resource.data).affectedKeys()
              .hasAny(['role', 'isVerified', 'isBanned',
                       'followersCount', 'followingCount', 'postsCount', 'createdAt'])
@@ -54,7 +55,8 @@ service cloud.firestore {
         && (!('bio' in request.resource.data)
             || validText(request.resource.data.bio, 0, 150))
         && (!('accountType' in request.resource.data)
-            || request.resource.data.accountType in ['public', 'private']);
+            || request.resource.data.accountType in ['public', 'private']));
+
       allow delete: if isOwner(uid) || isAdmin();
     }
 
@@ -79,6 +81,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // نسخة المفتاح الخاص المشفّرة بكود الاسترجاع
     match /keyBackups/{uid} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
@@ -97,6 +100,7 @@ service cloud.firestore {
     // ---------- 4. المنشورات ----------
     match /posts/{postId} {
       allow read: if true;
+
       allow create: if isOwner(request.resource.data.authorId)
         && !isBanned()
         && request.resource.data.keys().hasOnly(
@@ -117,6 +121,7 @@ service cloud.firestore {
         && (request.resource.data.content.size() > 0
             || ('mediaUrl' in request.resource.data
                 && request.resource.data.mediaUrl != ''));
+
       allow update: if signedIn() && (
         (request.auth.uid == resource.data.authorId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content'])
@@ -125,50 +130,60 @@ service cloud.firestore {
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount'])
             && request.resource.data.likesCount >= 0
             && math.abs(request.resource.data.likesCount - resource.data.likesCount) == 1)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentsCount'])
+            && request.resource.data.commentsCount >= 0
+            && math.abs(request.resource.data.commentsCount - resource.data.commentsCount) == 1)
       );
+
       allow delete: if signedIn()
         && (request.auth.uid == resource.data.authorId || isAdmin());
     }
 
     // ---------- 5. الإعجابات ----------
     match /likes/{likeId} {
-      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if signedIn()
         && !isBanned()
         && request.resource.data.keys().hasOnly(['postId', 'userId', 'createdAt'])
         && request.resource.data.userId == request.auth.uid
         && likeId == request.resource.data.postId + '_' + request.auth.uid
         && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId));
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // ---------- 6. المتابعة ----------
+    // ---------- 6. المتابعة (المقبولة فقط) ----------
     match /follows/{followId} {
       allow read: if signedIn();
+
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['followerId', 'followingId', 'createdAt'])
         && request.resource.data.followerId != request.resource.data.followingId
         && followId == request.resource.data.followerId + '_' + request.resource.data.followingId
         && request.resource.data.createdAt == request.time
         && (
+          // متابعة حساب عام
           (request.auth.uid == request.resource.data.followerId
             && !isBanned()
             && !isBlockedBy(request.resource.data.followingId)
             && get(/databases/$(database)/documents/users/$(request.resource.data.followingId))
                  .data.accountType == 'public')
           ||
+          // حساب خاص: صاحب الحساب يقبل طلباً موجوداً
           (request.auth.uid == request.resource.data.followingId
             && exists(/databases/$(database)/documents/followRequests/$(followId)))
         );
+
       allow delete: if signedIn()
         && (resource.data.followerId == request.auth.uid
             || resource.data.followingId == request.auth.uid);
     }
 
+    // طلبات المتابعة للحسابات الخاصة
     match /followRequests/{reqId} {
       allow read: if signedIn()
         && (resource.data.followerId == request.auth.uid
             || resource.data.followingId == request.auth.uid);
+
       allow create: if signedIn()
         && !isBanned()
         && request.resource.data.keys().hasOnly(['followerId', 'followingId', 'createdAt'])
@@ -179,6 +194,7 @@ service cloud.firestore {
         && !isBlockedBy(request.resource.data.followingId)
         && get(/databases/$(database)/documents/users/$(request.resource.data.followingId))
              .data.accountType == 'private';
+
       allow delete: if signedIn()
         && (resource.data.followerId == request.auth.uid
             || resource.data.followingId == request.auth.uid);
@@ -196,7 +212,7 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.blockerId == request.auth.uid;
     }
 
-    // ---------- 8. البلاغات ----------
+    // ---------- 8. البلاغات (الإدارة فقط تقرؤها) ----------
     match /reports/{reportId} {
       allow create: if signedIn()
         && !isBanned()
@@ -212,9 +228,10 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- 9. المحادثات ----------
+    // ---------- 9. المحادثات والرسائل المشفّرة ----------
     match /conversations/{convId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
+
       allow create: if signedIn()
         && !isBanned()
         && request.resource.data.keys().hasOnly(['members', 'createdAt', 'lastMessageAt'])
@@ -227,14 +244,17 @@ service cloud.firestore {
         && !isBlockedBy(otherOf(request.resource.data.members))
         && request.resource.data.createdAt == request.time
         && request.resource.data.lastMessageAt == request.time;
+
       allow update: if signedIn()
         && request.auth.uid in resource.data.members
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt'])
         && request.resource.data.lastMessageAt == request.time;
+
       allow delete: if signedIn() && request.auth.uid in resource.data.members;
 
       match /messages/{msgId} {
         allow read: if signedIn() && request.auth.uid in convMembers(convId);
+
         allow create: if signedIn()
           && !isBanned()
           && request.auth.uid in convMembers(convId)
@@ -247,15 +267,17 @@ service cloud.firestore {
           && validText(request.resource.data.senderKeyId, 8, 64)
           && validText(request.resource.data.recipientKeyId, 8, 64)
           && request.resource.data.createdAt == request.time;
+
         allow update: if false;
         allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
       }
     }
 
-    // ---------- 10. الحلقات والسيرفرات ----------
+    // ---------- 10. الحلقات والسيرفرات (الأدمن فقط يكتب) ----------
     match /episodes/{episodeId} {
       allow read: if true;
       allow write: if isAdmin();
+
       match /servers/{serverId} {
         allow read: if true;
         allow create, update: if isAdmin()
@@ -268,6 +290,90 @@ service cloud.firestore {
       }
     }
 
+    // ---------- 11. التعليقات ----------
+    match /comments/{commentId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly(
+             ['postId', 'authorId', 'authorName', 'authorPhotoURL', 'content', 'createdAt'])
+        && request.resource.data.authorId == request.auth.uid
+        && validText(request.resource.data.authorName, 1, 50)
+        && validText(request.resource.data.content, 1, 500)
+        && request.resource.data.createdAt == request.time
+        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId));
+      allow delete: if signedIn()
+        && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- 12. المكتبة ----------
+    match /library/{itemId} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(
+             ['userId', 'animeId', 'title', 'imageUrl', 'favorite', 'status', 'updatedAt'])
+        && request.resource.data.userId == request.auth.uid
+        && itemId == request.auth.uid + '_' + request.resource.data.animeId
+        && request.resource.data.favorite is bool
+        && request.resource.data.status in ['none', 'watching', 'planned', 'completed', 'dropped']
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ---------- 13. تقييم الحلقات ----------
+    match /episodeRatings/{ratingId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly(['episodeKey', 'userId', 'rating', 'updatedAt'])
+        && request.resource.data.userId == request.auth.uid
+        && ratingId == request.resource.data.episodeKey + '_' + request.auth.uid
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 10
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- 14. الإعلانات والأنمي الخاص ----------
+    match /announcements/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    match /customAnime/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- 15. سجل الأدمن ----------
+    match /adminLogs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.adminUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // ---------- 16. الإشعارات ----------
+    match /notifications/{nid} {
+      allow read: if signedIn() && resource.data.toUid == request.auth.uid;
+      allow create: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly(
+             ['toUid', 'fromUid', 'fromName', 'fromPhotoURL', 'type', 'postId', 'text', 'read', 'createdAt'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid != request.auth.uid
+        && request.resource.data.type in ['like', 'comment', 'follow', 'request']
+        && request.resource.data.read == false
+        && validText(request.resource.data.text, 1, 200)
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn()
+        && resource.data.toUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if signedIn() && resource.data.toUid == request.auth.uid;
+    }
+
+    // أي شيء آخر مرفوض
     match /{document=**} {
       allow read, write: if false;
     }
