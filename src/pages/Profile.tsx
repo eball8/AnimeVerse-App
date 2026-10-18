@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  User, Settings, LogOut, LogIn, UserPlus, Share2, Pencil, Lock, Check, X,
+  User, Settings, LogOut, LogIn, UserPlus, Share2, Pencil, Lock, Check, X, Bookmark, Shield,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -14,7 +14,7 @@ import type { UserProfile } from '../types';
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut, loading, refreshProfile } = useAuth();
+  const { user, profile, signOut, loading, refreshProfile, isAdmin } = useAuth();
   const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
   const [requests, setRequests] = useState<UserProfile[]>([]);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
@@ -81,7 +81,7 @@ const Profile: React.FC = () => {
 
   const handleShare = async () => {
     if (!profile) return;
-    const url = `${window.location.origin}/u/${profile.username}`;
+    const url = `${window.location.origin}/#/user/${user.uid}`;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -207,6 +207,22 @@ const Profile: React.FC = () => {
 
       {/* Menu */}
       <div className="card divide-y divide-white/5">
+        <button
+          onClick={() => navigate('/library')}
+          className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
+        >
+          <Bookmark className="w-5 h-5 text-primary-400" />
+          <span className="text-sm font-bold text-white">مكتبتي</span>
+        </button>
+        {isAdmin && (
+          <button
+            onClick={() => navigate('/admin')}
+            className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
+          >
+            <Shield className="w-5 h-5 text-primary-400" />
+            <span className="text-sm font-bold text-white">لوحة الأدمن</span>
+          </button>
+        )}
         <button
           onClick={() => navigate('/edit-profile')}
           className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
