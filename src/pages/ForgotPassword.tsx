@@ -78,7 +78,7 @@ const ForgotPassword: React.FC = () => {
       } else if (c === 'auth/too-many-requests') {
         setError('محاولات كثيرة. انتظر قليلاً ثم حاول مجدداً.');
       } else {
-        setError('تعذر تسجيل الدخول. تحقق من اتصالك بالإنترنت.');
+        setError('تعذر تسجيل الدخول. (' + (c || 'unknown') + ')');
       }
     } finally {
       setSigningIn(false);
