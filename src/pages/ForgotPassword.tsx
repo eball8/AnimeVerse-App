@@ -1,36 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Loader2, CheckCircle2, RefreshCw, LogIn } from 'lucide-react';
+import { Mail, Loader2, RefreshCw, LogIn } from 'lucide-react';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
 
-type Stage = 'form' | 'sent' | 'done';
+const COOLDOWN_SECONDS = 60;
 
 const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [stage, setStage] = useState<Stage>('form');
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [cooldown, setCooldown] = useState(0);
 
-  const sendLink = async () => {
-    await sendPasswordResetEmail(auth, email);
-  };
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const send = async (isResend: boolean) => {
     setError('');
+    setInfo('');
     setLoading(true);
     try {
-      await sendLink();
-      setStage('sent');
+      await sendPasswordResetEmail(auth, email.trim());
+      setSent(true);
+      setCooldown(COOLDOWN_SECONDS);
+      if (isResend) setInfo('تم إرسال رابط جديد. استخدم آخر رسالة وصلتك فقط.');
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/user-not-found') {
         setError('لا يوجد حساب بهذا البريد.');
       } else if (e.code === 'auth/invalid-email') {
         setError('البريد غير صالح.');
+      } else if (e.code === 'auth/too-many-requests') {
+        setError('محاولات كثيرة. انتظر قليلاً ثم حاول مجدداً.');
       } else {
         setError('حدث خطأ، حاول مرة أخرى.');
       }
@@ -39,22 +46,12 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
-  const handleResend = async () => {
-    setError('');
-    setInfo('');
-    setLoading(true);
-    try {
-      await sendLink();
-      setInfo('تم إرسال رابط جديد إلى بريدك.');
-      setStage('sent');
-    } catch {
-      setError('تعذر إرسال الرابط. حاول بعد قليل.');
-    } finally {
-      setLoading(false);
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    send(false);
   };
 
-  if (stage === 'sent') {
+  if (sent) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-md space-y-6">
@@ -67,9 +64,13 @@ const ForgotPassword: React.FC = () => {
             <p dir="ltr" className="text-sm font-bold text-primary-400 mt-1">{email}</p>
           </div>
 
-          <div className="card p-5 space-y-3 text-center">
+          <div className="card p-5 space-y-2 text-center">
             <p className="text-xs text-slate-300 leading-relaxed">
-              اضغط على الرابط في الرسالة وغيّر كلمة السر، ثم ارجع هنا واضغط <b className="text-white">"لقد تحققت من بريدي"</b>.
+              1) افتح الرابط في الرسالة.
+              <br />
+              2) اكتب كلمة السر الجديدة في الصفحة التي تفتح واضغط حفظ.
+              <br />
+              3) ارجع إلى التطبيق وسجّل الدخول بكلمة السر <b className="text-white">الجديدة</b>.
             </p>
             {info && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">{info}</p>}
             {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
@@ -77,53 +78,25 @@ const ForgotPassword: React.FC = () => {
 
           <div className="space-y-3">
             <button
-              onClick={() => setStage('done')}
-              className="w-full btn-primary py-3 flex items-center justify-center gap-2"
-            >
-              <CheckCircle2 className="w-4 h-4" /> لقد تحققت من بريدي
-            </button>
-
-            <button
-              onClick={handleResend}
-              disabled={loading}
-              className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4" /> إعادة إرسال الرابط</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (stage === 'done') {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-md space-y-6">
-          <div className="text-center">
-            <div className="w-20 h-20 mx-auto rounded-3xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-4">
-              <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-            </div>
-            <h1 className="text-2xl font-black text-white mb-2">جاهز للدخول</h1>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              سجّل دخولك بكلمة السر الجديدة. وإذا لم تغيّرها بعد، أعد إرسال الرابط.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <button
               onClick={() => navigate('/login', { replace: true })}
               className="w-full btn-primary py-3 flex items-center justify-center gap-2"
             >
-              <LogIn className="w-4 h-4" /> تسجيل الدخول
+              <LogIn className="w-4 h-4" /> العودة لتسجيل الدخول
             </button>
 
             <button
-              onClick={handleResend}
-              disabled={loading}
+              onClick={() => send(true)}
+              disabled={loading || cooldown > 0}
               className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4" /> تغيير كلمة السر (إرسال رابط جديد)</>}
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : 'إعادة إرسال الرابط'}
+                </>
+              )}
             </button>
           </div>
         </div>
