@@ -7,6 +7,7 @@ import type { Post } from '../services/postService';
 import { logAdmin } from '../services/adminLog';
 import { timeAgo } from '../utils/timeAgo';
 import CommentsSheet from '../components/CommentsSheet';
+import StoriesBar from '../components/StoriesBar';
 
 const Community: React.FC = () => {
   const { user, isAdmin } = useAuth();
@@ -86,6 +87,8 @@ const Community: React.FC = () => {
         <Users className="w-6 h-6 text-primary-400" />
         <h2 className="text-xl font-black text-white">المجتمع</h2>
       </div>
+
+      <StoriesBar />
 
       {loading ? (
         <div className="py-20 flex justify-center">
