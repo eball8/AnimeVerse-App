@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { checkEmail } from '../utils/emailValidation';
 
 const SignUp: React.FC = () => {
   const navigate = useNavigate();
@@ -24,9 +25,14 @@ const SignUp: React.FC = () => {
       setError('الاسم قصير جداً.');
       return;
     }
+    const emailCheck = checkEmail(email);
+    if (!emailCheck.ok) {
+      setError(emailCheck.message);
+      return;
+    }
     setLoading(true);
     try {
-      await signUpEmail(email, password, displayName.trim());
+      await signUpEmail(email.trim(), password, displayName.trim());
       // ✅ بعد التسجيل → صفحة التأكيد
       navigate('/verify-email');
     } catch (err: unknown) {
