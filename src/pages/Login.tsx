@@ -1,17 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../config/firebase';
+import { getSavedAccounts, removeSavedAccount } from '../utils/savedAccounts';
+import type { SavedAccount } from '../utils/savedAccounts';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { signInEmail, signInGoogle } = useAuth();
+  const { user, loading: authLoading, signInEmail, signInGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState<SavedAccount[]>(getSavedAccounts());
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // إذا كان المستخدم مسجّلاً أصلاً لا نعرض له شاشة الدخول
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const needsVerify = !user.emailVerified && user.providerData[0]?.providerId === 'password';
+    if (!needsVerify) navigate('/', { replace: true });
+  }, [user, authLoading, navigate]);
+
+  const pickAccount = (acc: SavedAccount) => {
+    if (acc.provider === 'google') {
+      handleGoogle();
+    } else {
+      setEmail(acc.email);
+      setPassword('');
+      setTimeout(() => passwordRef.current?.focus(), 50);
+    }
+  };
+
+  const removeAccount = (uid: string) => {
+    removeSavedAccount(uid);
+    setSaved(getSavedAccounts());
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +95,30 @@ const Login: React.FC = () => {
           <p className="text-sm text-slate-400">سجّل دخولك للمتابعة</p>
         </div>
 
+        {saved.length > 0 && (
+          <div className="card p-4 space-y-2">
+            <p className="text-xs font-bold text-slate-300 mb-1">الحسابات المحفوظة</p>
+            {saved.map((acc) => (
+              <div key={acc.uid} className="flex items-center gap-3 p-2 rounded-2xl bg-white/5 border border-white/10">
+                <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0">
+                  <img
+                    src={acc.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc.uid}`}
+                    alt=""
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-primary-500/40 shrink-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-white truncate">{acc.displayName}</span>
+                    <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{acc.email}</span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label="إزالة">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
@@ -76,6 +126,8 @@ const Login: React.FC = () => {
               <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="email"
+                name="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -91,7 +143,10 @@ const Login: React.FC = () => {
             <div className="relative">
               <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
+                ref={passwordRef}
                 type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
