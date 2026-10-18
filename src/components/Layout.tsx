@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Compass, User, Users, Plus } from 'lucide-react';
+import { Home, Compass, User, Users, Plus, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { subscribeNotifications } from '../services/notificationService';
 
 const Layout: React.FC = () => {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeNotifications(user.uid, (items) => {
+      setUnread(items.filter((n) => !n.read).length);
+    });
+  }, [user]);
 
   // تعريف نوع التبويب بشكل صريح لحل مشكلة TypeScript
   type Tab = {
@@ -32,14 +41,28 @@ const Layout: React.FC = () => {
             AnimeVerse
           </h1>
           {profile && (
-            <NavLink to="/profile" className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 hidden sm:block">{profile.displayName}</span>
-              <img
-                src={profile.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.uid}`}
-                alt=""
-                className="w-9 h-9 rounded-full object-cover ring-2 ring-primary-500/40"
-              />
-            </NavLink>
+            <div className="flex items-center gap-2">
+              <NavLink
+                to="/notifications"
+                className="relative p-2 text-slate-300"
+                aria-label="الإشعارات"
+              >
+                <Bell className="w-5 h-5" />
+                {unread > 0 && (
+                  <span className="absolute top-0 right-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </NavLink>
+              <NavLink to="/profile" className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 hidden sm:block">{profile.displayName}</span>
+                <img
+                  src={profile.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.uid}`}
+                  alt=""
+                  className="w-9 h-9 rounded-full object-cover ring-2 ring-primary-500/40"
+                />
+              </NavLink>
+            </div>
           )}
         </div>
       </header>
@@ -52,7 +75,7 @@ const Layout: React.FC = () => {
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-2xl mx-auto grid grid-cols-5 relative">
-          {tabs.map((tab, index) => {
+          {tabs.map((tab) => {
             if (tab.isCenter) {
               return (
                 <div key="center" className="flex justify-center items-center relative -top-4">
