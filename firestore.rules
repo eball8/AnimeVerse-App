@@ -105,7 +105,8 @@ service cloud.firestore {
         && !isBanned()
         && request.resource.data.keys().hasOnly(
              ['authorId', 'authorName', 'authorPhotoURL', 'content',
-              'mediaUrl', 'mediaType', 'likesCount', 'commentsCount', 'createdAt'])
+              'mediaUrl', 'mediaType', 'likesCount', 'commentsCount', 'createdAt',
+              'repostOfId', 'repostOfAuthorId'])
         && validText(request.resource.data.authorName, 1, 50)
         && validText(request.resource.data.content, 0, 2000)
         && request.resource.data.likesCount == 0
@@ -113,6 +114,10 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && (!('authorPhotoURL' in request.resource.data)
             || request.resource.data.authorPhotoURL is string)
+        && (!('repostOfId' in request.resource.data)
+            || validText(request.resource.data.repostOfId, 1, 100))
+        && (!('repostOfAuthorId' in request.resource.data)
+            || validText(request.resource.data.repostOfAuthorId, 1, 100))
         && (!('mediaUrl' in request.resource.data)
             || request.resource.data.mediaUrl == ''
             || request.resource.data.mediaUrl.matches('https://res\\.cloudinary\\.com/.*'))
