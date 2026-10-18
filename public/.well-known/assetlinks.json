@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.animeverse.app",
+      "sha256_cert_fingerprints": [
+        "30:E7:B0:30:96:06:B1:C7:98:BD:E3:C7:5E:57:D2:06:AF:6C:DB:E5:0D:B0:41:B4:3C:80:52:C6:5F:54:C7:1E"
+      ]
+    }
+  }
+]
