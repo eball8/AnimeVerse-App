@@ -106,9 +106,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
     } catch (error: any) {
+      // المستخدم تراجع بنفسه (12501 أو إغلاق النافذة): ليس خطأً
+      const code = String(error?.code ?? '');
+      const msg = String(error?.message ?? '');
+      const cancelled =
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        /12501|12502|cancel/i.test(code + ' ' + msg);
+      if (cancelled) {
+        const e: any = new Error('GOOGLE_SIGNIN_CANCELLED');
+        e.cancelled = true;
+        throw e;
+      }
       console.error('Google sign-in failed:', error);
-      // مؤقت للتشخيص: احذفه بعد حل المشكلة
-      alert('GOOGLE ERROR\nCODE: ' + (error?.code || '') + '\nMSG: ' + (error?.message || JSON.stringify(error)));
       throw error;
     }
   };
@@ -127,27 +137,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(p);
   };
 
-  const resendVerification = async () => {
-    if (!auth.currentUser) throw new Error('no-user');
-    await sendEmailVerification(auth.currentUser);
-  };
-
-  const refreshUser = () => {
-    setUser(auth.currentUser ? { ...auth.currentUser } : null);
-  };
-
-  const isAdmin = profile?.role === 'admin';
-  const isModerator = profile?.role === 'moderator' || isAdmin;
-
-  return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isModerator, signInEmail, signUpEmail, signInGoogle, signOut, refreshProfile, resendVerification, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-};
+  con
