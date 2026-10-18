@@ -1,35 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRight, Play, Star, AlertCircle, Server, Plus, X, Loader2 } from 'lucide-react';
+import { ArrowRight, Play, Server, Plus, X, Loader2 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import EpisodeRating from '../components/EpisodeRating';
 
 const Watch: React.FC = () => {
-  const { animeId, episodeNumber } = useParams<{ animeId: string, episodeNumber: string }>();
+  const { animeId, episodeNumber } = useParams<{ animeId: string; episodeNumber: string }>();
   const navigate = useNavigate();
-  const { user, profile } = useAuth(); // 🔥 استخرجنا profile هنا
-  
-  const [rating, setRating] = useState(0);
-  const [hasVoted, setHasVoted] = useState(false);
+  const { isAdmin } = useAuth();
+
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [newServerName, setNewServerName] = useState('');
   const [newQuality, setNewQuality] = useState('');
   const [newLink, setNewLink] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // 🔥 التحقق من صلاحيات الأدمن بناءً على الدور في قاعدة البيانات (وليس الإيميل)
-  useEffect(() => {
-    if (profile?.role === 'admin') {
-      setIsAdmin(true);
-    } else {
-      setIsAdmin(false);
-    }
-  }, [profile]);
 
   useEffect(() => {
     const fetchServers = async () => {
@@ -39,8 +28,8 @@ const Watch: React.FC = () => {
         const q = query(collection(db, 'episodes', `${animeId}_${episodeNumber}`, 'servers'));
         const snap = await getDocs(q);
         const fetched: any[] = [];
-        snap.forEach((doc) => fetched.push({ id: doc.id, ...doc.data() }));
-        setServers(fetched); // 🔥 إزالة البيانات الوهمية
+        snap.forEach((d) => fetched.push({ id: d.id, ...d.data() }));
+        setServers(fetched);
       } catch (e) {
         console.error(e);
       } finally {
@@ -54,8 +43,8 @@ const Watch: React.FC = () => {
     e.preventDefault();
     if (!animeId || !episodeNumber || !newServerName || !newLink) return;
     setSaving(true);
-    
-    // 🔥 التحقق من صحة الرابط (يجب أن يبدأ بـ https:// أو http://)
+
+    // التحقق من صحة الرابط
     if (!newLink.startsWith('https://') && !newLink.startsWith('http://')) {
       alert('الرابط غير صالح. يجب أن يبدأ بـ https:// أو http://');
       setSaving(false);
@@ -64,27 +53,33 @@ const Watch: React.FC = () => {
 
     try {
       const episodeRef = doc(db, 'episodes', `${animeId}_${episodeNumber}`);
-      // 🔥 تنظيف اسم السيرفر لكي لا يكسر مسار Firestore
-      const serverId = newServerName.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-      
+      // تنظيف اسم السيرفر لكي لا يكسر مسار Firestore
+      const serverId =
+        newServerName.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '') || `s_${Date.now()}`;
+
       await setDoc(doc(episodeRef, 'servers', serverId), {
         name: newServerName,
         quality: newQuality || 'HD',
-        link: newLink
+        link: newLink,
       });
 
-      setServers([...servers, { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink }]);
+      setServers((prev) => [
+        ...prev.filter((s) => s.id !== serverId),
+        { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink },
+      ]);
       setShowModal(false);
-      setNewServerName(''); setNewQuality(''); setNewLink('');
+      setNewServerName('');
+      setNewQuality('');
+      setNewLink('');
     } catch (error: any) {
-      console.error("Firebase Error:", error);
+      console.error('Firebase Error:', error);
       alert('حدث خطأ: ' + (error.message || 'تأكد من الصلاحيات'));
     } finally {
       setSaving(false);
     }
   };
 
-  // وظيفة تشغيل السيرفر (استخدام Intent لفتح EZV Player)
+  // تشغيل السيرفر (استخدام Intent لفتح EZV Player)
   const handlePlayServer = (link: string) => {
     if (!link || link === '#') {
       alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
@@ -107,13 +102,19 @@ const Watch: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-dark-950"><Loader2 className="w-8 h-8 animate-spin text-primary-500" /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-dark-950">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-dark-950 pb-10 relative">
       <div className="sticky top-0 z-40 bg-dark-950/90 backdrop-blur-md px-4 py-3 border-b border-white/10 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300"><ArrowRight className="w-5 h-5" /></button>
+        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300">
+          <ArrowRight className="w-5 h-5" />
+        </button>
         <div>
           <h1 className="text-sm font-black text-white">مشاهدة الأنمي</h1>
           <p className="text-[10px] text-slate-400">الحلقة {episodeNumber}</p>
@@ -134,18 +135,23 @@ const Watch: React.FC = () => {
               <h3 className="text-sm font-black text-white">السيرفرات المتاحة</h3>
             </div>
             {isAdmin && (
-              <button onClick={() => setShowModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30 active:scale-95">
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30 active:scale-95"
+              >
                 <Plus className="w-4 h-4" /> إضافة
               </button>
             )}
           </div>
           {servers.length === 0 ? (
-            <p className="text-center text-xs text-slate-500 py-4">لا توجد سيرفرات مضافة لهذه الحلقة بعد.</p>
+            <p className="text-center text-xs text-slate-500 py-4">
+              لا توجد سيرفرات مضافة لهذه الحلقة بعد.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {servers.map((server) => (
                 <div key={server.id} className="relative group">
-                  <button 
+                  <button
                     onClick={() => handlePlayServer(server.link)}
                     className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
                   >
@@ -158,54 +164,63 @@ const Watch: React.FC = () => {
           )}
         </section>
 
-        <section className="card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-white flex items-center gap-2"><Star className="w-4 h-4 text-yellow-400" /> قيّم هذه الحلقة</h3>
-            <span className="text-xs text-slate-400">0.0/10 من 0 شخص</span> {/* 🔥 إزالة التقييم الثابت */}
-          </div>
-          {!hasVoted ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-400">0</span>
-                <input type="range" min="1" max="10" value={rating || 5} onChange={(e) => setRating(Number(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary-500" />
-                <span className="text-xs font-bold text-slate-400">10</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-primary-400">{rating || 5} / 10</span>
-                <button onClick={() => setHasVoted(true)} className="btn-primary px-4 py-2 text-xs">إرسال التقييم</button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
-              <AlertCircle className="w-4 h-4" /> شكراً لتقييمك! لقد سجلت {rating} نجوم.
-            </div>
-          )}
-        </section>
+        {/* تقييم حقيقي للحلقة */}
+        <EpisodeRating episodeKey={`${animeId}_${episodeNumber}`} />
       </div>
 
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-lg font-black text-white">إضافة سيرفر</h3>
-              <button onClick={() => setShowModal(false)} className="p-1 rounded-lg text-slate-400 hover:bg-white/10"><X className="w-5 h-5" /></button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            
+
             <form onSubmit={handleSaveServer} className="space-y-3">
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم السيرفر</label>
-                <input required type="text" placeholder="مثال: سيرفر MF" value={newServerName} onChange={e => setNewServerName(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+                <input
+                  required
+                  type="text"
+                  placeholder="مثال: سيرفر MF"
+                  value={newServerName}
+                  onChange={(e) => setNewServerName(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+                />
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1">الجودة</label>
-                <input type="text" placeholder="مثال: 1080p" value={newQuality} onChange={e => setNewQuality(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+                <input
+                  type="text"
+                  placeholder="مثال: 1080p"
+                  value={newQuality}
+                  onChange={(e) => setNewQuality(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+                />
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1">الرابط المباشر</label>
-                <input required type="text" placeholder="https://..." value={newLink} onChange={e => setNewLink(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500" dir="ltr" />
+                <input
+                  required
+                  type="text"
+                  placeholder="https://..."
+                  value={newLink}
+                  onChange={(e) => setNewLink(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+                  dir="ltr"
+                />
               </div>
-              
-              <button type="submit" disabled={saving} className="w-full btn-primary py-3 mt-2 flex items-center justify-center gap-2">
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full btn-primary py-3 mt-2 flex items-center justify-center gap-2"
+              >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ السيرفر'}
               </button>
             </form>
