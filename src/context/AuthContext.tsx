@@ -72,18 +72,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fbUpdateProfile(cred.user, { displayName }).catch(console.error);
   };
 
-  // 🔥 استخدام الإضافة الأصلية لجوجل
   const signInGoogle = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
-        // في الهاتف: نستخدم Native Sign-in
-        const result = await FirebaseAuthentication.signInWithGoogle();
+        // 🔥 تمرير الـ Web Client ID صراحةً
+        const result = await FirebaseAuthentication.signInWithGoogle({
+          clientId: '561138099709-9m17h0nkgg7tk901bt58ucsqndh08t6n.apps.googleusercontent.com'
+        });
         if (result.user) {
-           // التطبيق سيستمع تلقائياً لتغير الحالة عبر onIdTokenChanged
            console.log('Google Native Sign-in success:', result.user);
         }
       } else {
-        // في المتصفح: نستخدم Popup
         const { signInWithPopup } = await import('firebase/auth');
         const cred = await signInWithPopup(auth, googleProvider);
         const existing = await getUserProfile(cred.user.uid);
