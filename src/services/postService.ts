@@ -30,8 +30,13 @@ export interface PostComment {
 
 export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>) => {
   try {
+    // Firestore يرفض القيم undefined، فنحذف الحقول الفارغة قبل الإرسال
+    const clean = Object.fromEntries(
+      Object.entries(postData).filter(([, v]) => v !== undefined && v !== '')
+    ) as typeof postData;
     const docRef = await addDoc(collection(db, 'posts'), {
-      ...postData,
+      ...clean,
+      content: postData.content ?? '',
       likesCount: 0,
       commentsCount: 0,
       createdAt: serverTimestamp(),
