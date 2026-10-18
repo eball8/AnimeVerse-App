@@ -1,18 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  User,
-  Settings,
-  LogOut,
-  LogIn,
-  UserPlus,
-  Share2,
+  User, Settings, LogOut, LogIn, UserPlus, Share2, Pencil, Lock, Check, X,
 } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { updateUserProfile } from '../services/userService';
+import {
+  getFollowCounts, subscribeFollowRequests, acceptRequest, rejectRequest,
+} from '../services/followService';
+import type { UserProfile } from '../types';
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut, loading } = useAuth();
+  const { user, profile, signOut, loading, refreshProfile } = useAuth();
+  const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
+  const [requests, setRequests] = useState<UserProfile[]>([]);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    getFollowCounts(user.uid).then(setCounts).catch(console.error);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeFollowRequests(user.uid, async (ids) => {
+      const list = await Promise.all(
+        ids.map(async (id) => {
+          const s = await getDoc(doc(db, 'users', id));
+          return s.exists() ? ({ uid: id, ...s.data() } as UserProfile) : null;
+        })
+      );
+      setRequests(list.filter(Boolean) as UserProfile[]);
+    });
+  }, [user]);
 
   if (loading) {
     return (
@@ -54,6 +77,8 @@ const Profile: React.FC = () => {
     );
   }
 
+  const isPrivate = profile?.accountType === 'private';
+
   const handleShare = async () => {
     if (!profile) return;
     const url = `${window.location.origin}/u/${profile.username}`;
@@ -73,6 +98,39 @@ const Profile: React.FC = () => {
     }
   };
 
+  const togglePrivacy = async () => {
+    if (savingPrivacy) return;
+    setSavingPrivacy(true);
+    try {
+      await updateUserProfile(user.uid, { accountType: isPrivate ? 'public' : 'private' });
+      await refreshProfile();
+    } catch (e) {
+      console.error(e);
+      alert('تعذر تغيير نوع الحساب.');
+    } finally {
+      setSavingPrivacy(false);
+    }
+  };
+
+  const handleAccept = async (followerId: string) => {
+    try {
+      await acceptRequest(followerId, user.uid);
+      setCounts((c) => ({ ...c, followers: c.followers + 1 }));
+    } catch (e) {
+      console.error(e);
+      alert('تعذر قبول الطلب.');
+    }
+  };
+
+  const handleReject = async (followerId: string) => {
+    try {
+      await rejectRequest(followerId, user.uid);
+    } catch (e) {
+      console.error(e);
+      alert('تعذر رفض الطلب.');
+    }
+  };
+
   return (
     <div className="px-4 py-6 space-y-4">
       {/* Profile Card */}
@@ -86,10 +144,7 @@ const Profile: React.FC = () => {
         </button>
 
         <img
-          src={
-            profile?.photoURL ||
-            `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`
-          }
+          src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
           alt=""
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
@@ -102,22 +157,76 @@ const Profile: React.FC = () => {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
-            <div className="text-lg font-black text-white">{profile?.postsCount || 0}</div>
+            <div className="text-lg font-black text-white">{counts.posts}</div>
             <div className="text-[10px] text-slate-500 font-bold">منشور</div>
           </div>
           <div>
-            <div className="text-lg font-black text-white">{profile?.followersCount || 0}</div>
+            <div className="text-lg font-black text-white">{counts.followers}</div>
             <div className="text-[10px] text-slate-500 font-bold">متابع</div>
           </div>
           <div>
-            <div className="text-lg font-black text-white">{profile?.followingCount || 0}</div>
+            <div className="text-lg font-black text-white">{counts.following}</div>
             <div className="text-[10px] text-slate-500 font-bold">يتابع</div>
           </div>
         </div>
       </div>
 
+      {/* طلبات المتابعة */}
+      {requests.length > 0 && (
+        <div className="card p-4 space-y-3">
+          <h3 className="text-sm font-black text-white">طلبات المتابعة ({requests.length})</h3>
+          {requests.map((r) => (
+            <div key={r.uid} className="flex items-center gap-3">
+              <img
+                src={r.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${r.uid}`}
+                alt=""
+                className="w-10 h-10 rounded-full object-cover"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white truncate">{r.displayName}</p>
+                <p className="text-[10px] text-slate-500 truncate">@{r.username}</p>
+              </div>
+              <button
+                onClick={() => handleAccept(r.uid)}
+                className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400"
+                aria-label="قبول"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleReject(r.uid)}
+                className="p-2 rounded-xl bg-red-500/20 text-red-400"
+                aria-label="رفض"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Menu */}
       <div className="card divide-y divide-white/5">
+        <button
+          onClick={() => navigate('/edit-profile')}
+          className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
+        >
+          <Pencil className="w-5 h-5 text-primary-400" />
+          <span className="text-sm font-bold text-white">تعديل الملف الشخصي</span>
+        </button>
+        <button
+          onClick={togglePrivacy}
+          disabled={savingPrivacy}
+          className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition text-right disabled:opacity-50"
+        >
+          <div className="flex items-center gap-3">
+            <Lock className="w-5 h-5 text-primary-400" />
+            <span className="text-sm font-bold text-white">حساب خاص</span>
+          </div>
+          <span className={`text-xs font-bold ${isPrivate ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {isPrivate ? 'مفعّل' : 'متوقف'}
+          </span>
+        </button>
         <button
           onClick={() => navigate('/settings')}
           className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-right"
