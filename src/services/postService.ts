@@ -1,8 +1,9 @@
 import { db } from '../config/firebase';
 import {
   collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where, limit,
-  doc, writeBatch, increment, getDocs, deleteDoc,
+  doc, writeBatch, increment, getDocs, getDoc, deleteDoc, startAfter,
 } from 'firebase/firestore';
+import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
 
 export interface Post {
@@ -13,6 +14,8 @@ export interface Post {
   content: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video';
+  repostOfId?: string;
+  repostOfAuthorId?: string;
   likesCount: number;
   commentsCount: number;
   createdAt: any;
@@ -48,13 +51,70 @@ export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'like
   }
 };
 
-export const subscribeToPosts = (callback: (posts: Post[]) => void) => {
-  const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+// إعادة نشر فيديو/صورة في ملفي (تشير للمنشور الأصلي)
+export const repostPost = async (
+  original: Post,
+  me: { uid: string; displayName: string; photoURL?: string }
+): Promise<string> => {
+  if (!original.id || !original.mediaUrl) throw new Error('NOTHING_TO_REPOST');
+  const id = await createPost({
+    authorId: me.uid,
+    authorName: me.displayName,
+    authorPhotoURL: me.photoURL,
+    content: '',
+    mediaUrl: original.mediaUrl,
+    mediaType: original.mediaType,
+    repostOfId: original.repostOfId || original.id,
+    repostOfAuthorId: original.repostOfAuthorId || original.authorId,
+  });
+  notify(original.authorId, 'like', 'أعاد نشر منشورك', original.id);
+  return id;
+};
+
+// آخر منشورات المجتمع (بحد أقصى لتوفير القراءات)
+export const subscribeToPosts = (callback: (posts: Post[]) => void, max = 20) => {
+  const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(max));
   return onSnapshot(q, (snapshot) => {
     const posts: Post[] = [];
     snapshot.forEach((d) => posts.push({ id: d.id, ...d.data() } as Post));
     callback(posts);
   }, (error) => console.error('Error fetching posts:', error));
+};
+
+export const getPostById = async (id: string): Promise<Post | null> => {
+  const snap = await getDoc(doc(db, 'posts', id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Post) : null;
+};
+
+export interface ReelsPage {
+  items: Post[];
+  cursor: QueryDocumentSnapshot | null;
+  done: boolean;
+}
+
+// خلاصة الريلز: الفيديوهات فقط، صفحة صغيرة في كل مرة
+export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 8): Promise<ReelsPage> => {
+  try {
+    const constraints: QueryConstraint[] = [where('mediaType', '==', 'video'), orderBy('createdAt', 'desc')];
+    if (cursor) constraints.push(startAfter(cursor));
+    constraints.push(limit(size));
+    const snap = await getDocs(query(collection(db, 'posts'), ...constraints));
+    return {
+      items: snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post)),
+      cursor: snap.docs.length ? snap.docs[snap.docs.length - 1] : cursor,
+      done: snap.docs.length < size,
+    };
+  } catch (e: any) {
+    if (e?.code !== 'failed-precondition') throw e;
+    // الفهرس المركّب غير منشأ بعد: افتح الرابط الظاهر في هذا الخطأ داخل Console ثم اضغط Create
+    console.error('Reels index is missing. Open the link inside this error to create it:', e);
+    if (cursor) return { items: [], cursor, done: true };
+    const snap = await getDocs(query(collection(db, 'posts'), where('mediaType', '==', 'video'), limit(30)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
+    const ms = (p: Post) => p.createdAt?.toMillis?.() ?? 0;
+    items.sort((a, b) => ms(b) - ms(a));
+    return { items, cursor: null, done: true };
+  }
 };
 
 export const deletePost = async (postId: string) => {
