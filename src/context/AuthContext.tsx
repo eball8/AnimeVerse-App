@@ -15,6 +15,7 @@ import { auth, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
 import { Capacitor } from '@capacitor/core';
+import { saveAccount } from '../utils/savedAccounts';
 
 interface AuthContextType {
   user: User | null;
@@ -52,6 +53,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
           }
           setProfile(p);
+          saveAccount({
+            uid: fbUser.uid,
+            email: fbUser.email || '',
+            displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
+            photoURL: p.photoURL || fbUser.photoURL || undefined,
+            provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
+          });
         } catch (e) {
           console.error('Profile fetch failed:', e);
           setProfile(null);
