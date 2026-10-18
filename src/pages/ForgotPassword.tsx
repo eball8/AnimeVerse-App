@@ -104,7 +104,7 @@ const ForgotPassword: React.FC = () => {
               <br />
               2) اكتب كلمة السر الجديدة في الصفحة التي تفتح واضغط حفظ.
               <br />
-              3) ارجع إلى هنا واضغط <b className="text-white">"لقد غيّرت كلمة السر"</b>.
+              3) ارجع إلى هنا واضغط <b className="text-white">"لقد تحققت من بريدي"</b>.
             </p>
             {info && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">{info}</p>}
             {error && !confirming && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
@@ -143,28 +143,30 @@ const ForgotPassword: React.FC = () => {
             </form>
           ) : (
             <button
-              onClick={() => { setError(''); setConfirming(true); }}
+              onClick={() => { setError(''); setCooldown(0); setConfirming(true); }}
               className="w-full btn-primary py-3 flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="w-4 h-4" /> لقد غيّرت كلمة السر
+              <CheckCircle2 className="w-4 h-4" /> لقد تحققت من بريدي
             </button>
           )}
 
           <div className="space-y-3">
-            <button
-              onClick={() => send(true)}
-              disabled={loading || cooldown > 0}
-              className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4" />
-                  {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : 'إعادة إرسال الرابط'}
-                </>
-              )}
-            </button>
+            {!confirming && (
+              <button
+                onClick={() => send(true)}
+                disabled={loading || cooldown > 0}
+                className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition disabled:opacity-50"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : 'إعادة إرسال الرابط'}
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={() => navigate('/login', { replace: true })}
               className="w-full py-2 text-slate-400 text-xs font-bold hover:text-white transition"
