@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 const Watch: React.FC = () => {
   const { animeId, episodeNumber } = useParams<{ animeId: string, episodeNumber: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth(); // 🔥 استخرجنا profile هنا
   
   const [rating, setRating] = useState(0);
   const [hasVoted, setHasVoted] = useState(false);
@@ -22,9 +22,14 @@ const Watch: React.FC = () => {
   const [newLink, setNewLink] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // 🔥 التحقق من صلاحيات الأدمن بناءً على الدور في قاعدة البيانات (وليس الإيميل)
   useEffect(() => {
-    if (user?.email === 'eball8361@gmail.com') setIsAdmin(true);
-  }, [user]);
+    if (profile?.role === 'admin') {
+      setIsAdmin(true);
+    } else {
+      setIsAdmin(false);
+    }
+  }, [profile]);
 
   useEffect(() => {
     const fetchServers = async () => {
@@ -35,12 +40,7 @@ const Watch: React.FC = () => {
         const snap = await getDocs(q);
         const fetched: any[] = [];
         snap.forEach((doc) => fetched.push({ id: doc.id, ...doc.data() }));
-        
-        if (fetched.length === 0) {
-          setServers([{ id: '1', name: 'سيرفر MF', quality: '1080p', link: 'https://test.com' }, { id: '2', name: 'سيرفر ST', quality: '720p', link: 'https://test.com' }]);
-        } else {
-          setServers(fetched);
-        }
+        setServers(fetched); // 🔥 إزالة البيانات الوهمية
       } catch (e) {
         console.error(e);
       } finally {
@@ -55,9 +55,17 @@ const Watch: React.FC = () => {
     if (!animeId || !episodeNumber || !newServerName || !newLink) return;
     setSaving(true);
     
+    // 🔥 التحقق من صحة الرابط (يجب أن يبدأ بـ https:// أو http://)
+    if (!newLink.startsWith('https://') && !newLink.startsWith('http://')) {
+      alert('الرابط غير صالح. يجب أن يبدأ بـ https:// أو http://');
+      setSaving(false);
+      return;
+    }
+
     try {
       const episodeRef = doc(db, 'episodes', `${animeId}_${episodeNumber}`);
-      const serverId = newServerName.replace(/\s+/g, '_');
+      // 🔥 تنظيف اسم السيرفر لكي لا يكسر مسار Firestore
+      const serverId = newServerName.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
       
       await setDoc(doc(episodeRef, 'servers', serverId), {
         name: newServerName,
@@ -83,22 +91,16 @@ const Watch: React.FC = () => {
       return;
     }
 
-    // اسم حزمة EZV Player الصحيح
     const packageName = 'com.player.easy';
-    // إنشاء رابط الـ Intent
     const intentUrl = `intent://${link.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=${packageName};end`;
 
     try {
-      // محاولة فتح التطبيق
       window.location.href = intentUrl;
-
-      // خطة بديلة: إذا لم يفتح التطبيق خلال 1.5 ثانية، افتح المتصفح
       setTimeout(() => {
         if (document.visibilityState === 'visible') {
           window.open(link, '_blank');
         }
       }, 1500);
-      
     } catch (e) {
       window.open(link, '_blank');
     }
@@ -137,25 +139,29 @@ const Watch: React.FC = () => {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {servers.map((server) => (
-              <div key={server.id} className="relative group">
-                <button 
-                  onClick={() => handlePlayServer(server.link)}
-                  className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
-                >
-                  <span className="text-xs font-bold text-white mb-1">{server.name}</span>
-                  <span className="text-[10px] text-slate-400">{server.quality}</span>
-                </button>
-              </div>
-            ))}
-          </div>
+          {servers.length === 0 ? (
+            <p className="text-center text-xs text-slate-500 py-4">لا توجد سيرفرات مضافة لهذه الحلقة بعد.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {servers.map((server) => (
+                <div key={server.id} className="relative group">
+                  <button 
+                    onClick={() => handlePlayServer(server.link)}
+                    className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
+                  >
+                    <span className="text-xs font-bold text-white mb-1">{server.name}</span>
+                    <span className="text-[10px] text-slate-400">{server.quality}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="card p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-white flex items-center gap-2"><Star className="w-4 h-4 text-yellow-400" /> قيّم هذه الحلقة</h3>
-            <span className="text-xs text-slate-400">8.99/10 من 576 شخص</span>
+            <span className="text-xs text-slate-400">0.0/10 من 0 شخص</span> {/* 🔥 إزالة التقييم الثابت */}
           </div>
           {!hasVoted ? (
             <>
