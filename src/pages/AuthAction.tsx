@@ -57,10 +57,12 @@ const AuthAction: React.FC = () => {
       const e = err as { code?: string };
       if (e.code === 'auth/weak-password') {
         setErrorMessage('كلمة المرور ضعيفة جداً، يجب أن تكون 6 أحرف على الأقل.');
-      } else if (e.code === 'auth/expired-action-code') {
-        setErrorMessage('انتهت صلاحية الرابط. اطلب رابطاً جديداً.');
+      } else if (e.code === 'auth/password-does-not-meet-requirements') {
+        setErrorMessage('كلمة السر لا تحقق الشروط (جرّب حروف كبيرة وصغيرة وأرقام ورمز، 8 أحرف أو أكثر).');
+      } else if (e.code === 'auth/expired-action-code' || e.code === 'auth/invalid-action-code') {
+        setErrorMessage('انتهت صلاحية الرابط أو استُخدم من قبل. اطلب رابطاً جديداً.');
       } else {
-        setErrorMessage('حدث خطأ، حاول مجدداً.');
+        setErrorMessage('حدث خطأ، حاول مجدداً. (' + (e.code || 'unknown') + ')');
       }
     } finally {
       setBusy(false);
@@ -103,7 +105,7 @@ const AuthAction: React.FC = () => {
         <form onSubmit={handleResetPassword} className="w-full max-w-md card p-6 space-y-4">
           <h1 className="text-xl font-black text-white text-center mb-2">كلمة مرور جديدة</h1>
           <p className="text-xs text-slate-400 text-center mb-4">أدخل كلمة المرور الجديدة لحسابك.</p>
-          
+
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">كلمة المرور الجديدة</label>
             <div className="relative">
@@ -129,7 +131,7 @@ const AuthAction: React.FC = () => {
           </div>
 
           {errorMessage && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{errorMessage}</p>}
-          
+
           <button type="submit" disabled={busy} className="w-full btn-primary py-3 disabled:opacity-50">
             {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'حفظ كلمة المرور'}
           </button>
