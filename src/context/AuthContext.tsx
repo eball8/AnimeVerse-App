@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   User,
+  GoogleAuthProvider,
+  signInWithCredential,
   onIdTokenChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -75,11 +77,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInGoogle = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
-        // 🔥 تم إزالة clientId لأن المكتبة تقرأه من ملف google-services.json تلقائياً
-        const result = await FirebaseAuthentication.signInWithGoogle();
-        if (result.user) {
-           console.log('Google Native Sign-in success:', result.user);
-        }
+        const result = await FirebaseAuthentication.signInWithGoogle({
+          skipNativeAuth: true,
+        });
+        const idToken = result.credential?.idToken;
+        if (!idToken) throw new Error('NO_ID_TOKEN');
+        const cred = GoogleAuthProvider.credential(idToken);
+        await signInWithCredential(auth, cred);
       } else {
         const { signInWithPopup } = await import('firebase/auth');
         const cred = await signInWithPopup(auth, googleProvider);
@@ -92,8 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google sign-in failed:', error);
+      // مؤقت للتشخيص: احذفه بعد حل المشكلة
+      alert('GOOGLE ERROR\nCODE: ' + (error?.code || '') + '\nMSG: ' + (error?.message || JSON.stringify(error)));
       throw error;
     }
   };
