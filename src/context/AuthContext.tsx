@@ -34,6 +34,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// نحفظ آخر بروفايل على الجهاز ليفتح التطبيق فوراً بدون انتظار Firestore
+const PROFILE_CACHE_KEY = 'av_profile_cache';
+
+const readCachedProfile = (uid: string): UserProfile | null => {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UserProfile;
+    return parsed && parsed.uid === uid ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedProfile = (p: UserProfile | null) => {
+  try {
+    if (p) localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(p));
+    else localStorage.removeItem(PROFILE_CACHE_KEY);
+  } catch {}
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -42,30 +63,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsub = onIdTokenChanged(auth, async (fbUser) => {
       setUser(fbUser);
-      if (fbUser) {
-        try {
-          let p = await getUserProfile(fbUser.uid);
-          if (!p) {
-            p = await createUserProfile(fbUser.uid, {
-              email: fbUser.email || undefined,
-              displayName: fbUser.displayName || 'مستخدم AnimeVerse',
-              photoURL: fbUser.photoURL || undefined,
-            });
-          }
-          setProfile(p);
-          saveAccount({
-            uid: fbUser.uid,
-            email: fbUser.email || '',
-            displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
-            photoURL: p.photoURL || fbUser.photoURL || undefined,
-            provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
-          });
-        } catch (e) {
-          console.error('Profile fetch failed:', e);
-          setProfile(null);
-        }
-      } else {
+
+      if (!fbUser) {
         setProfile(null);
+        writeCachedProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      // 1) اعرض البروفايل المحفوظ فوراً
+      const cached = readCachedProfile(fbUser.uid);
+      if (cached) {
+        setProfile(cached);
+        setLoading(false);
+      }
+
+      // 2) حدّثه من Firestore بالخلفية
+      try {
+        let p = await getUserProfile(fbUser.uid);
+        if (!p) {
+          p = await createUserProfile(fbUser.uid, {
+            email: fbUser.email || undefined,
+            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+            photoURL: fbUser.photoURL || undefined,
+          });
+        }
+        setProfile(p);
+        writeCachedProfile(p);
+        saveAccount({
+          uid: fbUser.uid,
+          email: fbUser.email || '',
+          displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
+          photoURL: p.photoURL || fbUser.photoURL || undefined,
+          provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
+        });
+      } catch (e) {
+        console.error('Profile fetch failed:', e);
+        if (!cached) setProfile(null);
       }
       setLoading(false);
     });
@@ -129,12 +163,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     await fbSignOut(auth);
     setProfile(null);
+    writeCachedProfile(null);
   };
 
   const refreshProfile = async () => {
     if (!user) return;
     const p = await getUserProfile(user.uid);
     setProfile(p);
+    writeCachedProfile(p);
   };
 
   const resendVerification = async () => {
@@ -158,6 +194,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) throw new Error('useAuth must be used within AuthContext');
   return ctx;
 };
