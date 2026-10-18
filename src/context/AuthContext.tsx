@@ -79,7 +79,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (Capacitor.isNativePlatform()) {
         const result = await FirebaseAuthentication.signInWithGoogle({
           skipNativeAuth: true,
-        });
+          useCredentialManager: false,
+        } as any);
         const idToken = result.credential?.idToken;
         if (!idToken) throw new Error('NO_ID_TOKEN');
         const cred = GoogleAuthProvider.credential(idToken);
