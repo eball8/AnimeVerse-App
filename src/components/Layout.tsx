@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Home, Compass, User, Users, Plus, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { subscribeNotifications } from '../services/notificationService';
+import Avatar from './Avatar';
 
 const Layout: React.FC = () => {
   const { user, profile } = useAuth();
@@ -16,7 +17,6 @@ const Layout: React.FC = () => {
     });
   }, [user]);
 
-  // تعريف نوع التبويب بشكل صريح لحل مشكلة TypeScript
   type Tab = {
     to?: string;
     icon?: any;
@@ -27,7 +27,7 @@ const Layout: React.FC = () => {
   const tabs: Tab[] = [
     { to: '/', icon: Home, label: 'الرئيسية' },
     { to: '/explore', icon: Compass, label: 'استكشاف' },
-    { isCenter: true }, // زر المنتصف
+    { isCenter: true },
     { to: '/community', icon: Users, label: 'المجتمع' },
     { to: '/profile', icon: User, label: 'حسابي' },
   ];
@@ -56,9 +56,10 @@ const Layout: React.FC = () => {
               </NavLink>
               <NavLink to="/profile" className="flex items-center gap-2">
                 <span className="text-xs text-slate-400 hidden sm:block">{profile.displayName}</span>
-                <img
-                  src={profile.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.uid}`}
-                  alt=""
+                <Avatar
+                  src={profile.photoURL}
+                  seed={profile.uid}
+                  name={profile.displayName}
                   className="w-9 h-9 rounded-full object-cover ring-2 ring-primary-500/40"
                 />
               </NavLink>
