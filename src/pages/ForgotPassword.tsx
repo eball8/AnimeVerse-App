@@ -4,6 +4,7 @@ import { Mail, Lock, Eye, EyeOff, Loader2, RefreshCw, LogIn, CheckCircle2 } from
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { checkEmail } from '../utils/emailValidation';
 
 const COOLDOWN_SECONDS = 60;
 
@@ -31,6 +32,13 @@ const ForgotPassword: React.FC = () => {
   const send = async (isResend: boolean) => {
     setError('');
     setInfo('');
+
+    const emailCheck = checkEmail(email);
+    if (!emailCheck.ok) {
+      setError(emailCheck.message);
+      return;
+    }
+
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, email.trim());
