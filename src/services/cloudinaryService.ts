@@ -46,3 +46,31 @@ export const uploadVideoToCloudinary = (
     xhr.send(formData);
   });
 };
+
+// رفع ملف مشفّر (الرسائل الصوتية). يُرفع كملف raw ولا يمكن لأحد سماعه بدون المفتاح
+export const uploadEncryptedBlob = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (blob.size > 8 * 1024 * 1024) {
+      reject(new Error('الرسالة الصوتية كبيرة جداً.'));
+      return;
+    }
+    const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
+    const formData = new FormData();
+    formData.append('file', blob, 'voice.bin');
+    formData.append('upload_preset', UPLOAD_PRESET);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) resolve(res.secure_url);
+        else reject(new Error(res?.error?.message || 'فشل رفع الصوت.'));
+      } catch {
+        reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
+      }
+    };
+    xhr.onerror = () => reject(new Error('حدث خطأ في الشبكة أثناء الرفع.'));
+    xhr.send(formData);
+  });
+};
