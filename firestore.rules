@@ -46,7 +46,7 @@ service cloud.firestore {
         && validText(request.resource.data.displayName, 1, 50)
         && validText(request.resource.data.username, 3, 30);
 
-      allow update: if isAdmin() || (isOwner(uid)
+      allow update: if isOwner(uid)
         && !request.resource.data.diff(resource.data).affectedKeys()
              .hasAny(['role', 'isVerified', 'isBanned',
                       'followersCount', 'followingCount', 'postsCount', 'createdAt'])
@@ -55,7 +55,7 @@ service cloud.firestore {
         && (!('bio' in request.resource.data)
             || validText(request.resource.data.bio, 0, 150))
         && (!('accountType' in request.resource.data)
-            || request.resource.data.accountType in ['public', 'private']));
+            || request.resource.data.accountType in ['public', 'private']);
 
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -130,10 +130,32 @@ service cloud.firestore {
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount'])
             && request.resource.data.likesCount >= 0
             && math.abs(request.resource.data.likesCount - resource.data.likesCount) == 1)
-        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentsCount'])
-            && request.resource.data.commentsCount >= 0
-            && math.abs(request.resource.data.commentsCount - resource.data.commentsCount) == 1)
       );
+
+      allow delete: if signedIn()
+        && (request.auth.uid == resource.data.authorId || isAdmin());
+    }
+
+    // ---------- 4b. القصص ----------
+    match /stories/{storyId} {
+      allow read: if signedIn();
+
+      allow create: if isOwner(request.resource.data.authorId)
+        && !isBanned()
+        && request.resource.data.keys().hasOnly(
+             ['authorId', 'authorName', 'authorPhotoURL', 'mediaUrl',
+              'mediaType', 'caption', 'createdAt'])
+        && validText(request.resource.data.authorName, 1, 50)
+        && request.resource.data.mediaUrl is string
+        && request.resource.data.mediaUrl.matches('https://res\\.cloudinary\\.com/.*')
+        && request.resource.data.mediaType in ['image', 'video']
+        && (!('caption' in request.resource.data)
+            || validText(request.resource.data.caption, 0, 200))
+        && (!('authorPhotoURL' in request.resource.data)
+            || request.resource.data.authorPhotoURL is string)
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if false;
 
       allow delete: if signedIn()
         && (request.auth.uid == resource.data.authorId || isAdmin());
@@ -141,14 +163,14 @@ service cloud.firestore {
 
     // ---------- 5. الإعجابات ----------
     match /likes/{likeId} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn()
         && !isBanned()
         && request.resource.data.keys().hasOnly(['postId', 'userId', 'createdAt'])
         && request.resource.data.userId == request.auth.uid
         && likeId == request.resource.data.postId + '_' + request.auth.uid
         && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId));
-      allow delete: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
     // ---------- 6. المتابعة (المقبولة فقط) ----------
@@ -288,89 +310,6 @@ service cloud.firestore {
               || validText(request.resource.data.quality, 1, 20));
         allow delete: if isAdmin();
       }
-    }
-
-    // ---------- 11. التعليقات ----------
-    match /comments/{commentId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && !isBanned()
-        && request.resource.data.keys().hasOnly(
-             ['postId', 'authorId', 'authorName', 'authorPhotoURL', 'content', 'createdAt'])
-        && request.resource.data.authorId == request.auth.uid
-        && validText(request.resource.data.authorName, 1, 50)
-        && validText(request.resource.data.content, 1, 500)
-        && request.resource.data.createdAt == request.time
-        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId));
-      allow delete: if signedIn()
-        && (resource.data.authorId == request.auth.uid || isAdmin());
-    }
-
-    // ---------- 12. المكتبة ----------
-    match /library/{itemId} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create, update: if signedIn()
-        && request.resource.data.keys().hasOnly(
-             ['userId', 'animeId', 'title', 'imageUrl', 'favorite', 'status', 'updatedAt'])
-        && request.resource.data.userId == request.auth.uid
-        && itemId == request.auth.uid + '_' + request.resource.data.animeId
-        && request.resource.data.favorite is bool
-        && request.resource.data.status in ['none', 'watching', 'planned', 'completed', 'dropped']
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
-    }
-
-    // ---------- 13. تقييم الحلقات ----------
-    match /episodeRatings/{ratingId} {
-      allow read: if signedIn();
-      allow create, update: if signedIn()
-        && !isBanned()
-        && request.resource.data.keys().hasOnly(['episodeKey', 'userId', 'rating', 'updatedAt'])
-        && request.resource.data.userId == request.auth.uid
-        && ratingId == request.resource.data.episodeKey + '_' + request.auth.uid
-        && request.resource.data.rating is int
-        && request.resource.data.rating >= 1
-        && request.resource.data.rating <= 10
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isAdmin();
-    }
-
-    // ---------- 14. الإعلانات والأنمي الخاص ----------
-    match /announcements/{id} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
-    }
-    match /customAnime/{id} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
-    }
-
-    // ---------- 15. سجل الأدمن ----------
-    match /adminLogs/{id} {
-      allow read: if isAdmin();
-      allow create: if isAdmin()
-        && request.resource.data.adminUid == request.auth.uid
-        && request.resource.data.createdAt == request.time;
-      allow update, delete: if false;
-    }
-
-    // ---------- 16. الإشعارات ----------
-    match /notifications/{nid} {
-      allow read: if signedIn() && resource.data.toUid == request.auth.uid;
-      allow create: if signedIn()
-        && !isBanned()
-        && request.resource.data.keys().hasOnly(
-             ['toUid', 'fromUid', 'fromName', 'fromPhotoURL', 'type', 'postId', 'text', 'read', 'createdAt'])
-        && request.resource.data.fromUid == request.auth.uid
-        && request.resource.data.toUid != request.auth.uid
-        && request.resource.data.type in ['like', 'comment', 'follow', 'request']
-        && request.resource.data.read == false
-        && validText(request.resource.data.text, 1, 200)
-        && request.resource.data.createdAt == request.time;
-      allow update: if signedIn()
-        && resource.data.toUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow delete: if signedIn() && resource.data.toUid == request.auth.uid;
     }
 
     // أي شيء آخر مرفوض
