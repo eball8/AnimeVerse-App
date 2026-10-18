@@ -137,4 +137,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(p);
   };
 
-  con
+  const resendVerification = async () => {
+    if (!auth.currentUser) throw new Error('no-user');
+    await sendEmailVerification(auth.currentUser);
+  };
+
+  const refreshUser = () => {
+    setUser(auth.currentUser ? { ...auth.currentUser } : null);
+  };
+
+  const isAdmin = profile?.role === 'admin';
+  const isModerator = profile?.role === 'moderator' || isAdmin;
+
+  return (
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isModerator, signInEmail, signUpEmail, signInGoogle, signOut, refreshProfile, resendVerification, refreshUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+};
