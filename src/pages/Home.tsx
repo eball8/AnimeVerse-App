@@ -8,44 +8,83 @@ import { listCustomAnime } from '../services/customAnimeService';
 import AnimeCard from '../components/AnimeCard';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 
+interface SectionProps {
+  title: string;
+  icon: React.ReactNode;
+  to: string;
+  items: Anime[] | null;
+}
+
+const Section: React.FC<SectionProps> = ({ title, icon, to, items }) => (
+  <section>
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h3 className="text-lg font-black text-white">{title}</h3>
+      </div>
+      <Link to={to} className="text-xs text-primary-400 font-bold">
+        عرض الكل
+      </Link>
+    </div>
+
+    {items === null ? (
+      <div className="py-10 flex justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {items.map((anime) => (
+          <AnimeCard key={String(anime.mal_id)} anime={anime} />
+        ))}
+      </div>
+    )}
+  </section>
+);
+
 const Home: React.FC = () => {
   const { user, profile, loading: authLoading } = useAuth();
 
-  const [topAnime, setTopAnime] = useState<Anime[]>([]);
-  const [seasonAnime, setSeasonAnime] = useState<Anime[]>([]);
+  const [topAnime, setTopAnime] = useState<Anime[] | null>(null);
+  const [seasonAnime, setSeasonAnime] = useState<Anime[] | null>(null);
   const [customAnime, setCustomAnime] = useState<Anime[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
-  const loadData = () => {
+  useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError('');
+    setTopAnime(null);
+    setSeasonAnime(null);
 
-    Promise.allSettled([getTopAnime(1, 10), getSeasonNow(10), listCustomAnime(10)])
-      .then((results) => {
-        if (cancelled) return;
-        const [top, season, custom] = results;
-        if (top.status === 'fulfilled') setTopAnime(top.value);
-        if (season.status === 'fulfilled') setSeasonAnime(season.value);
-        if (custom.status === 'fulfilled') setCustomAnime(custom.value);
-
-        if (top.status === 'rejected' && season.status === 'rejected') {
-          setError('فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.');
-        }
+    getTopAnime(1, 10)
+      .then((d) => {
+        if (!cancelled) setTopAnime(d);
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) setTopAnime([]);
       });
+
+    getSeasonNow(10)
+      .then((d) => {
+        if (!cancelled) setSeasonAnime(d);
+      })
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) setSeasonAnime([]);
+      });
+
+    listCustomAnime(10)
+      .then((d) => {
+        if (!cancelled) setCustomAnime(d);
+      })
+      .catch((e) => console.error(e));
 
     return () => {
       cancelled = true;
     };
-  };
+  }, [attempt]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const failed =
+    topAnime !== null && seasonAnime !== null && topAnime.length === 0 && seasonAnime.length === 0;
 
   if (authLoading) {
     return (
@@ -88,77 +127,41 @@ const Home: React.FC = () => {
         )}
       </div>
 
-      {error ? (
+      {failed ? (
         <div className="card p-6 text-center space-y-4">
           <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
-          <p className="text-sm text-slate-300">{error}</p>
-          <button onClick={loadData} className="btn-primary px-6 py-2 inline-flex items-center gap-2">
+          <p className="text-sm text-slate-300">فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.</p>
+          <button
+            onClick={() => setAttempt((a) => a + 1)}
+            className="btn-primary px-6 py-2 inline-flex items-center gap-2"
+          >
             <RefreshCw className="w-4 h-4" /> إعادة المحاولة
           </button>
         </div>
       ) : (
         <>
           {customAnime.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <Film className="w-5 h-5 text-primary-400" />
-                <h3 className="text-lg font-black text-white">حصرياً على AnimeVerse</h3>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {customAnime.map((anime) => (
-                  <AnimeCard key={String(anime.mal_id)} anime={anime} />
-                ))}
-              </div>
-            </section>
+            <Section
+              title="حصرياً على AnimeVerse"
+              icon={<Film className="w-5 h-5 text-primary-400" />}
+              to="/list/custom"
+              items={customAnime}
+            />
           )}
 
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-accent-400" />
-                <h3 className="text-lg font-black text-white">الأكثر رواجاً</h3>
-              </div>
-              <Link to="/explore" className="text-xs text-primary-400 font-bold">
-                عرض الكل
-              </Link>
-            </div>
+          <Section
+            title="الأكثر رواجاً"
+            icon={<Zap className="w-5 h-5 text-accent-400" />}
+            to="/list/top"
+            items={topAnime}
+          />
 
-            {loading ? (
-              <div className="py-10 flex justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {topAnime.map((anime) => (
-                  <AnimeCard key={anime.mal_id} anime={anime} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary-400" />
-                <h3 className="text-lg font-black text-white">يُعرض حالياً</h3>
-              </div>
-              <Link to="/explore" className="text-xs text-primary-400 font-bold">
-                عرض الكل
-              </Link>
-            </div>
-
-            {loading ? (
-              <div className="py-10 flex justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {seasonAnime.map((anime) => (
-                  <AnimeCard key={anime.mal_id} anime={anime} />
-                ))}
-              </div>
-            )}
-          </section>
+          <Section
+            title="يُعرض حالياً"
+            icon={<Zap className="w-5 h-5 text-primary-400" />}
+            to="/list/season"
+            items={seasonAnime}
+          />
         </>
       )}
     </div>
