@@ -43,7 +43,6 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # 🔥 تم إضافة إضافة جوجل الأصلية هنا
       - name: Install Capacitor & Sync
         run: |
           npm install @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0 @capacitor/browser@^7.0.0 @capacitor-firebase/authentication@^7.0.0
@@ -51,7 +50,6 @@ jobs:
           npx cap sync
           npx cap copy android
 
-      # 🔥 نسخ ملف google-services.json إلى مجلد الأندرويد
       - name: Copy Google Services JSON
         run: |
           cp android-config/google-services.json android/app/google-services.json
@@ -87,6 +85,17 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
+
+      - name: Diagnose Google Sign-In
+        if: always()
+        run: |
+          echo "===== APK SIGNING CERTIFICATE ====="
+          APKSIGNER=$(ls -d $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          $APKSIGNER verify --print-certs android/app/build/outputs/apk/release/app-release.apk | grep -i "digest" || echo "APK not found"
+          echo "===== default_web_client_id generated? ====="
+          grep -rn "default_web_client_id" android/app/build/generated/res --include=values.xml || echo "NOT FOUND - google-services plugin NOT applied"
+          echo "===== google-services in gradle files ====="
+          grep -n "google-services" android/app/build.gradle android/build.gradle || echo "NO REFERENCE"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
