@@ -16,6 +16,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import Settings from './pages/Settings';
 import AuthAction from './pages/AuthAction';
 import AnimeDetail from './pages/AnimeDetail';
+import AnimeList from './pages/AnimeList';
 import Watch from './pages/Watch';
 import Community from './pages/Community';
 import CreatePost from './pages/CreatePost';
@@ -63,6 +64,7 @@ const App: React.FC = () => {
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Home />} />
               <Route path="explore" element={<Explore />} />
+              <Route path="list/:kind" element={<AnimeList />} />
               <Route path="search" element={<Search />} />
               <Route path="community" element={<Community />} />
               <Route path="messages" element={<Messages />} />
