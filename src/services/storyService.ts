@@ -1,7 +1,7 @@
-import { db } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 import {
   collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
-  doc, deleteDoc, Timestamp,
+  doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 
 export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -45,6 +45,21 @@ export const createStory = async (data: NewStory) => {
 
 export const deleteStory = async (storyId: string) => {
   await deleteDoc(doc(db, 'stories', storyId));
+  // تنظيف سجلات المشاهدة (يستطيع صاحب القصة حذفها فقط، وفشل الحذف لا يمنع حذف القصة)
+  try {
+    const me = auth.currentUser?.uid;
+    if (!me) return;
+    const snap = await getDocs(
+      query(collection(db, 'storyViews'), where('storyId', '==', storyId), where('authorId', '==', me))
+    );
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error('story views cleanup failed:', e);
+  }
 };
 
 // يعيد وقت إنشاء القصة بالميلي ثانية (createdAt يكون null لحظة الإرسال المحلي)
@@ -122,4 +137,77 @@ export const hasSeenAll = (group: StoryGroup): boolean => {
   const last = group.stories[group.stories.length - 1];
   if (!last) return true;
   return (readSeen()[group.authorId] || 0) >= storyMillis(last);
+};
+
+// ---------- مشاهدات القصص والتفاعل ----------
+// وثيقة واحدة لكل مشاهد: storyViews/{storyId}_{viewerId}
+export interface StoryView {
+  id: string;
+  storyId: string;
+  authorId: string;
+  viewerId: string;
+  liked: boolean;
+  reply?: string;
+  createdAt: any;
+  updatedAt?: any;
+}
+
+export interface StoryViewRecord {
+  liked: boolean;
+  reply?: string;
+}
+
+const viewRef = (storyId: string, viewerId: string) => doc(db, 'storyViews', `${storyId}_${viewerId}`);
+
+// يسجّل مشاهدة المستخدم للقصة مرة واحدة فقط، ويعيد حالته الحالية (إعجاب/رد سابق)
+export const recordStoryView = async (story: Story, viewerId: string): Promise<StoryViewRecord> => {
+  if (story.authorId === viewerId) return { liked: false };
+  const ref = viewRef(story.id, viewerId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const d = snap.data() as any;
+    return { liked: !!d.liked, reply: typeof d.reply === 'string' ? d.reply : undefined };
+  }
+  await setDoc(ref, {
+    storyId: story.id,
+    authorId: story.authorId,
+    viewerId,
+    liked: false,
+    createdAt: serverTimestamp(),
+  });
+  return { liked: false };
+};
+
+export const setStoryLiked = async (story: Story, viewerId: string, liked: boolean): Promise<void> => {
+  await updateDoc(viewRef(story.id, viewerId), { liked, updatedAt: serverTimestamp() });
+};
+
+// يحفظ آخر رد للمشاهد (يستبدل الرد السابق). الرد ظاهر لصاحب القصة والمشاهد فقط.
+export const sendStoryReply = async (story: Story, viewerId: string, text: string): Promise<void> => {
+  const reply = text.trim().slice(0, 200);
+  if (!reply) return;
+  await updateDoc(viewRef(story.id, viewerId), { reply, updatedAt: serverTimestamp() });
+};
+
+// قائمة المشاهدين لصاحب القصة (الشرط الثاني ضروري لتقبله قواعد Firestore)
+export const subscribeStoryViews = (
+  story: Pick<Story, 'id' | 'authorId'>,
+  callback: (views: StoryView[]) => void,
+  onError?: (e: unknown) => void
+) => {
+  const q = query(
+    collection(db, 'storyViews'),
+    where('storyId', '==', story.id),
+    where('authorId', '==', story.authorId)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as StoryView));
+      const ms = (v: StoryView) => v.createdAt?.toMillis?.() ?? Date.now();
+      items.sort((a, b) => ms(b) - ms(a));
+      callback(items);
+    },
+    onError
+  );
 };
