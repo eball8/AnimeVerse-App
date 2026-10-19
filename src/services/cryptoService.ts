@@ -30,9 +30,7 @@ export interface LocalKey {
   keyId: string;
   pub: string;
   privateKey: CryptoKey;
-  // المفتاح الخاص (pkcs8 بصيغة Base64) يبقى مؤقتاً حتى يختار المستخدم كود PIN ثم يُحذف.
   pendingPkcs8?: string;
-  // حقل قديم (كود الاسترجاع العشوائي السابق) يُستخدم فقط لترحيل الحسابات القديمة.
   pendingCode?: string;
 }
 
@@ -65,8 +63,6 @@ const putLocalKey = async (rec: LocalKey): Promise<void> => {
 
 // ---------- كود الأمان PIN ----------
 export const PIN_LENGTH = 6;
-// الكود القديم العشوائي كان يستخدم 250000 تكرار، وكود PIN الجديد يستخدم عدداً مختلفاً.
-// نستفيد من هذا الفرق لمعرفة نوع النسخة الاحتياطية دون تغيير قواعد Firestore.
 export const PIN_ITERATIONS = 600000;
 
 export const sanitizePin = (v: string): string => v.replace(/\D/g, '').slice(0, PIN_LENGTH);
@@ -101,14 +97,11 @@ const keyIdOf = async (pubRaw: Uint8Array): Promise<string> => {
     .join('');
 };
 
-// ---------- محاولات الإدخال الخاطئة (حماية على مستوى الجهاز فقط) ----------
+// ---------- محاولات الإدخال الخاطئة ----------
 const FAIL_KEY = (uid: string) => `av_pin_fail_${uid}`;
 const FREE_ATTEMPTS = 5;
 
-interface FailState {
-  n: number;
-  until: number;
-}
+interface FailState { n: number; until: number; }
 
 const readFails = (uid: string): FailState => {
   try {
@@ -117,9 +110,7 @@ const readFails = (uid: string): FailState => {
       const p = JSON.parse(raw);
       if (typeof p.n === 'number' && typeof p.until === 'number') return p;
     }
-  } catch {
-    // نتجاهل أخطاء التخزين
-  }
+  } catch {}
   return { n: 0, until: 0 };
 };
 
@@ -127,15 +118,10 @@ const writeFails = (uid: string, s: FailState): void => {
   try {
     if (s.n === 0) localStorage.removeItem(FAIL_KEY(uid));
     else localStorage.setItem(FAIL_KEY(uid), JSON.stringify(s));
-  } catch {
-    // نتجاهل أخطاء التخزين
-  }
+  } catch {}
 };
 
-export interface PinLockInfo {
-  lockedSeconds: number;
-  attemptsLeft: number;
-}
+export interface PinLockInfo { lockedSeconds: number; attemptsLeft: number; }
 
 export const getPinLock = (uid: string): PinLockInfo => {
   const s = readFails(uid);
@@ -148,7 +134,7 @@ const registerFail = (uid: string): void => {
   const n = s.n + 1;
   let until = s.until;
   if (n % FREE_ATTEMPTS === 0) {
-    const round = n / FREE_ATTEMPTS; // 1,2,3...
+    const round = n / FREE_ATTEMPTS;
     const seconds = Math.min(30 * 2 ** (round - 1), 900);
     until = Date.now() + seconds * 1000;
   }
@@ -164,54 +150,26 @@ const writeBackup = async (uid: string, keyId: string, pkcs8: BufferSource, pin:
   const bk = await deriveBackupKey(pin, salt, PIN_ITERATIONS);
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, bk, pkcs8);
   await setDoc(doc(db, 'keyBackups', uid), {
-    keyId,
-    salt: toB64(salt),
-    iv: toB64(iv),
-    ciphertext: toB64(ct),
-    iterations: PIN_ITERATIONS,
-    updatedAt: serverTimestamp(),
+    keyId, salt: toB64(salt), iv: toB64(iv), ciphertext: toB64(ct), iterations: PIN_ITERATIONS, updatedAt: serverTimestamp(),
   });
 };
 
-// ينشئ زوج مفاتيح جديداً وينشر المفتاح العام فقط. لا توجد نسخة احتياطية حتى يختار المستخدم PIN.
 const createLocalKey = async (uid: string): Promise<LocalKey> => {
   const pair = await crypto.subtle.generateKey(ECDH, true, ['deriveBits']);
   const pubRaw = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
   const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
   const keyId = await keyIdOf(pubRaw);
   const pub = toB64(pubRaw);
-  // نخزّن على الجهاز نسخة غير قابلة للتصدير
   const privateKey = await crypto.subtle.importKey('pkcs8', pkcs8, ECDH, false, ['deriveBits']);
   const rec: LocalKey = { uid, keyId, pub, privateKey, pendingPkcs8: toB64(pkcs8) };
-
-  // نحفظ محلياً أولاً: إن فشل النشر لاحقاً تعيد التهيئة نشر المفتاح العام تلقائياً.
   await putLocalKey(rec);
   await setDoc(doc(db, 'publicKeys', uid), { keyId, publicKey: pub, updatedAt: serverTimestamp() });
   return rec;
 };
 
-// ---------- حالة التشفير للمستخدم ----------
-// setup   : مفاتيح موجودة على هذا الجهاز لكن لا يوجد PIN بعد
-// migrate : حساب قديم بكود استرجاع عشوائي، ولا يمكن تصدير مفتاحه المحلي، فيلزم الكود القديم مرة واحدة
-// restore : جهاز جديد أو بيانات ممسوحة، يلزم إدخال PIN (أو الكود القديم إن كانت النسخة قديمة)
-// reset   : لا توجد نسخة احتياطية صالحة، الحل الوحيد إنشاء PIN جديد ومسح الرسائل القديمة
-export interface E2EEInit {
-  state: 'ready' | 'setup' | 'migrate' | 'restore' | 'reset';
-  legacy?: boolean;
-}
-
-interface PubDoc {
-  keyId: string;
-  publicKey: string;
-}
-
-interface BackupDoc {
-  keyId: string;
-  salt: string;
-  iv: string;
-  ciphertext: string;
-  iterations: number;
-}
+export interface E2EEInit { state: 'ready' | 'setup' | 'migrate' | 'restore' | 'reset'; legacy?: boolean; }
+interface PubDoc { keyId: string; publicKey: string; }
+interface BackupDoc { keyId: string; salt: string; iv: string; ciphertext: string; iterations: number; }
 
 const runInit = async (uid: string): Promise<E2EEInit> => {
   const local = await getLocalKey(uid);
@@ -224,41 +182,23 @@ const runInit = async (uid: string): Promise<E2EEInit> => {
 
   if (local) {
     if (!pub) {
-      await setDoc(doc(db, 'publicKeys', uid), {
-        keyId: local.keyId,
-        publicKey: local.pub,
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(doc(db, 'publicKeys', uid), { keyId: local.keyId, publicKey: local.pub, updatedAt: serverTimestamp() });
       pub = { keyId: local.keyId, publicKey: local.pub };
     }
     const backupOfServerKey = !!backup && backup.keyId === pub.keyId;
-
-    // مفتاح هذا الجهاز قديم لأن المفاتيح أُعيد إنشاؤها من جهاز آخر
     if (pub.keyId !== local.keyId) {
       if (!backupOfServerKey) return { state: 'reset' };
       return { state: 'restore', legacy: backup!.iterations !== PIN_ITERATIONS };
     }
-
     const backupOfLocalKey = !!backup && backup.keyId === local.keyId;
     if (backupOfLocalKey && backup!.iterations === PIN_ITERATIONS) return { state: 'ready' };
-
     if (local.pendingPkcs8) return { state: 'setup' };
-
-    // حساب قديم: إن كان الكود القديم ما زال محفوظاً على الجهاز نحوّله تلقائياً دون سؤال المستخدم
     if (backupOfLocalKey && local.pendingCode) {
       try {
         const pkcs8 = await decryptBackup(backup!, local.pendingCode);
-        await putLocalKey({
-          uid: local.uid,
-          keyId: local.keyId,
-          pub: local.pub,
-          privateKey: local.privateKey,
-          pendingPkcs8: toB64(pkcs8),
-        });
+        await putLocalKey({ uid: local.uid, keyId: local.keyId, pub: local.pub, privateKey: local.privateKey, pendingPkcs8: toB64(pkcs8) });
         return { state: 'setup' };
-      } catch {
-        // نكمل إلى مسار الترحيل اليدوي
-      }
+      } catch {}
     }
     if (backupOfLocalKey) return { state: 'migrate' };
     return { state: 'reset' };
@@ -284,14 +224,11 @@ const initPromises = new Map<string, Promise<E2EEInit>>();
 export const initE2EE = (uid: string): Promise<E2EEInit> => {
   const existing = initPromises.get(uid);
   if (existing) return existing;
-  const p = runInit(uid).finally(() => {
-    initPromises.delete(uid);
-  });
+  const p = runInit(uid).finally(() => { initPromises.delete(uid); });
   initPromises.set(uid, p);
   return p;
 };
 
-// يحفظ PIN لأول مرة (أو يرحّل حساباً قديماً باستخدام الكود القديم)
 export const setupPin = async (uid: string, pin: string, legacyCode?: string): Promise<void> => {
   if (checkPin(pin) !== 'ok') throw new Error('BAD_PIN');
   const local = await getLocalKey(uid);
@@ -317,11 +254,9 @@ export const setupPin = async (uid: string, pin: string, legacyCode?: string): P
   }
 
   await writeBackup(uid, local.keyId, pkcs8, pin);
-  // نحذف المفتاح المؤقت وكود الاسترجاع القديم من الجهاز
   await putLocalKey({ uid: local.uid, keyId: local.keyId, pub: local.pub, privateKey: local.privateKey });
 };
 
-// استرجاع المفاتيح على جهاز جديد أو بعد مسح البيانات: PIN من 6 أرقام (أو الكود القديم لحسابات قديمة)
 export const restoreKeys = async (uid: string, code: string): Promise<void> => {
   if (getPinLock(uid).lockedSeconds > 0) throw new Error('LOCKED');
   const [bSnap, pSnap] = await Promise.all([
@@ -344,13 +279,10 @@ export const restoreKeys = async (uid: string, code: string): Promise<void> => {
   if (b.iterations === PIN_ITERATIONS) {
     await putLocalKey({ uid, keyId: p.keyId, pub: p.publicKey, privateKey });
   } else {
-    // نسخة قديمة: نحتفظ بالمفتاح مؤقتاً ليختار المستخدم PIN جديداً
     await putLocalKey({ uid, keyId: p.keyId, pub: p.publicKey, privateKey, pendingPkcs8: toB64(pkcs8) });
   }
 };
 
-// حذف رسائلي المشفّرة القديمة. رسائل الطرف الآخر لا تسمح قواعد Firestore بحذفها من جهازي،
-// لكنها تصبح غير قابلة لفك التشفير نهائياً لأن المفتاح القديم أُتلف.
 const wipeMyMessages = async (uid: string): Promise<void> => {
   const convs = await getDocs(query(collection(db, 'conversations'), where('members', 'array-contains', uid)));
   for (const c of convs.docs) {
@@ -363,7 +295,6 @@ const wipeMyMessages = async (uid: string): Promise<void> => {
   }
 };
 
-// نسيان الكود: إنشاء مفاتيح جديدة بـ PIN جديد ومسح الرسائل القديمة
 export const resetKeysWithPin = async (uid: string, pin: string): Promise<void> => {
   if (checkPin(pin) !== 'ok') throw new Error('BAD_PIN');
   const rec = await createLocalKey(uid);
@@ -373,7 +304,6 @@ export const resetKeysWithPin = async (uid: string, pin: string): Promise<void> 
   try {
     await wipeMyMessages(uid);
   } catch (e) {
-    // الرسائل القديمة غير قابلة للقراءة أصلاً بعد تغيير المفتاح، فلا نفشل العملية بسبب ذلك
     console.error('wipe old messages failed:', e);
   }
 };
@@ -421,15 +351,7 @@ export const encryptBlob = async (blob: Blob): Promise<{ data: Blob; key: string
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, await blob.arrayBuffer());
-  
-  // التعديل الهندسي: إجبار نوع الملف على أن يكون text/plain
-  // هذا يمنع المتصفح من إعطائه امتداد .bin الذي يرفضه Cloudinary
-  // التشفير نفسه لم يتغير ولن يتأثر
-  return { 
-    data: new Blob([ct], { type: 'text/plain' }), 
-    key: toB64(raw), 
-    iv: toB64(iv) 
-  };
+  return { data: new Blob([ct], { type: 'text/plain' }), key: toB64(raw), iv: toB64(iv) };
 };
 
 export const decryptBlob = async (
@@ -440,6 +362,8 @@ export const decryptBlob = async (
 ): Promise<Blob> => {
   const key = await crypto.subtle.importKey('raw', fromB64(keyB64), 'AES-GCM', false, ['decrypt']);
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(ivB64) }, key, buf);
-  // هنا نقوم بإرجاع الملف بالـ MIME الأصلي الذي تم تمريره (صوت/صورة/فيديو) لكي يعمل المشغل بشكل صحيح
+  
+  // التعديل الجذري: نمرر الـ MIME الأصلي (الذي تم تخزينه عند الإرسال) للتأكد من أن المتصفح
+  // يتعرف على الملف كصوت (audio/) أو فيديو (video/) أو صورة (image/).
   return new Blob([pt], { type: mime });
 };
