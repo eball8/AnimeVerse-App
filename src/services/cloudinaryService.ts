@@ -57,6 +57,10 @@ export const uploadEncryptedBlob = (
   onProgress?: (percent: number) => void
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      reject(new Error('إعدادات Cloudinary ناقصة في بناء التطبيق (VITE_CLOUDINARY_*).'));
+      return;
+    }
     if (blob.size > MAX_ENCRYPTED_UPLOAD_MB * 1024 * 1024) {
       reject(new Error('الملف كبير جداً.'));
       return;
@@ -68,19 +72,25 @@ export const uploadEncryptedBlob = (
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url);
+    // مهلة حتى لا يبقى الدوّار يدور إلى الأبد إذا علق الطلب
+    xhr.timeout = 90000;
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onload = () => {
+      let res: any = null;
       try {
-        const res = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) resolve(res.secure_url);
-        else reject(new Error(res?.error?.message || 'فشل رفع الملف.'));
+        res = JSON.parse(xhr.responseText);
       } catch {
-        reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
+        reject(new Error(`استجابة غير مفهومة من Cloudinary (${xhr.status}).`));
+        return;
       }
+      if (xhr.status >= 200 && xhr.status < 300 && res?.secure_url) resolve(res.secure_url);
+      else reject(new Error(`Cloudinary: ${res?.error?.message || 'فشل رفع الملف.'}`));
     };
     xhr.onerror = () => reject(new Error('حدث خطأ في الشبكة أثناء الرفع.'));
+    xhr.ontimeout = () => reject(new Error('انتهت مهلة الرفع، تحقق من الإنترنت.'));
+    xhr.onabort = () => reject(new Error('تم إلغاء الرفع.'));
     xhr.send(formData);
   });
 };
