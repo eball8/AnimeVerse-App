@@ -31,9 +31,9 @@ const randomId = (): string => {
     typeof crypto !== 'undefined' &&
     typeof crypto.getRandomValues === 'function'
   ) {
-    return Array.from(
-      crypto.getRandomValues(new Uint8Array(16))
-    )
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+
+    return Array.from(bytes)
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
   }
@@ -42,8 +42,8 @@ const randomId = (): string => {
 };
 
 /**
- * الحصول على معرّف ثابت للجهاز داخل تخزين المتصفح.
- * قد يتغير المعرّف بعد مسح بيانات التطبيق أو إعادة تثبيته.
+ * إنشاء معرّف ثابت نسبيًا للجهاز داخل تخزين التطبيق.
+ * قد يتغير عند مسح بيانات التطبيق أو إعادة تثبيته.
  */
 export const getDeviceId = (): string => {
   try {
@@ -57,22 +57,21 @@ export const getDeviceId = (): string => {
     localStorage.setItem(DEVICE_ID_KEY, id);
 
     return id;
-  } catch (error) {
-    console.warn('Unable to persist device ID:', error);
+  } catch {
     return 'unknown';
   }
 };
 
 /**
- * اسم مختصر للجهاز، دون تخزين معلومات غير ضرورية.
+ * الحصول على اسم مختصر للجهاز دون جمع معلومات إضافية.
  */
 export const deviceLabel = (): string => {
-  const ua =
+  const userAgent =
     typeof navigator !== 'undefined'
       ? navigator.userAgent || ''
       : '';
 
-  const androidMatch = ua.match(
+  const androidMatch = userAgent.match(
     /Android [\d.]+;\s*([^;)]+?)(?: Build|\)|;)/
   );
 
@@ -86,7 +85,7 @@ export const deviceLabel = (): string => {
     return 'Android';
   }
 
-  if (/iPhone|iPad|iPod/i.test(ua)) {
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
     return 'iOS';
   }
 
@@ -94,45 +93,46 @@ export const deviceLabel = (): string => {
 };
 
 const getPlatform = (): 'android' | 'web' => {
-  const ua =
+  const userAgent =
     typeof navigator !== 'undefined'
       ? navigator.userAgent || ''
       : '';
 
-  return /Android/i.test(ua) ? 'android' : 'web';
+  return /Android/i.test(userAgent) ? 'android' : 'web';
 };
 
 /**
  * التحقق من الجهاز بعد نجاح تسجيل الدخول.
  *
- * أول جهاز يُسجّل دون إشعار.
- * الجهاز الجديد يُسجّل ثم يُرسل إشعار أمان.
+ * الجهاز الأول يُسجّل دون إشعار.
+ * الجهاز الجديد يُسجّل ويُرسل إشعارًا أمنيًا.
  */
 export const checkDevice = async (
   uid: string
 ): Promise<void> => {
   const currentUser = auth.currentUser;
 
-  // لا نسمح بتسجيل جهاز لحساب غير المستخدم المسجل دخوله.
   if (!currentUser || currentUser.uid !== uid) {
     return;
   }
 
-  const id = getDeviceId();
+  const deviceId = getDeviceId();
 
-  if (id === 'unknown') {
-    console.warn('Device check skipped: no persistent device ID');
+  if (deviceId === 'unknown') {
+    console.warn(
+      'Device verification skipped: persistent storage unavailable.'
+    );
     return;
   }
 
-  const key = checkedKey(uid);
+  const localKey = checkedKey(uid);
 
   try {
-    if (localStorage.getItem(key) === id) {
+    if (localStorage.getItem(localKey) === deviceId) {
       return;
     }
   } catch {
-    // نتابع التحقق من Firestore إذا تعذر استخدام localStorage.
+    // نتابع التحقق من Firestore عند تعذر التخزين المحلي.
   }
 
   const deviceRef = doc(
@@ -140,22 +140,21 @@ export const checkDevice = async (
     'userDevices',
     uid,
     'items',
-    id
+    deviceId
   );
 
   try {
-    const deviceSnapshot = await getDoc(deviceRef);
+    const existingDevice = await getDoc(deviceRef);
 
-    // ربما تغيّر الحساب أثناء تنفيذ العملية.
     if (auth.currentUser?.uid !== uid) {
       return;
     }
 
-    if (deviceSnapshot.exists()) {
+    if (existingDevice.exists()) {
       try {
-        localStorage.setItem(key, id);
+        localStorage.setItem(localKey, deviceId);
       } catch {
-        // عدم توفر التخزين المحلي لا يمنع إكمال العملية.
+        // التخزين المحلي ليس شرطًا لنجاح التحقق.
       }
 
       return;
@@ -166,13 +165,13 @@ export const checkDevice = async (
       limit(1)
     );
 
-    const otherDevicesSnapshot = await getDocs(devicesQuery);
+    const otherDevices = await getDocs(devicesQuery);
 
     if (auth.currentUser?.uid !== uid) {
       return;
     }
 
-    const isNewDevice = !otherDevicesSnapshot.empty;
+    const isNewDevice = !otherDevices.empty;
     const label = deviceLabel();
 
     await setDoc(deviceRef, {
@@ -181,17 +180,21 @@ export const checkDevice = async (
       createdAt: serverTimestamp(),
     });
 
-    try {
-      localStorage.setItem(key, id);
-    } catch {
-      // سيُعاد التحقق عبر Firestore في المرة القادمة.
+    if (auth.currentUser?.uid !== uid) {
+      return;
     }
 
-    if (isNewDevice && auth.currentUser?.uid === uid) {
+    try {
+      localStorage.setItem(localKey, deviceId);
+    } catch {
+      // يمكن إعادة التحقق من Firestore لاحقًا.
+    }
+
+    if (isNewDevice) {
       await notifySecurity(uid, 'new_device', label);
     }
   } catch (error) {
-    // لا نوقف تسجيل الدخول إذا فشل التحقق من الجهاز.
-    console.error('Device security check failed:', error);
+    // فشل التحقق لا يمنع تسجيل الدخول إلى التطبيق.
+    console.error('Device verification failed:', error);
   }
 };
