@@ -440,12 +440,13 @@ service cloud.firestore {
           'status',
           'createdAt'
         ])
-        && request.resource.data.type in ['broken-link', 'abuse', 'spam']
+        && request.resource.data.type in ['broken-link', 'abuse', 'spam', 'bug']
         && request.resource.data.targetType in [
           'episode',
           'comment',
           'post',
-          'user'
+          'user',
+          'app'
         ]
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.status == 'pending'
