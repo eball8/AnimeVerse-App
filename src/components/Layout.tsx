@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Compass, User, Users, Plus, Bell, MessageCircle, Search, Clapperboard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -10,7 +10,33 @@ const Layout: React.FC = () => {
   const { user } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [unread, setUnread] = useState(0);
+  const headerRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  // داخل المحادثة نخفي الشريط السفلي ليظهر صندوق الكتابة كاملاً
+  const inChat = /^\/messages\/[^/]+/.test(pathname);
+
+  // نقيس ارتفاع الهيدر والشريط السفلي ونشاركه كمتغيرات CSS لباقي الصفحات
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const apply = () => {
+      root.style.setProperty('--app-header-h', `${headerRef.current?.offsetHeight ?? 0}px`);
+      root.style.setProperty('--app-nav-h', `${navRef.current?.offsetHeight ?? 0}px`);
+    };
+    apply();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+    if (ro) {
+      if (headerRef.current) ro.observe(headerRef.current);
+      if (navRef.current) ro.observe(navRef.current);
+    }
+    window.addEventListener('resize', apply);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', apply);
+    };
+  }, [inChat, !!user]);
 
   useEffect(() => {
     if (!user) return;
@@ -46,7 +72,11 @@ const Layout: React.FC = () => {
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col relative overflow-x-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-dark-950/80 border-b border-white/10 pt-[env(safe-area-inset-top)]">
+      {/* ثابت دائماً في الأعلى (fixed). sticky كان يتعطل بسبب overflow-x-hidden على الحاوية */}
+      <header
+        ref={headerRef}
+        className="fixed top-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-b border-white/10 pt-[env(safe-area-inset-top)]"
+      >
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent">
             AnimeVerse
@@ -73,12 +103,19 @@ const Layout: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-2xl mx-auto w-full pb-24">
+      <main
+        className={`flex-1 max-w-2xl mx-auto w-full ${inChat ? '' : 'pb-24'}`}
+        style={{ paddingTop: 'var(--app-header-h, calc(env(safe-area-inset-top) + 3.75rem))' }}
+      >
         <Outlet />
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
+      {!inChat && (
+      <nav
+        ref={navRef}
+        className="fixed bottom-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
+      >
         <div className="max-w-2xl mx-auto grid grid-cols-6 relative">
           {tabs.map((tab) => {
             if (tab.isCenter) {
@@ -111,6 +148,7 @@ const Layout: React.FC = () => {
           })}
         </div>
       </nav>
+      )}
     </div>
   );
 };
