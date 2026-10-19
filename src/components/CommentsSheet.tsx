@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Send, Trash2 } from 'lucide-react';
+import { X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { addComment, deleteComment, subscribeComments } from '../services/postService';
@@ -9,6 +9,8 @@ import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { logAdmin } from '../services/adminLog';
 import { timeAgo } from '../utils/timeAgo';
 import Avatar from './Avatar';
+import DeleteButton from './DeleteButton';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   post: Post;
@@ -18,6 +20,7 @@ interface Props {
 const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
   const { user, profile, isAdmin } = useAuth();
   const { t, lang } = useI18n();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [comments, setComments] = useState<PostComment[]>([]);
   const [text, setText] = useState('');
@@ -43,7 +46,7 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
   };
 
   const remove = async (c: PostComment) => {
-    if (!confirm(t('comments.deleteConfirm'))) return;
+    if (!(await confirm({ title: t('comments.deleteConfirm') }))) return;
     try {
       await deleteComment(c);
       if (isAdmin && c.authorId !== user?.uid) logAdmin('delete_comment', 'comment', c.id, c.content.slice(0, 80));
@@ -79,9 +82,7 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
                   <p className="text-sm text-slate-300 break-words">{c.content}</p>
                 </div>
                 {(c.authorId === user?.uid || isAdmin) && (
-                  <button onClick={() => remove(c)} className="p-1 text-red-400 self-start" aria-label={t('common.delete')}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <DeleteButton variant="ghost" label={t('common.delete')} onClick={() => remove(c)} />
                 )}
               </div>
             );
