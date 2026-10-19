@@ -51,9 +51,8 @@ export const uploadVideoToCloudinary = (
 // الخطة المجانية في Cloudinary تقبل غالباً حتى 10MB للملفات raw، ولذلك لا نتجاوزه.
 export const MAX_ENCRYPTED_UPLOAD_MB = 10;
 
-// امتدادات غير صور/فيديو نجرّبها بالترتيب، لأن Cloudinary ترفض صيغ الصور في ملفات raw
-// وقد ترفض بعض الامتدادات حسب إعدادات الحساب
-const RAW_EXTENSIONS = ['bin', 'txt', 'dat', 'enc', 'json'];
+// امتدادات مسموحة فقط في مسار raw، تمت إزالة الامتدادات المحظورة (bin, dat, json) لحل مشكلة الرفض
+const RAW_EXTENSIONS = ['txt', 'enc']; 
 
 class NotAllowedError extends Error {}
 
@@ -65,7 +64,11 @@ const uploadRawOnce = (
   return new Promise((resolve, reject) => {
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
     const formData = new FormData();
-    formData.append('file', blob, `enc.${ext}`);
+    
+    // إجبار الامتداد على أن يكون txt أو enc
+    // ننشئ ملف جديد بـ MIME Type يطابق الامتداد لتجنب رفض Cloudinary
+    const forcedBlob = new Blob([blob], { type: ext === 'txt' ? 'text/plain' : 'application/octet-stream' });
+    formData.append('file', forcedBlob, `encrypted_data.${ext}`);
     formData.append('upload_preset', UPLOAD_PRESET);
 
     const xhr = new XMLHttpRequest();
