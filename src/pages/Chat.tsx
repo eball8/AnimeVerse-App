@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowRight, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw, Smile, CornerUpLeft, Share2
+  ArrowRight, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw, CornerUpLeft, Share2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -16,9 +16,9 @@ import type { LocalKey } from '../services/cryptoService';
 import { uploadEncryptedBlob } from '../services/cloudinaryService';
 import { compressImage, formatBytes } from '../utils/media';
 import {
-  convIdOf, conversationExists, decryptMessage, getPublicKeyInfo, removeMessage, sendPayload, subscribeMessages, sendReaction
+  convIdOf, conversationExists, decryptMessage, getPublicKeyInfo, removeMessage, sendPayload, subscribeMessages, sendReaction, subscribeConversations
 } from '../services/chatService';
-import type { ChatPayload, PublicKeyInfo, RawMessage } from '../services/chatService';
+import type { ChatPayload, PublicKeyInfo, RawMessage, Conversation } from '../services/chatService';
 
 type VoicePayload = Extract<ChatPayload, { k: 'v' }>;
 type MediaPayload = Extract<ChatPayload, { k: 'm' }>;
@@ -28,14 +28,8 @@ const MAX_ATTACH_PER_PICK = 5;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-// ---------------------------------------------------------------------------
-// كاش للوسائط المفكوكة
-// ---------------------------------------------------------------------------
 const mediaCache = new Map<string, string>();
-
-const rememberMedia = (url: string, blob: Blob) => {
-  mediaCache.set(url, URL.createObjectURL(blob));
-};
+const rememberMedia = (url: string, blob: Blob) => { mediaCache.set(url, URL.createObjectURL(blob)); };
 
 const useDecryptedMedia = (p: MediaPayload, auto: boolean) => {
   const [src, setSrc] = useState<string | null>(() => mediaCache.get(p.url) ?? null);
@@ -44,12 +38,8 @@ const useDecryptedMedia = (p: MediaPayload, auto: boolean) => {
 
   const load = useCallback(async () => {
     const cached = mediaCache.get(p.url);
-    if (cached) {
-      setSrc(cached);
-      return;
-    }
-    setLoading(true);
-    setFailed(false);
+    if (cached) { setSrc(cached); return; }
+    setLoading(true); setFailed(false);
     try {
       const res = await fetch(p.url);
       if (!res.ok) throw new Error('fetch');
@@ -57,33 +47,52 @@ const useDecryptedMedia = (p: MediaPayload, auto: boolean) => {
       const blob = await decryptBlob(arrayBuffer, p.key, p.iv, p.mime);
       const fixedBlob = new Blob([blob], { type: p.mime });
       const objectUrl = URL.createObjectURL(fixedBlob);
-      mediaCache.set(p.url, objectUrl);
-      setSrc(objectUrl);
-    } catch (e) {
-      console.error(e);
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
+      mediaCache.set(p.url, objectUrl); setSrc(objectUrl);
+    } catch (e) { console.error(e); setFailed(true); } finally { setLoading(false); }
   }, [p.url, p.key, p.iv, p.mime]);
 
-  useEffect(() => {
-    if (auto && !src) load();
-  }, [auto, src, load]);
-
+  useEffect(() => { if (auto && !src) load(); }, [auto, src, load]);
   return { src, loading, failed, load };
 };
 
-// ---------------------------------------------------------------------------
-// مكونات مساعدة
-// ---------------------------------------------------------------------------
+// مكون إعادة التوجيه
+const ForwardModal: React.FC<{ me: string; onClose: () => void; onForward: (otherUid: string) => void }> = ({ me, onClose, onForward }) => {
+  const [convs, setConvs] = useState<Conversation[]>([]);
+  const briefs = useUserBriefs(convs.map(c => c.otherUid));
+
+  useEffect(() => {
+    const unsub = subscribeConversations(me, setConvs);
+    return () => unsub();
+  }, [me]);
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+          <h3 className="text-white font-bold">إعادة التوجيه إلى...</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="max-h-64 overflow-y-auto p-2">
+          {convs.map(c => {
+            const b = briefs[c.otherUid];
+            return (
+              <button key={c.id} onClick={() => onForward(c.otherUid)} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition">
+                <Avatar src={b?.photoURL} seed={c.otherUid} name={b?.displayName} className="w-10 h-10 rounded-full" />
+                <span className="text-sm font-bold text-white">{b?.displayName || '...'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ReactionBar: React.FC<{ onSelect: (emoji: string) => void; onReply: () => void; onForward: () => void }> = ({ onSelect, onReply, onForward }) => {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
   return (
     <div className="absolute -top-12 right-0 bg-dark-800 border border-white/10 rounded-full shadow-lg flex items-center p-1 gap-1 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-      {emojis.map(e => (
-        <button key={e} onClick={() => onSelect(e)} className="p-2 hover:bg-white/10 rounded-full text-lg transition">{e}</button>
-      ))}
+      {emojis.map(e => (<button key={e} onClick={() => onSelect(e)} className="p-2 hover:bg-white/10 rounded-full text-lg transition">{e}</button>))}
       <button onClick={onReply} className="p-2 hover:bg-white/10 rounded-full text-slate-300"><CornerUpLeft className="w-4 h-4" /></button>
       <button onClick={onForward} className="p-2 hover:bg-white/10 rounded-full text-slate-300"><Share2 className="w-4 h-4" /></button>
     </div>
@@ -98,35 +107,23 @@ const VoiceBubble: React.FC<{ payload: VoicePayload }> = ({ payload }) => {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  useEffect(() => {
-    return () => { if (src) URL.revokeObjectURL(src); };
-  }, [src]);
-
-  useEffect(() => {
-    if (src) audioRef.current?.play().catch(() => {});
-  }, [src]);
+  useEffect(() => { return () => { if (src) URL.revokeObjectURL(src); }; }, [src]);
+  useEffect(() => { if (src) audioRef.current?.play().catch(() => {}); }, [src]);
 
   const toggle = async () => {
     if (!src) {
-      setLoading(true);
-      setFailed(false);
+      setLoading(true); setFailed(false);
       try {
         const res = await fetch(payload.url);
         if (!res.ok) throw new Error('fetch');
         const blob = await decryptBlob(await res.arrayBuffer(), payload.key, payload.iv, payload.mime);
         setSrc(URL.createObjectURL(blob));
-      } catch (e) {
-        console.error(e);
-        setFailed(true);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); setFailed(true); } finally { setLoading(false); }
       return;
     }
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) a.play().catch(() => {});
-    else a.pause();
+    if (a.paused) a.play().catch(() => {}); else a.pause();
   };
 
   return (
@@ -150,9 +147,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpenImage: (src: string) 
     if (!src) {
       return (
         <button onClick={load} className="relative w-56 h-40 rounded-xl bg-black/40 flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition">
-          <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-          </span>
+          <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}</span>
           <span className="text-[11px] opacity-80">{failed ? t('chat.mediaError') : `${t('chat.video')} • ${formatBytes(payload.size)}`}</span>
         </button>
       );
@@ -163,22 +158,13 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpenImage: (src: string) 
   const ratio = Math.min(1.8, Math.max(0.6, payload.w && payload.h ? payload.w / payload.h : 4 / 3));
   return (
     <div className="relative w-56 rounded-xl overflow-hidden bg-black/30" style={{ aspectRatio: String(ratio) }}>
-      {src ? (
-        <img src={src} alt="" draggable={false} onClick={() => onOpenImage(src)} className="w-full h-full object-cover cursor-pointer" />
-      ) : failed ? (
-        <button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80">
-          <RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}
-        </button>
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>
-      )}
+      {src ? (<img src={src} alt="" draggable={false} onClick={() => onOpenImage(src)} className="w-full h-full object-cover cursor-pointer" />) : 
+       failed ? (<button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80"><RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}</button>) : 
+       (<div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>)}
     </div>
   );
 };
 
-// ---------------------------------------------------------------------------
-// جسم المحادثة
-// ---------------------------------------------------------------------------
 const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
@@ -192,17 +178,16 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const [exists, setExists] = useState<boolean | undefined>(undefined);
   const [messages, setMessages] = useState<RawMessage[]>([]);
   const [plain, setPlain] = useState<Record<string, ChatPayload | null>>({});
-  const plainRef = useRef(plain);
-  plainRef.current = plain;
+  const plainRef = useRef(plain); plainRef.current = plain;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [viewer, setViewer] = useState<string | null>(null);
   
-  // حالات جديدة للتفاعل
   const [activeMsg, setActiveMsg] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
+  const [forwardMsg, setForwardMsg] = useState<RawMessage | null>(null); // حالة إعادة التوجيه
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -214,52 +199,38 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       const [l, k, ex] = await Promise.all([getLocalKey(me), getPublicKeyInfo(other), conversationExists(me, convId)]);
       if (off) return;
       setLocal(l); setTheirs(k); setExists(ex);
-    })().catch((e) => {
-      console.error(e);
-      if (!off) { setTheirs(null); setExists(false); }
-    });
+    })().catch((e) => { console.error(e); if (!off) { setTheirs(null); setExists(false); } });
     return () => { off = true; };
   }, [me, other, convId]);
 
-  useEffect(() => {
-    if (!exists) return;
-    return subscribeMessages(convId, setMessages, (e) => console.error('messages error:', e));
-  }, [exists, convId]);
+  useEffect(() => { if (!exists) return; return subscribeMessages(convId, setMessages, (e) => console.error('messages error:', e)); }, [exists, convId]);
 
   useEffect(() => {
     if (!local || theirs === undefined) return;
     let off = false;
     (async () => {
       const next: Record<string, ChatPayload | null> = {};
-      for (const m of messages) {
-        if (m.id in plainRef.current) continue;
-        next[m.id] = await decryptMessage(me, local, theirs, m);
-      }
+      for (const m of messages) { if (m.id in plainRef.current) continue; next[m.id] = await decryptMessage(me, local, theirs, m); }
       if (!off && Object.keys(next).length) setPlain((p) => ({ ...p, ...next }));
     })();
     return () => { off = true; };
   }, [messages, local, theirs, me]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
 
-  const doSend = async (payload: ChatPayload): Promise<boolean> => {
-    setBusy(true);
-    setError('');
+  const doSend = async (payload: ChatPayload, targetUid: string = other): Promise<boolean> => {
+    setBusy(true); setError('');
     try {
-      await sendPayload(me, other, payload, exists === true, replyTo?.id);
-      if (!exists) setExists(true);
-      if (!theirs) getPublicKeyInfo(other).then(setTheirs).catch(console.error);
-      setReplyTo(null); // مسح الرد بعد الإرسال
+      await sendPayload(me, targetUid, payload, exists === true, replyTo?.id);
+      if (!exists && targetUid === other) setExists(true);
+      if (!theirs && targetUid === other) getPublicKeyInfo(other).then(setTheirs).catch(console.error);
+      setReplyTo(null);
       return true;
     } catch (e: any) {
       console.error(e);
       setError(e?.message === 'RECIPIENT_NO_KEY' ? t('chat.noKey') : e?.message === 'MESSAGES_CLOSED' ? 'هذا المستخدم لا يستقبل محادثات جديدة.' : t('chat.sendFailed'));
       return false;
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   const sendText = async () => {
@@ -276,11 +247,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       const url = await uploadEncryptedBlob(enc.data);
       setBusy(false);
       await doSend({ k: 'v', url, key: enc.key, iv: enc.iv, dur: r.duration, mime: r.mime });
-    } catch (e: any) {
-      console.error(e);
-      setError(`${t('chat.sendFailed')} (${e?.message || e?.name || ''})`.trim());
-      setBusy(false);
-    }
+    } catch (e: any) { console.error(e); setError(`${t('chat.sendFailed')} (${e?.message || e?.name || ''})`.trim()); setBusy(false); }
   };
 
   const sendOneMedia = async (file: File): Promise<boolean> => {
@@ -292,20 +259,14 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     setBusy(true); setError(''); setProgress(0);
     try {
       let blob: Blob = file; let mime = file.type; let w: number | undefined; let h: number | undefined;
-      if (isImage && mime !== 'image/gif') {
-        const c = await compressImage(file);
-        blob = c.blob; mime = c.mime; w = c.w; h = c.h;
-      }
+      if (isImage && mime !== 'image/gif') { const c = await compressImage(file); blob = c.blob; mime = c.mime; w = c.w; h = c.h; }
       const enc = await encryptBlob(blob);
       const url = await uploadEncryptedBlob(enc.data, setProgress);
-      rememberMedia(url, blob);
-      setBusy(false);
+      rememberMedia(url, blob); setBusy(false);
       const payload: MediaPayload = { k: 'm', url, key: enc.key, iv: enc.iv, mime, size: blob.size };
       if (w && h) { payload.w = w; payload.h = h; }
       return await doSend(payload);
-    } catch (e) {
-      console.error(e); setError(t('chat.sendFailed')); setBusy(false); return false;
-    }
+    } catch (e) { console.error(e); setError(t('chat.sendFailed')); setBusy(false); return false; }
   };
 
   const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -317,13 +278,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   };
 
   const { recording, seconds, start, stop, cancel } = useVoiceRecorder(sendVoice);
-
   const startRec = async () => {
     setError('');
-    try { await start(); } catch (e: any) {
-      console.error(e);
-      setError(e?.name === 'NotFoundError' || !navigator.mediaDevices ? t('chat.micMissing') : `${t('chat.micDenied')} ${t('chat.micSettingsHint')}`);
-    }
+    try { await start(); } catch (e: any) { console.error(e); setError(e?.name === 'NotFoundError' || !navigator.mediaDevices ? t('chat.micMissing') : `${t('chat.micDenied')} ${t('chat.micSettingsHint')}`); }
   };
 
   const remove = async (m: RawMessage) => {
@@ -331,18 +288,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     try { await removeMessage(convId, m.id); } catch (e) { console.error(e); }
   };
 
-  // منطق الضغط المطول
-  const handlePressStart = (id: string) => {
-    pressTimer.current = window.setTimeout(() => { setActiveMsg(id); }, 500);
-  };
-  const handlePressEnd = () => {
-    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
-  };
-
-  const handleReaction = async (msgId: string, emoji: string) => {
-    setActiveMsg(null);
-    try { await sendReaction(convId, msgId, emoji, me); } catch (e) { console.error(e); }
-  };
+  const handlePressStart = (id: string) => { pressTimer.current = window.setTimeout(() => { setActiveMsg(id); }, 500); };
+  const handlePressEnd = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
+  const handleReaction = async (msgId: string, emoji: string) => { setActiveMsg(null); try { await sendReaction(convId, msgId, emoji, me); } catch (e) { console.error(e); } };
 
   const name = b?.displayName || '...';
 
@@ -367,8 +315,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             const p = plain[m.id];
             const isMedia = !!p && p.k === 'm';
             const time = m.createdAt?.toDate?.() ? m.createdAt.toDate().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }) : '';
-            
-            // البحث عن الرسالة التي تم الرد عليها
             const repliedMsg = m.replyTo ? messages.find(x => x.id === m.replyTo) : null;
             const repliedP = repliedMsg ? plain[repliedMsg.id] : null;
 
@@ -378,54 +324,34 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                   <ReactionBar 
                     onSelect={(emoji) => handleReaction(m.id, emoji)} 
                     onReply={() => { setReplyTo(m); setActiveMsg(null); }}
-                    onForward={() => { setActiveMsg(null); /* سيتم ربطها لاحقاً */ }}
+                    onForward={() => { setForwardMsg(m); setActiveMsg(null); }}
                   />
                 )}
                 
-                <div
-                  onPointerDown={() => handlePressStart(m.id)}
-                  onPointerUp={handlePressEnd}
-                  onPointerLeave={handlePressEnd}
-                  className={`max-w-[80%] rounded-2xl text-sm break-words relative ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'bg-gradient-to-tr from-primary-500 to-accent-500 text-white' : 'bg-white/10 text-white'}`}
-                >
-                  {/* عرض الرسالة المقتبسة */}
+                <div onPointerDown={() => handlePressStart(m.id)} onPointerUp={handlePressEnd} onPointerLeave={handlePressEnd} className={`max-w-[80%] rounded-2xl text-sm break-words relative ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'bg-gradient-to-tr from-primary-500 to-accent-500 text-white' : 'bg-white/10 text-white'}`}>
                   {repliedMsg && (
                     <div className="text-[11px] bg-black/20 p-2 rounded-lg mb-2 border-l-2 border-white/50">
                       <p className="font-bold opacity-80 mb-1">{repliedMsg.senderId === me ? 'أنت' : name}</p>
-                      <p className="opacity-70 truncate">
-                        {repliedP?.k === 't' ? repliedP.v : repliedP?.k === 'v' ? '🎤 رسالة صوتية' : '📷 وسائط'}
-                      </p>
+                      <p className="opacity-70 truncate">{repliedP?.k === 't' ? repliedP.v : repliedP?.k === 'v' ? '🎤 رسالة صوتية' : '📷 وسائط'}</p>
                     </div>
                   )}
 
-                  {p === undefined ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : p === null ? (
-                    <span className="text-xs opacity-70">{t('chat.undecryptable')}</span>
-                  ) : p.k === 't' ? (
-                    <p className="whitespace-pre-wrap">{p.v}</p>
-                  ) : p.k === 'm' ? (
-                    <MediaBubble payload={p} onOpenImage={setViewer} />
-                  ) : p.k === 'v' ? (
-                    <VoiceBubble payload={p} />
-                  ) : (
-                    <span className="text-xs opacity-70">{t('chat.undecryptable')}</span>
-                  )}
+                  {p === undefined ? (<Loader2 className="w-4 h-4 animate-spin" />) : 
+                   p === null ? (<span className="text-xs opacity-70">{t('chat.undecryptable')}</span>) : 
+                   p.k === 't' ? (<p className="whitespace-pre-wrap">{p.v}</p>) : 
+                   p.k === 'm' ? (<MediaBubble payload={p} onOpenImage={setViewer} />) : 
+                   p.k === 'v' ? (<VoiceBubble payload={p} />) : 
+                   (<span className="text-xs opacity-70">{t('chat.undecryptable')}</span>)}
 
-                  {/* عرض الإيموجيات المتفاعلة */}
                   {m.reactions && Object.keys(m.reactions).length > 0 && (
                     <div className="absolute -bottom-3 right-2 flex gap-1 bg-dark-800 rounded-full px-1 border border-white/10">
-                      {Object.entries(m.reactions).map(([emoji, users]) => (
-                        users.length > 0 && <span key={emoji} className="text-[10px]">{emoji} {users.length > 1 ? users.length : ''}</span>
-                      ))}
+                      {Object.entries(m.reactions).map(([emoji, users]) => (users.length > 0 && <span key={emoji} className="text-[10px]">{emoji} {users.length > 1 ? users.length : ''}</span>))}
                     </div>
                   )}
 
                   <div className={`flex items-center justify-between gap-3 mt-1 ${isMedia ? 'px-1.5 pb-0.5' : ''}`}>
                     <span className="text-[10px] opacity-60">{time}</span>
-                    {mine && (
-                      <button onClick={() => remove(m)} className="opacity-60 hover:opacity-100" aria-label={t('common.delete')}><Trash2 className="w-3 h-3" /></button>
-                    )}
+                    {mine && (<button onClick={() => remove(m)} className="opacity-60 hover:opacity-100" aria-label={t('common.delete')}><Trash2 className="w-3 h-3" /></button>)}
                   </div>
                 </div>
               </div>
@@ -437,14 +363,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         <div className="shrink-0 border-t border-white/10 bg-dark-950 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mb-2">{error}</p>}
           
-          {/* عرض شريط الرد */}
           {replyTo && (
             <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2 border-l-2 border-primary-500">
               <div className="min-w-0">
                 <p className="text-[10px] text-primary-400 font-bold mb-0.5">الرد على {replyTo.senderId === me ? 'نفسك' : name}</p>
-                <p className="text-xs text-slate-300 truncate">
-                  {plain[replyTo.id]?.k === 't' ? plain[replyTo.id].v : '📷 وسائط'}
-                </p>
+                <p className="text-xs text-slate-300 truncate">{plain[replyTo.id]?.k === 't' ? plain[replyTo.id].v : '📷 وسائط'}</p>
               </div>
               <button onClick={() => setReplyTo(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
@@ -469,11 +392,8 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
               <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden onChange={onPickFiles} />
               <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendText()} maxLength={1500} placeholder={t('chat.placeholder')} className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
               <button onClick={() => fileRef.current?.click()} disabled={busy} className="p-3 rounded-full bg-white/5 border border-white/10 text-slate-300 active:scale-90 transition disabled:opacity-50" aria-label={t('chat.attach')}><Paperclip className="w-4 h-4" /></button>
-              {text.trim() ? (
-                <button onClick={sendText} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50" aria-label={t('common.send')}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
-              ) : (
-                <button onClick={startRec} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50" aria-label="mic">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>
-              )}
+              {text.trim() ? (<button onClick={sendText} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50" aria-label={t('common.send')}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>) : 
+               (<button onClick={startRec} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50" aria-label="mic">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>)}
             </div>
           )}
         </div>
@@ -484,6 +404,20 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           <button onClick={() => setViewer(null)} className="absolute end-4 p-2.5 rounded-full bg-white/10 text-white" style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }} aria-label={t('story.close')}><X className="w-5 h-5" /></button>
           <img src={viewer} alt="" draggable={false} onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full object-contain" />
         </div>
+      )}
+
+      {forwardMsg && (
+        <ForwardModal 
+          me={me} 
+          onClose={() => setForwardMsg(null)} 
+          onForward={async (targetUid) => {
+            setForwardMsg(null);
+            const p = plain[forwardMsg.id];
+            if (p) {
+              await doSend(p, targetUid);
+            }
+          }} 
+        />
       )}
     </>
   );
