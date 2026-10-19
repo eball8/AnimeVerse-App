@@ -1,55 +1,131 @@
-import { APP_URL } from '../utils/links';
 
-// أنواع الروابط المسموح فتحها داخل التطبيق
-const ROUTE = /^\/(user|post|reels)\/([A-Za-z0-9_-]{1,128})$/;
-const PENDING_KEY = 'av_pending_link';
+export type DeepLinkTarget =
+  | {
+      type: 'post';
+      id: string;
+    }
+  | {
+      type: 'anime';
+      id: string;
+    }
+  | {
+      type: 'episode';
+      id: string;
+    }
+  | {
+      type: 'profile';
+      id: string;
+    }
+  | {
+      type: 'story';
+      id: string;
+    };
 
-export const APP_SCHEME = 'animeverse';
+const MAX_ID_LENGTH = 200;
 
-// يحوّل أي رابط خارجي إلى مسار داخلي آمن أو null:
-//   https://eball8.github.io/AnimeVerse-App/#/user/UID
-//   https://eball8.github.io/AnimeVerse-App/user/UID
-//   animeverse://user/UID   ،   animeverse://post/ID   ،   animeverse://reels/ID
-export const routeFromUrl = (raw: string): string | null => {
+const ALLOWED_HOSTS = new Set([
+  'animeverse.app',
+  'www.animeverse.app',
+]);
+
+/**
+ * التحقق من معرّف الرابط قبل استخدامه في التنقل.
+ */
+function validId(value: string | null): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_ID_LENGTH &&
+    !value.includes('/') &&
+    !value.includes('\\')
+  );
+}
+
+/**
+ * تحليل رابط AnimeVerse إلى وجهة داخل التطبيق.
+ *
+ * الصيغ المدعومة:
+ * https://animeverse.app/post/POST_ID
+ * https://animeverse.app/anime/ANIME_ID
+ * https://animeverse.app/episode/EPISODE_ID
+ * https://animeverse.app/profile/USER_ID
+ * https://animeverse.app/story/STORY_ID
+ *
+ * كما يدعم المسارات النسبية داخل التطبيق.
+ */
+export function parseDeepLink(
+  input: string
+): DeepLinkTarget | null {
+  if (!input || input.length > 2048) {
+    return null;
+  }
+
   try {
-    const u = new URL(raw);
-    let path = '';
-    if (u.protocol === `${APP_SCHEME}:`) {
-      path = `/${u.hostname}${u.pathname}`;
-    } else if (u.protocol === 'https:') {
-      if (u.host !== new URL(APP_URL).host) return null;
-      if (u.hash.startsWith('#/')) {
-        path = u.hash.slice(1);
-      } else {
-        const base = new URL(APP_URL).pathname.replace(/\/+$/, '');
-        path = u.pathname.startsWith(base) ? u.pathname.slice(base.length) : u.pathname;
-      }
-    } else {
+    const url = new URL(input, 'https://animeverse.app');
+
+    if (
+      url.protocol !== 'https:' ||
+      !ALLOWED_HOSTS.has(url.hostname.toLowerCase())
+    ) {
       return null;
     }
-    path = path.split('?')[0].replace(/\/+$/, '');
-    const m = path.match(ROUTE);
-    return m ? `/${m[1]}/${m[2]}` : null;
+
+    const segments = url.pathname
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+
+    if (segments.length !== 2) {
+      return null;
+    }
+
+    const [type, id] = segments;
+
+    if (!validId(id)) {
+      return null;
+    }
+
+    switch (type.toLowerCase()) {
+      case 'post':
+        return { type: 'post', id };
+
+      case 'anime':
+        return { type: 'anime', id };
+
+      case 'episode':
+        return { type: 'episode', id };
+
+      case 'profile':
+        return { type: 'profile', id };
+
+      case 'story':
+        return { type: 'story', id };
+
+      default:
+        return null;
+    }
   } catch {
     return null;
   }
-};
+}
 
-// إن لم يكن المستخدم مسجلاً نحفظ الوجهة ونفتحها بعد الدخول
-export const savePendingRoute = (route: string) => {
-  try {
-    localStorage.setItem(PENDING_KEY, route);
-  } catch {
-    /* ignore */
+/**
+ * إنشاء رابط مشاركة صالح لوجهة داخل التطبيق.
+ */
+export function createDeepLink(
+  target: DeepLinkTarget
+): string {
+  if (!validId(target.id)) {
+    throw new Error('Invalid deep link ID');
   }
-};
 
-export const takePendingRoute = (): string | null => {
-  try {
-    const r = localStorage.getItem(PENDING_KEY);
-    if (r) localStorage.removeItem(PENDING_KEY);
-    return r && ROUTE.test(r) ? r : null;
-  } catch {
-    return null;
-  }
-};
+  const paths: Record<DeepLinkTarget['type'], string> = {
+    post: 'post',
+    anime: 'anime',
+    episode: 'episode',
+    profile: 'profile',
+    story: 'story',
+  };
+
+  return `https://animeverse.app/${paths[target.type]}/${encodeURIComponent(target.id)}`;
+}
