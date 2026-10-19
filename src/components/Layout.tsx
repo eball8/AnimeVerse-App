@@ -1,12 +1,13 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, User, Users, Plus, Bell, MessageCircle, Search, Clapperboard } from 'lucide-react';
+import { Home, Compass, User, Users, Plus, Bell, MessageCircle, Search, Clapperboard, Menu, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { subscribeConversations, isUnread } from '../services/chatService';
 import { sendHeartbeat, HEARTBEAT_MS } from '../services/presenceService';
 import { useI18n } from '../i18n/I18nContext';
 import { subscribeNotifications } from '../services/notificationService';
 import { initE2EE } from '../services/cryptoService';
+import SettingsMenu from './SettingsMenu';
 
 const Layout: React.FC = () => {
   const { user, profile } = useAuth();
@@ -15,11 +16,22 @@ const Layout: React.FC = () => {
   const { pathname } = useLocation();
   const [unread, setUnread] = useState(0);
   const [unreadChats, setUnreadChats] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
   // داخل المحادثة نخفي الشريط السفلي ليظهر صندوق الكتابة كاملاً
   const inChat = /^\/messages\/[^/]+/.test(pathname);
+  // شاشة صندوق الرسائل: هيدر نظيف (اسم المستخدم + بحث + إشعارات + رسائل) بلا شعار ولا ☰
+  const isInbox = pathname === '/messages';
+  // شاشة الملف الشخصي الرئيسية: هنا فقط يظهر زر ☰
+  const isProfileHome = pathname === '/profile';
+  const showUsername = isInbox || isProfileHome;
+
+  // نغلق القائمة الجانبية عند أي تنقّل
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   // نقيس ارتفاع الهيدر والشريط السفلي ونشاركه كمتغيرات CSS لباقي الصفحات
   useLayoutEffect(() => {
@@ -101,9 +113,16 @@ const Layout: React.FC = () => {
         className="fixed top-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-b border-white/10 pt-[env(safe-area-inset-top)]"
       >
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent">
-            AnimeVerse
-          </h1>
+          {showUsername && user ? (
+            <h1 className="flex items-center gap-1.5 min-w-0 text-lg font-black text-white">
+              <span className="truncate" dir="ltr">{profile?.username || ''}</span>
+              {isProfileHome && profile?.accountType === 'private' && <Lock className="w-4 h-4 shrink-0 text-slate-400" />}
+            </h1>
+          ) : (
+            <h1 className="text-xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent">
+              AnimeVerse
+            </h1>
+          )}
           {user && (
             <div className="flex items-center gap-1">
               <NavLink to="/notifications" className={iconBtn} aria-label={t('header.notifications')}>
@@ -121,10 +140,17 @@ const Layout: React.FC = () => {
               <NavLink to="/search" className={iconBtn} aria-label={t('header.search')}>
                 <Search className="w-5 h-5" />
               </NavLink>
+              {isProfileHome && (
+                <button onClick={() => setMenuOpen(true)} className={iconBtn} aria-label="القائمة">
+                  <Menu className="w-6 h-6 text-white" />
+                </button>
+              )}
             </div>
           )}
         </div>
       </header>
+
+      <SettingsMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       {/* Main Content */}
       <main
