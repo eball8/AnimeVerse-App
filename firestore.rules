@@ -79,7 +79,11 @@ service cloud.firestore {
         && (!('bio' in request.resource.data)
             || validText(request.resource.data.bio, 0, 150))
         && (!('accountType' in request.resource.data)
-            || request.resource.data.accountType in ['public', 'private']);
+            || request.resource.data.accountType in ['public', 'private'])
+        && (!('pronouns' in request.resource.data)
+            || validText(request.resource.data.pronouns, 0, 30))
+        && (!('gender' in request.resource.data)
+            || request.resource.data.gender in ['male', 'female', 'none']);
 
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -153,7 +157,9 @@ service cloud.firestore {
           'commentsCount',
           'createdAt',
           'repostOfId',
-          'repostOfAuthorId'
+          'repostOfAuthorId',
+          'mentions',
+          'collaborators'
         ])
         && validText(request.resource.data.authorName, 1, 50)
         && validText(request.resource.data.content, 0, 2000)
@@ -166,6 +172,12 @@ service cloud.firestore {
             || validText(request.resource.data.repostOfId, 1, 100))
         && (!('repostOfAuthorId' in request.resource.data)
             || validText(request.resource.data.repostOfAuthorId, 1, 100))
+        && (!('mentions' in request.resource.data)
+            || (request.resource.data.mentions is list
+                && request.resource.data.mentions.size() <= 20))
+        && (!('collaborators' in request.resource.data)
+            || (request.resource.data.collaborators is list
+                && request.resource.data.collaborators.size() <= 10))
         && (!('mediaUrl' in request.resource.data)
             || request.resource.data.mediaUrl == ''
             || request.resource.data.mediaUrl.matches(
@@ -740,6 +752,31 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isAdmin();
       allow update, delete: if false;
+    }
+
+    // ---------- 20. زيارات الملفات الشخصية (للإحصائيات) ----------
+    match /profileViews/{viewId} {
+      allow read: if signedIn()
+        && (resource.data.profileUid == request.auth.uid || isAdmin());
+
+      allow create: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly([
+          'profileUid',
+          'viewerId',
+          'day',
+          'createdAt'
+        ])
+        && request.resource.data.viewerId == request.auth.uid
+        && request.resource.data.profileUid is string
+        && request.resource.data.profileUid != request.auth.uid
+        && request.resource.data.day is string
+        && request.resource.data.day.size() == 8
+        && request.resource.data.createdAt == request.time
+        && viewId == request.resource.data.profileUid + '_' + request.auth.uid + '_' + request.resource.data.day;
+
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // أي مسار غير مذكور مرفوض افتراضياً.
