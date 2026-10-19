@@ -5,6 +5,7 @@ import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import EpisodeRating from '../components/EpisodeRating';
+import { getPlayerPref } from '../services/settingsService';
 
 const Watch: React.FC = () => {
   const { animeId, episodeNumber } = useParams<{ animeId: string; episodeNumber: string }>();
@@ -83,6 +84,11 @@ const Watch: React.FC = () => {
   const handlePlayServer = (link: string) => {
     if (!link || link === '#') {
       alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
+      return;
+    }
+
+    if (getPlayerPref() === 'browser') {
+      window.open(link, '_blank');
       return;
     }
 
