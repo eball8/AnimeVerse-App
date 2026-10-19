@@ -8,12 +8,14 @@ import type { Post } from '../services/postService';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import PostCard from '../components/PostCard';
 import CommentsSheet from '../components/CommentsSheet';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const PostView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [post, setPost] = useState<Post | null | undefined>(undefined);
   const [liked, setLiked] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -51,7 +53,7 @@ const PostView: React.FC = () => {
   };
 
   const onDelete = async (p: Post) => {
-    if (!p.id || !confirm(t('post.deleteConfirm'))) return;
+    if (!p.id || !(await confirm({ title: t('post.deleteConfirm') }))) return;
     try {
       await deletePost(p.id);
       navigate('/community', { replace: true });
