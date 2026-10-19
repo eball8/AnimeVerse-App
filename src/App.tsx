@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { I18nProvider } from './i18n/I18nContext';
 import Layout from './components/Layout';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import Home from './pages/Home';
 import Explore from './pages/Explore';
 import Search from './pages/Search';
@@ -57,6 +58,7 @@ const App: React.FC = () => {
     <ThemeProvider>
       <I18nProvider>
         <AuthProvider>
+          <ConfirmProvider>
           <HashRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -90,6 +92,7 @@ const App: React.FC = () => {
               </Route>
             </Routes>
           </HashRouter>
+          </ConfirmProvider>
         </AuthProvider>
       </I18nProvider>
     </ThemeProvider>
