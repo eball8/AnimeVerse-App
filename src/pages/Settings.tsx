@@ -448,6 +448,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   if (!user || !profile) return null;
   const accountType = profile.accountType === 'private' ? 'private' : 'public';
   const msgPrivacy: MsgPrivacy = ((profile as any).messagePrivacy as MsgPrivacy) || 'everyone';
+  const showActivity = (profile as any).showActivity !== false;
 
   const save = async (updates: Record<string, unknown>, okText: string) => {
     setBusy('save');
@@ -518,6 +519,25 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           {choice(msgPrivacy === 'nobody', 'لا أحد', 'لا تصلك محادثات جديدة. المحادثات الحالية تستمر.', () =>
             save({ messagePrivacy: 'nobody' }, 'تم حفظ الإعداد.')
           )}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">حالة النشاط</h3>
+        <div className="card">
+          <button
+            onClick={() => save({ showActivity: !showActivity }, showActivity ? 'تم إخفاء حالة النشاط.' : 'تم إظهار حالة النشاط.')}
+            disabled={busy === 'save'}
+            className="w-full flex items-center justify-between gap-4 p-4 hover:bg-white/5 text-start disabled:opacity-60"
+          >
+            <div>
+              <p className="text-sm font-bold text-white">إظهار حالة النشاط</p>
+              <p className="text-[11px] text-slate-500">عند الإيقاف لن يرى الآخرون أنك متصل الآن، ولن ترى أنت حالتهم.</p>
+            </div>
+            <span className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${showActivity ? 'bg-primary-500' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${showActivity ? 'start-[22px]' : 'start-0.5'}`} />
+            </span>
+          </button>
         </div>
       </div>
 
