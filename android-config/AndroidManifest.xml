@@ -17,7 +17,11 @@
     <!-- أذونات الكاميرا والميكروفون -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- مطلوب مع RECORD_AUDIO: الـ WebView في Capacitor يطلب الإذنين معاً عند getUserMedia،
+         وغيابه كان يجعل الطلب يُرفض فيظهر "لا يمكن الوصول إلى الميكروفون" -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- أذونات الإشعارات (لأندرويد 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -50,6 +54,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:label="@string/title_activity_main"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:exported="true">
             <intent-filter>
