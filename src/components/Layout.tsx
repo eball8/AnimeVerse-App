@@ -2,16 +2,19 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Compass, User, Users, Plus, Bell, MessageCircle, Search, Clapperboard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { subscribeConversations, isUnread } from '../services/chatService';
+import { sendHeartbeat, HEARTBEAT_MS } from '../services/presenceService';
 import { useI18n } from '../i18n/I18nContext';
 import { subscribeNotifications } from '../services/notificationService';
 import { initE2EE } from '../services/cryptoService';
 
 const Layout: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [unread, setUnread] = useState(0);
+  const [unreadChats, setUnreadChats] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
@@ -44,6 +47,26 @@ const Layout: React.FC = () => {
       setUnread(items.filter((n) => !n.read).length);
     });
   }, [user]);
+
+
+  // نقطة حمراء على أيقونة الرسائل عند وصول رسائل جديدة
+  useEffect(() => {
+    if (!user) return;
+    return subscribeConversations(user.uid, (items) => {
+      setUnreadChats(items.some((c) => isUnread(c, user.uid)));
+    });
+  }, [user?.uid]);
+
+  // حالة النشاط (متصل الآن): نبضة كل دقيقة طالما التطبيق مفتوح والمستخدم لم يخفِ نشاطه
+  const showActivity = (profile as any)?.showActivity !== false;
+  useEffect(() => {
+    if (!user || !showActivity) return;
+    const beat = () => { if (document.visibilityState === 'visible') sendHeartbeat(user.uid); };
+    beat();
+    const id = window.setInterval(beat, HEARTBEAT_MS);
+    document.addEventListener('visibilitychange', beat);
+    return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', beat); };
+  }, [user?.uid, showActivity]);
 
   // تجهيز مفاتيح التشفير بصمت حتى يستطيع الجميع استقبال الرسائل المشفّرة
   useEffect(() => {
@@ -93,6 +116,7 @@ const Layout: React.FC = () => {
               </NavLink>
               <NavLink to="/messages" className={iconBtn} aria-label={t('header.messages')}>
                 <MessageCircle className="w-5 h-5" />
+                {unreadChats && <span className="absolute top-1 end-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-dark-950" />}
               </NavLink>
               <NavLink to="/search" className={iconBtn} aria-label={t('header.search')}>
                 <Search className="w-5 h-5" />
