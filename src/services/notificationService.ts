@@ -33,40 +33,25 @@ export interface AppNotification {
   createdAt: any;
 }
 
-const MAX_NAME_LENGTH = 50;
-const MAX_TEXT_LENGTH = 200;
-const MAX_NOTIFICATIONS = 50;
-
-const createNotification = async (
+/**
+ * إرسال إشعار عادي إلى مستخدم آخر.
+ */
+export const notify = async (
   toUid: string,
-  type: NotificationType,
+  type: Exclude<NotificationType, 'new_device'>,
   text: string,
   postId?: string
 ): Promise<void> => {
   const me = auth.currentUser;
 
-  if (!me || !toUid || !toUid.trim()) {
-    return;
-  }
-
-  // الإشعارات العادية لا تُرسل إلى صاحب الحساب نفسه.
-  // إشعار الجهاز الجديد له دالة مستقلة أدناه.
-  if (type !== 'new_device' && me.uid === toUid) {
-    return;
-  }
-
-  const safeName = (me.displayName || 'مستخدم')
-    .trim()
-    .slice(0, MAX_NAME_LENGTH);
-
-  const safeText = text.trim().slice(0, MAX_TEXT_LENGTH);
+  if (!me || me.uid === toUid) return;
 
   const data: Record<string, unknown> = {
     toUid,
     fromUid: me.uid,
-    fromName: safeName || 'مستخدم',
+    fromName: (me.displayName || 'مستخدم').slice(0, 50),
     type,
-    text: safeText,
+    text: text.slice(0, 200),
     read: false,
     createdAt: serverTimestamp(),
   };
@@ -82,134 +67,97 @@ const createNotification = async (
   try {
     await addDoc(collection(db, 'notifications'), data);
   } catch (error) {
-    // لا نوقف العملية الأساسية بسبب فشل إشعار ثانوي.
-    console.error('Notification creation failed:', error);
+    console.error('notify failed:', error);
   }
 };
 
 /**
- * إنشاء إشعار عادي للمستخدم.
- */
-export const notify = async (
-  toUid: string,
-  type: Exclude<NotificationType, 'new_device'>,
-  text: string,
-  postId?: string
-): Promise<void> => {
-  await createNotification(toUid, type, text, postId);
-};
-
-/**
- * إشعار أمني عند تسجيل دخول الحساب من جهاز جديد.
- * لا يرسل إشعارًا إذا لم يكن المستخدم الحالي هو صاحب الحساب.
+ * إنشاء إشعار أمني للمستخدم نفسه عند اكتشاف جهاز جديد.
+ * لا تُرسل بيانات حساسة عن الجهاز داخل الإشعار.
  */
 export const notifySecurity = async (
   uid: string,
-  event: 'new_device',
-  deviceLabel: string
+  type: 'new_device',
+  deviceName: string
 ): Promise<void> => {
   const me = auth.currentUser;
 
-  if (!me || me.uid !== uid) {
-    return;
+  // لا تسمح بإنشاء إشعار أمني لحساب آخر.
+  if (!me || me.uid !== uid) return;
+
+  const safeDeviceName = deviceName.trim().slice(0, 60) || 'جهاز غير معروف';
+
+  const data: Record<string, unknown> = {
+    toUid: uid,
+    fromUid: uid,
+    fromName: (me.displayName || 'مستخدم').slice(0, 50),
+    type,
+    text: `تم تسجيل الدخول من جهاز جديد: ${safeDeviceName}`,
+    read: false,
+    createdAt: serverTimestamp(),
+  };
+
+  if (me.photoURL) {
+    data.fromPhotoURL = me.photoURL;
   }
 
-  const label = deviceLabel.trim().slice(0, 40) || 'جهاز غير معروف';
-
-  await createNotification(
-    uid,
-    event,
-    `تم تسجيل الدخول إلى حسابك من جهاز جديد: ${label}`,
-  );
+  try {
+    await addDoc(collection(db, 'notifications'), data);
+  } catch (error) {
+    console.error('notifySecurity failed:', error);
+  }
 };
 
 /**
- * الاشتراك في إشعارات المستخدم الحالي.
+ * الاشتراك في إشعارات المستخدم.
+ * يجلب آخر 50 إشعارًا ويرتبها من الأحدث إلى الأقدم.
  */
 export const subscribeNotifications = (
   uid: string,
   cb: (items: AppNotification[]) => void
 ) => {
-  if (!uid || !auth.currentUser || auth.currentUser.uid !== uid) {
-    cb([]);
-    return () => {};
-  }
-
   const q = query(
     collection(db, 'notifications'),
     where('toUid', '==', uid),
-    limit(MAX_NOTIFICATIONS)
+    limit(50)
   );
 
   return onSnapshot(
     q,
     (snap) => {
       const items = snap.docs.map(
-        (item) =>
-          ({
-            id: item.id,
-            ...item.data(),
-          }) as AppNotification
+        (d) => ({ id: d.id, ...d.data() }) as AppNotification
       );
 
-      const timestamp = (item: AppNotification): number => {
-        const value = item.createdAt;
-
-        if (typeof value?.toMillis === 'function') {
-          return value.toMillis();
-        }
-
-        if (value instanceof Date) {
-          return value.getTime();
-        }
-
-        return 0;
-      };
+      const timestamp = (item: AppNotification): number =>
+        item.createdAt?.toMillis?.() ?? 0;
 
       items.sort((a, b) => timestamp(b) - timestamp(a));
-
       cb(items);
     },
     (error) => {
-      console.error('Notifications subscription failed:', error);
-      cb([]);
+      console.error('notifications error:', error);
     }
   );
 };
 
 /**
- * تحديد الإشعارات غير المقروءة كمقروءة.
+ * وضع علامة "مقروء" على جميع الإشعارات غير المقروءة.
  */
 export const markAllRead = async (
   items: AppNotification[]
 ): Promise<void> => {
-  const me = auth.currentUser;
+  const unread = items.filter((item) => !item.read);
 
-  if (!me || !items.length) {
-    return;
-  }
+  if (unread.length === 0) return;
 
-  const unread = items.filter(
-    (item) => item.toUid === me.uid && !item.read
-  );
+  const batch = writeBatch(db);
 
-  if (!unread.length) {
-    return;
-  }
+  unread.forEach((item) => {
+    batch.update(doc(db, 'notifications', item.id), {
+      read: true,
+    });
+  });
 
-  // حد Firestore للعمليات داخل الدفعة الواحدة هو 500.
-  // نقسم الدفعات لتجنب تجاوز الحد.
-  for (let start = 0; start < unread.length; start += 450) {
-    const batch = writeBatch(db);
-    const chunk = unread.slice(start, start + 450);
-
-    for (const item of chunk) {
-      batch.update(
-        doc(db, 'notifications', item.id),
-        { read: true }
-      );
-    }
-
-    await batch.commit();
-  }
+  await batch.commit();
 };
