@@ -457,67 +457,84 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- 10. المحادثات ----------
+    // ---------- 10. المحادثات (محدث لدعم المجموعات) ----------
     match /conversations/{convId} {
-      allow read: if signedIn()
-        && request.auth.uid in resource.data.members;
+      // السماح بالقراءة إذا كان المستخدم عضواً في المحادثة
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
 
+      // السماح بإنشاء محادثة (فردية أو مجموعة)
       allow create: if signedIn()
         && !isBanned()
-        && request.resource.data.keys().hasOnly([
-          'members',
-          'createdAt',
-          'lastMessageAt'
-        ])
-        && request.resource.data.members is list
-        && request.resource.data.members.size() == 2
-        && request.resource.data.members[0] < request.resource.data.members[1]
-        && convId == request.resource.data.members[0]
-          + '_' + request.resource.data.members[1]
         && request.auth.uid in request.resource.data.members
-        && exists(
-          /databases/$(database)/documents/users/$(otherOf(request.resource.data.members))
-        )
-        && !isBlockedBy(otherOf(request.resource.data.members))
         && request.resource.data.createdAt == request.time
-        && request.resource.data.lastMessageAt == request.time;
+        && request.resource.data.lastMessageAt == request.time
+        && (
+          // حالة المحادثة الفردية (عضوين)
+          (
+            (!('type' in request.resource.data) || request.resource.data.type == 'direct')
+            && request.resource.data.members.size() == 2
+            && request.resource.data.members[0] < request.resource.data.members[1]
+            && convId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+            && !isBlockedBy(otherOf(request.resource.data.members))
+          )
+          ||
+          // حالة المجموعة (أكثر من عضوين)
+          (
+            request.resource.data.type == 'group'
+            && request.resource.data.members.size() >= 2
+            && validText(request.resource.data.name, 1, 50)
+            && request.auth.uid in request.resource.data.admins
+          )
+        );
 
+      // السماح بتحديث المحادثة (تحديث آخر رسالة، أو تغيير الثيم/الاسم من قبل الأدمن)
       allow update: if signedIn()
         && request.auth.uid in resource.data.members
-        && request.resource.data.diff(resource.data)
-          .affectedKeys().hasOnly(['lastMessageAt'])
-        && request.resource.data.lastMessageAt == request.time;
+        && (
+          // تحديث lastMessageAt فقط (عند إرسال رسالة جديدة)
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt'])
+            && request.resource.data.lastMessageAt == request.time
+          )
+          ||
+          // تحديث الثيم (من قبل أي عضو في المحادثة)
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme'])
+          )
+          ||
+          // تحديث اسم المجموعة أو المشرفين (من قبل المشرف فقط)
+          (
+            resource.data.type == 'group'
+            && request.auth.uid in resource.data.admins
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'admins'])
+          )
+        );
 
-      allow delete: if signedIn()
-        && request.auth.uid in resource.data.members;
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
 
+      // قواعد الرسائل داخل المحادثة
       match /messages/{msgId} {
-        allow read: if signedIn()
-          && request.auth.uid in convMembers(convId);
+        allow read: if signedIn() && request.auth.uid in convMembers(convId);
 
         allow create: if signedIn()
           && !isBanned()
           && request.auth.uid in convMembers(convId)
-          && !isBlockedBy(otherOf(convMembers(convId)))
-          && request.resource.data.keys().hasOnly([
-            'senderId',
-            'ciphertext',
-            'iv',
-            'senderKeyId',
-            'recipientKeyId',
-            'createdAt'
-          ])
+          && request.resource.data.keys().hasOnly(['senderId','ciphertext','iv','senderKeyId','recipientKeyId','createdAt','replyTo','reactions'])
           && request.resource.data.senderId == request.auth.uid
-          && validText(request.resource.data.ciphertext, 1, 10000)
+          && validText(request.resource.data.ciphertext, 1, 20000)
           && validText(request.resource.data.iv, 8, 64)
           && validText(request.resource.data.senderKeyId, 8, 64)
           && validText(request.resource.data.recipientKeyId, 8, 64)
-          && request.resource.data.createdAt == request.time;
+          && request.resource.data.createdAt == request.time
+          && (!('replyTo' in request.resource.data) || validText(request.resource.data.replyTo, 1, 100));
 
-        allow update: if false;
+        // السماح بتحديث التفاعلات (الإيموجيات)
+        allow update: if signedIn()
+          && request.auth.uid in convMembers(convId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+          && request.resource.data.reactions is map;
 
-        allow delete: if signedIn()
-          && resource.data.senderId == request.auth.uid;
+        allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
       }
     }
 
