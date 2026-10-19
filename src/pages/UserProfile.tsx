@@ -13,6 +13,8 @@ import type { FollowState } from '../services/followService';
 import { notify } from '../services/notificationService';
 import { copyText, profileLink, shareLink } from '../utils/links';
 import Avatar from '../components/Avatar';
+import ProfileTabs from '../components/ProfileTabs';
+import { recordProfileView } from '../services/profileInsightsService';
 
 const UserProfilePage: React.FC = () => {
   const { uid } = useParams<{ uid: string }>();
@@ -51,6 +53,8 @@ const UserProfilePage: React.FC = () => {
           setP(prof);
           setCounts(c);
           setState(s);
+          // تسجيل الزيارة لإحصائيات صاحب الحساب (مرة واحدة يومياً لكل زائر)
+          if (user) recordProfileView(uid, user.uid);
         }
       } catch (e) {
         console.error(e);
@@ -175,7 +179,10 @@ const UserProfilePage: React.FC = () => {
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{p.displayName}</h2>
-        <p className="text-sm text-slate-500">@{p.username}</p>
+        <p className="text-sm text-slate-500">
+          @{p.username}
+          {p.pronouns ? <span className="text-slate-400"> · {p.pronouns}</span> : null}
+        </p>
         {p.bio && <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
 
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
@@ -227,6 +234,8 @@ const UserProfilePage: React.FC = () => {
           </p>
         )}
       </div>
+
+      <ProfileTabs uid={p.uid} canView={!isPrivate || state === 'following'} />
     </div>
   );
 };
