@@ -169,7 +169,13 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       return true;
     } catch (e: any) {
       console.error(e);
-      setError(e?.message === 'RECIPIENT_NO_KEY' ? t('chat.noKey') : t('chat.sendFailed'));
+      setError(
+        e?.message === 'RECIPIENT_NO_KEY'
+          ? t('chat.noKey')
+          : e?.message === 'MESSAGES_CLOSED'
+          ? 'هذا المستخدم لا يستقبل محادثات جديدة.'
+          : t('chat.sendFailed')
+      );
       return false;
     } finally {
       setBusy(false);
