@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Trash2, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { X, Trash2, Volume2, VolumeX, Loader2, Heart, Eye, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { deleteStory, markStorySeen, storyMillis } from '../services/storyService';
-import type { StoryGroup } from '../services/storyService';
+import { useI18n } from '../i18n/I18nContext';
+import Avatar from './Avatar';
+import {
+  deleteStory, markStorySeen, recordStoryView, sendStoryReply, setStoryLiked, storyMillis, subscribeStoryViews,
+} from '../services/storyService';
+import type { StoryGroup, StoryView, StoryViewRecord } from '../services/storyService';
+import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 
 interface Props {
@@ -15,19 +20,32 @@ const IMAGE_MS = 5000;
 
 const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const { user, isAdmin } = useAuth();
+  const { t, lang } = useI18n();
   const [gi, setGi] = useState(startGroup);
   const [si, setSi] = useState(0);
   const [progress, setProgress] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [held, setHeld] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [rec, setRec] = useState<StoryViewRecord | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [inputFocus, setInputFocus] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sentMsg, setSentMsg] = useState(false);
+  const [views, setViews] = useState<StoryView[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const group = groups[gi];
   const story = group?.stories[si];
+  const isOwner = !!story && !!user && story.authorId === user.uid;
 
+  const authorBriefs = useUserBriefs(groups.map((g) => g.authorId));
+  const viewerBriefs = useUserBriefs(isOwner ? views.map((v) => v.viewerId) : []);
+
+  const paused = held || inputFocus || sheetOpen;
   const pausedRef = useRef(false);
-  pausedRef.current = held || !loaded;
+  pausedRef.current = paused || !loaded;
 
   const goNext = useCallback(() => {
     if (!group) return;
@@ -61,8 +79,33 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
     if (!story) return;
     setLoaded(false);
     setProgress(0);
+    setReplyText('');
+    setSentMsg(false);
+    setSheetOpen(false);
     markStorySeen(story.authorId, storyMillis(story));
   }, [story?.id]);
+
+  // تسجيل المشاهدة مرة واحدة لكل مستخدم (لا تُحتسب مشاهدة صاحب القصة لقصته)
+  useEffect(() => {
+    setRec(null);
+    if (!story || !user || story.authorId === user.uid) return;
+    let off = false;
+    recordStoryView(story, user.uid)
+      .then((r) => {
+        if (!off) setRec(r);
+      })
+      .catch((e) => console.error('story view failed:', e));
+    return () => {
+      off = true;
+    };
+  }, [story?.id, user?.uid]);
+
+  // قائمة المشاهدين تظهر لصاحب القصة فقط
+  useEffect(() => {
+    setViews([]);
+    if (!story || !isOwner) return;
+    return subscribeStoryViews(story, setViews, (e) => console.error('story views error:', e));
+  }, [story?.id, isOwner]);
 
   useEffect(() => {
     if (!story || story.mediaType === 'video') return;
@@ -88,9 +131,9 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (held) v.pause();
+    if (paused) v.pause();
     else v.play().catch(() => undefined);
-  }, [held, story?.id]);
+  }, [paused, story?.id]);
 
   const touch = useRef({ x: 0, y: 0, t: 0 });
 
@@ -117,18 +160,48 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   };
 
   const onDelete = async () => {
-    if (!story || !confirm('حذف هذه القصة؟')) return;
+    if (!story || !confirm(t('story.deleteConfirm'))) return;
     try {
       await deleteStory(story.id);
       onClose();
     } catch (e: any) {
-      alert('تعذّر الحذف: ' + (e?.message || ''));
+      alert(t('story.deleteFail') + ' ' + (e?.message || ''));
+    }
+  };
+
+  const toggleLike = async () => {
+    if (!story || !user || !rec) return;
+    const prev = rec;
+    setRec({ ...rec, liked: !rec.liked });
+    try {
+      await setStoryLiked(story, user.uid, !prev.liked);
+    } catch (e) {
+      console.error(e);
+      setRec(prev);
+    }
+  };
+
+  const sendReply = async () => {
+    const v = replyText.trim();
+    if (!v || !story || !user || !rec || sending) return;
+    setSending(true);
+    try {
+      await sendStoryReply(story, user.uid, v);
+      setReplyText('');
+      setSentMsg(true);
+      setTimeout(() => setSentMsg(false), 2000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
     }
   };
 
   if (!group || !story) return null;
-  const canDelete = story.authorId === user?.uid || isAdmin;
+  const canDelete = isOwner || isAdmin;
   const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
+  const author = pickAuthor(authorBriefs, group.authorId, group.authorName, group.authorPhotoURL);
+  const likesCount = views.filter((v) => v.liked).length;
 
   return (
     <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center select-none touch-none">
@@ -187,34 +260,117 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
 
         <div className="flex items-center gap-3 mt-3 pointer-events-auto">
           <img
-            src={group.authorPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${group.authorId}`}
+            src={author.photo || `https://api.dicebear.com/7.x/bottts/svg?seed=${group.authorId}`}
             alt=""
             className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900"
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-white truncate">{group.authorName}</p>
-            <p className="text-[10px] text-white/70">{timeAgo(story.createdAt)}</p>
+            <p className="text-sm font-bold text-white truncate">{author.name}</p>
+            <p className="text-[10px] text-white/70">{timeAgo(story.createdAt, lang)}</p>
           </div>
           {story.mediaType === 'video' && (
-            <button onPointerDown={stop} onPointerUp={stop} onClick={() => setMuted((m) => !m)} className="p-2 text-white" aria-label="الصوت">
+            <button onPointerDown={stop} onPointerUp={stop} onClick={() => setMuted((m) => !m)} className="p-2 text-white" aria-label={t('story.sound')}>
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
           )}
           {canDelete && (
-            <button onPointerDown={stop} onPointerUp={stop} onClick={onDelete} className="p-2 text-white" aria-label="حذف">
+            <button onPointerDown={stop} onPointerUp={stop} onClick={onDelete} className="p-2 text-white" aria-label={t('common.delete')}>
               <Trash2 className="w-5 h-5" />
             </button>
           )}
-          <button onPointerDown={stop} onPointerUp={stop} onClick={onClose} className="p-2 text-white" aria-label="إغلاق">
+          <button onPointerDown={stop} onPointerUp={stop} onClick={onClose} className="p-2 text-white" aria-label={t('story.close')}>
             <X className="w-6 h-6" />
           </button>
         </div>
       </div>
 
       {story.caption && (
-        <div className="absolute bottom-0 inset-x-0 pointer-events-none bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-16 pb-[calc(env(safe-area-inset-bottom)+24px)] px-5">
+        <div className="absolute bottom-0 inset-x-0 pointer-events-none bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-16 pb-[calc(env(safe-area-inset-bottom)+84px)] px-5">
           <p className="text-white text-sm font-semibold leading-relaxed text-center break-words">{story.caption}</p>
         </div>
+      )}
+
+      {/* شريط التفاعل السفلي */}
+      {isOwner ? (
+        <div className="absolute bottom-0 inset-x-0 z-10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+14px)] bg-gradient-to-t from-black/85 to-transparent flex justify-center">
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-bold"
+          >
+            <Eye className="w-4 h-4" />
+            {t('story.views', { n: views.length })}
+            {likesCount > 0 && (
+              <span className="flex items-center gap-1 text-red-400">
+                <Heart className="w-3.5 h-3.5 fill-red-500" />
+                {likesCount}
+              </span>
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="absolute bottom-0 inset-x-0 z-10 px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)] bg-gradient-to-t from-black/85 to-transparent">
+          {sentMsg && <p className="text-center text-xs text-emerald-400 font-bold mb-2">{t('story.replySent')}</p>}
+          <div className="flex items-center gap-2">
+            <input
+              value={replyText}
+              disabled={!rec}
+              maxLength={200}
+              onChange={(e) => setReplyText(e.target.value)}
+              onFocus={() => setInputFocus(true)}
+              onBlur={() => setInputFocus(false)}
+              onKeyDown={(e) => e.key === 'Enter' && sendReply()}
+              placeholder={t('story.replyPlaceholder')}
+              className="flex-1 px-4 py-2.5 rounded-full bg-white/10 border border-white/30 text-white text-sm placeholder:text-white/60 outline-none focus:border-white disabled:opacity-50"
+            />
+            {replyText.trim() && (
+              <button onClick={sendReply} disabled={sending || !rec} className="p-2.5 rounded-full bg-white/15 text-white disabled:opacity-50" aria-label={t('common.send')}>
+                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              </button>
+            )}
+            <button onClick={toggleLike} disabled={!rec} className="p-2.5 text-white disabled:opacity-50" aria-label={t('story.like')}>
+              <Heart className={`w-7 h-7 ${rec?.liked ? 'fill-red-500 text-red-500' : ''}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* قائمة المشاهدين (لصاحب القصة) */}
+      {isOwner && sheetOpen && (
+        <>
+          <div className="absolute inset-0 z-20 bg-black/50" onClick={() => setSheetOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 z-30 max-h-[65%] flex flex-col bg-dark-950 border-t border-white/10 rounded-t-3xl">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/10">
+              <div>
+                <h3 className="text-sm font-black text-white">{t('story.viewers')}</h3>
+                <p className="text-[11px] text-slate-400">
+                  {t('story.views', { n: views.length })} · {t('story.likesCount', { n: likesCount })}
+                </p>
+              </div>
+              <button onClick={() => setSheetOpen(false)} className="p-2 text-slate-300" aria-label={t('story.close')}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-4 py-3 space-y-3 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+              {views.length === 0 ? (
+                <p className="text-center text-sm text-slate-400 py-8">{t('story.noViewers')}</p>
+              ) : (
+                views.map((v) => {
+                  const a = pickAuthor(viewerBriefs, v.viewerId, '...');
+                  return (
+                    <div key={v.id} className="flex items-start gap-3">
+                      <Avatar src={a.photo} seed={v.viewerId} name={a.name} className="w-10 h-10 rounded-full object-cover bg-dark-900" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{a.name}</p>
+                        {v.reply && <p className="text-xs text-slate-300 mt-0.5 break-words">{v.reply}</p>}
+                      </div>
+                      {v.liked && <Heart className="w-5 h-5 fill-red-500 text-red-500 shrink-0 mt-1" />}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
