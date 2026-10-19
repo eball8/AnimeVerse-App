@@ -26,6 +26,7 @@ interface ItemProps {
   root: React.RefObject<HTMLDivElement>;
   onVisible: (i: number) => void;
   onToggleMute: () => void;
+  onAutoplayBlocked: () => void;
   onLike: (p: Post) => void;
   onComment: (p: Post) => void;
   onRepost: (p: Post) => void;
@@ -56,9 +57,18 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   useEffect(() => {
     const v = vref.current;
     if (!v) return;
-    if (active) v.play().catch(() => {});
-    else v.pause();
-  }, [active, near]);
+    v.muted = muted;
+    if (active) {
+      v.play().catch(() => {
+        // المتصفح منع التشغيل بالصوت: نشغّله بدون صوت ونُظهر زر الكتم
+        if (!v.muted) {
+          v.muted = true;
+          p.onAutoplayBlocked();
+          v.play().catch(() => {});
+        }
+      });
+    } else v.pause();
+  }, [active, near, muted]);
 
   const togglePlay = () => {
     const v = vref.current;
@@ -146,7 +156,7 @@ const Reels: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
   const [active, setActive] = useState(0);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [liked, setLiked] = useState<Set<string>>(new Set());
   const [commentPost, setCommentPost] = useState<Post | null>(null);
   const [toast, setToast] = useState('');
@@ -316,6 +326,7 @@ const Reels: React.FC = () => {
                   root={rootRef}
                   onVisible={onVisible}
                   onToggleMute={() => setMuted((m) => !m)}
+                  onAutoplayBlocked={() => setMuted(true)}
                   onLike={onLike}
                   onComment={setCommentPost}
                   onRepost={onRepost}
