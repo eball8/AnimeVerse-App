@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, MessageCircle, Share2, Trash2, Link2, Check, Repeat2, Clapperboard } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Link2, Check, Repeat2, Clapperboard } from 'lucide-react';
 import type { Post } from '../services/postService';
 import Avatar from './Avatar';
+import DeleteButton from './DeleteButton';
 import { timeAgo } from '../utils/timeAgo';
 import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/links';
 import { useI18n } from '../i18n/I18nContext';
@@ -66,9 +67,7 @@ const PostCard: React.FC<Props> = ({
           <p className="text-[10px] text-slate-500">{timeAgo(post.createdAt, lang)}</p>
         </div>
         {canDelete && (
-          <button onClick={() => onDelete(post)} className="p-2 text-red-400" aria-label={t('common.delete')}>
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <DeleteButton variant="soft" label={t('common.delete')} onClick={() => onDelete(post)} />
         )}
       </div>
 
