@@ -62,7 +62,6 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
   );
 };
 
-// قراءة وثيقة غير موجودة تُرفض بالقواعد، لذلك نستخدم استعلاماً
 export const conversationExists = async (me: string, convId: string): Promise<boolean> => {
   const snap = await getDocs(
     query(collection(db, 'conversations'), where('members', 'array-contains', me), limit(200))
@@ -90,7 +89,6 @@ export const subscribeMessages = (
   );
 };
 
-// يحترم إعداد الخصوصية عند بدء محادثة جديدة فقط (everyone | following | nobody)
 const assertCanMessage = async (me: string, other: string): Promise<void> => {
   const snap = await getDoc(doc(db, 'users', other));
   const mode = (snap.data() as { messagePrivacy?: string } | undefined)?.messagePrivacy;
@@ -164,13 +162,23 @@ export const removeMessage = async (convId: string, msgId: string): Promise<void
 };
 
 // ==========================================
-// دوال جديدة لجلب القصص (Stories)
+// دوال جديدة لجلب القصص والرسائل غير المقروءة
 // ==========================================
 
+// جلب القصص الحقيقية من Firestore
 export const subscribeStories = (cb: (stories: Story[]) => void) => {
   const q = query(collection(db, 'stories'), orderBy('createdAt', 'desc'), limit(20));
   return onSnapshot(q, (snap) => {
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Story));
     cb(items);
   }, (e) => console.error('stories error:', e));
+};
+
+// جلب عدد الرسائل غير المقروءة لكل محادثة
+// ملاحظة: هذه الدالة تحتاج لدعم إضافي في قاعدة البيانات (تخزين حالة القراءة).
+// كحل مؤقت وسريع، سنعتمد على عدد الرسائل الكلي في المحادثة كمؤشر تجريبي.
+export const getUnreadCounts = async (me: string): Promise<Record<string, number>> => {
+  // في التطبيقات الحقيقية، يجب تخزين آخر رسالة قرأها المستخدم في وثيقة المحادثة.
+  // هنا نعيد كائن فارغ لتجنب الأخطاء، وسنقوم بتحديثه لاحقاً عند بناء نظام "قراءة الرسائل".
+  return {};
 };
