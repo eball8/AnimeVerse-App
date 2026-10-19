@@ -1,21 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowRight, Star, PlayCircle, Loader2, Info, ListVideo, BarChart2, Users } from 'lucide-react';
+import { average, collection, count, getAggregateFromServer, query, where } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { getAnimeById } from '../services/animeService';
 import type { Anime } from '../services/animeService';
 import { isCustomId, getCustomAnime } from '../services/customAnimeService';
+import { getAnimeExtra } from '../services/malService';
+import type { AnimeExtra } from '../services/malService';
+import { useI18n } from '../i18n/I18nContext';
 import LibraryControls from '../components/LibraryControls';
+
+const EP_PAGE = 100;
 
 const AnimeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [anime, setAnime] = useState<Anime | null>(null);
+  const [extra, setExtra] = useState<AnimeExtra | null>(null);
+  const [appRating, setAppRating] = useState<{ avg: number; count: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [visibleEps, setVisibleEps] = useState(EP_PAGE);
   const [activeTab, setActiveTab] = useState<'details' | 'episodes' | 'stats' | 'characters'>('details');
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setExtra(null);
+    setAppRating(null);
+    setVisibleEps(EP_PAGE);
     const request = isCustomId(id) ? getCustomAnime(id) : getAnimeById(Number(id));
     request
       .then((data) => setAnime(data))
@@ -25,6 +39,42 @@ const AnimeDetail: React.FC = () => {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // بيانات MyAnimeList الحقيقية (عدد الحلقات + التقييم)
+  useEffect(() => {
+    if (!id || isCustomId(id)) return;
+    let cancelled = false;
+    getAnimeExtra(Number(id)).then((d) => {
+      if (!cancelled) setExtra(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // متوسط تقييمات مستخدمي التطبيق لكل حلقات هذا الأنمي (قراءة مجمّعة رخيصة)
+  useEffect(() => {
+    if (!anime) return;
+    const key = String(anime.mal_id);
+    let cancelled = false;
+    getAggregateFromServer(
+      query(
+        collection(db, 'episodeRatings'),
+        where('episodeKey', '>=', `${key}_`),
+        where('episodeKey', '<', `${key}_\uf8ff`)
+      ),
+      { avg: average('rating'), n: count() }
+    )
+      .then((s) => {
+        if (cancelled) return;
+        const d = s.data();
+        setAppRating({ avg: d.avg ?? 0, count: d.n });
+      })
+      .catch((e) => console.error('app rating failed:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [anime]);
 
   if (loading) {
     return (
@@ -37,14 +87,34 @@ const AnimeDetail: React.FC = () => {
   if (!anime) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-dark-950">
-        <p className="text-slate-400 mb-4">فشل تحميل الأنمي.</p>
-        <button onClick={() => navigate(-1)} className="btn-primary px-6 py-2">رجوع</button>
+        <p className="text-slate-400 mb-4">{t('anime.loadFail')}</p>
+        <button onClick={() => navigate(-1)} className="btn-primary px-6 py-2">{t('common.back')}</button>
       </div>
     );
   }
 
   const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
-  const episodeCount = Math.min(anime.episodes || 12, 200);
+
+  const status = extra?.status && extra.status !== 'unknown' ? extra.status : anime.airing ? 'airing' : 'finished';
+  const total = extra?.totalEpisodes ?? anime.episodes ?? null;
+  const aired = extra?.airedEpisodes ?? null;
+  const listCount = status === 'airing' ? (aired ?? total ?? 0) : status === 'upcoming' ? 0 : (total ?? 0);
+
+  const episodesText =
+    status === 'airing'
+      ? `${aired ?? '?'} / ${total ?? '?'}`
+      : status === 'upcoming'
+      ? String(total ?? t('anime.tba'))
+      : String(total ?? '?');
+
+  const statusLabel =
+    status === 'airing' ? t('anime.airing') : status === 'upcoming' ? t('anime.upcoming') : t('anime.finished');
+  const statusCls =
+    status === 'airing'
+      ? 'bg-emerald-500/20 text-emerald-400'
+      : status === 'upcoming'
+      ? 'bg-amber-500/20 text-amber-400'
+      : 'bg-slate-500/20 text-slate-400';
 
   return (
     <div className="min-h-screen bg-dark-950 pb-10">
@@ -54,9 +124,9 @@ const AnimeDetail: React.FC = () => {
         <img src={imageUrl} alt={anime.title} className="w-full h-full object-cover" />
         <button
           onClick={() => navigate(-1)}
-          className="absolute top-4 right-4 z-20 p-2 rounded-xl bg-black/50 backdrop-blur-md text-white hover:bg-black/70 transition"
+          className="absolute top-4 end-4 z-20 p-2 rounded-xl bg-black/50 backdrop-blur-md text-white hover:bg-black/70 transition"
         >
-          <ArrowRight className="w-5 h-5" />
+          <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
         </button>
       </div>
 
@@ -73,21 +143,51 @@ const AnimeDetail: React.FC = () => {
               {anime.title_english || anime.title}
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              {anime.score && (
+              {extra?.malScore != null && (
                 <span className="flex items-center gap-1 text-yellow-400 font-bold">
-                  <Star className="w-3.5 h-3.5 fill-yellow-400" /> {anime.score}
+                  <Star className="w-3.5 h-3.5 fill-yellow-400" /> {extra.malScore.toFixed(2)}
+                  <span className="text-[9px] text-slate-500 font-normal">MAL</span>
                 </span>
               )}
               {anime.type && <span>• {anime.type}</span>}
               {anime.year && <span>• {anime.year}</span>}
             </div>
-            <span
-              className={`inline-block mt-2 px-2 py-0.5 rounded-md ${
-                anime.airing ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
-              } text-[10px] font-bold`}
-            >
-              {anime.airing ? 'مستمر' : 'مكتمل'}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className={`inline-block px-2 py-0.5 rounded-md ${statusCls} text-[10px] font-bold`}>
+                {statusLabel}
+              </span>
+              <span className="inline-block px-2 py-0.5 rounded-md bg-white/10 text-white text-[10px] font-bold">
+                {t('anime.episodes')}: {episodesText}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* التقييمات */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="card p-3 text-center">
+            <p className="text-[10px] text-slate-500 font-bold mb-1">{t('anime.malScore')}</p>
+            <p className="text-lg font-black text-yellow-400">
+              {extra?.malScore != null ? extra.malScore.toFixed(2) : '—'}
+              <span className="text-[10px] text-slate-500 font-normal"> /10</span>
+            </p>
+            {extra?.malScoredBy != null && (
+              <p className="text-[10px] text-slate-500">{t('anime.ratingsCount', { n: extra.malScoredBy.toLocaleString() })}</p>
+            )}
+          </div>
+          <div className="card p-3 text-center">
+            <p className="text-[10px] text-slate-500 font-bold mb-1">{t('anime.appScore')}</p>
+            {appRating && appRating.count > 0 ? (
+              <>
+                <p className="text-lg font-black text-primary-400">
+                  {appRating.avg.toFixed(1)}
+                  <span className="text-[10px] text-slate-500 font-normal"> /10</span>
+                </p>
+                <p className="text-[10px] text-slate-500">{t('anime.ratingsCount', { n: appRating.count })}</p>
+              </>
+            ) : (
+              <p className="text-[10px] text-slate-500 leading-relaxed pt-1">{t('anime.noRatings')}</p>
+            )}
           </div>
         </div>
 
@@ -101,10 +201,10 @@ const AnimeDetail: React.FC = () => {
         {/* Tabs */}
         <div className="flex border-b border-white/10 mt-6 overflow-x-auto no-scrollbar">
           {[
-            { id: 'details', label: 'التفاصيل', icon: Info },
-            { id: 'episodes', label: 'الحلقات', icon: ListVideo },
-            { id: 'stats', label: 'الإحصائيات', icon: BarChart2 },
-            { id: 'characters', label: 'الشخصيات', icon: Users },
+            { id: 'details', label: t('anime.details'), icon: Info },
+            { id: 'episodes', label: t('anime.episodes'), icon: ListVideo },
+            { id: 'stats', label: t('anime.stats'), icon: BarChart2 },
+            { id: 'characters', label: t('anime.characters'), icon: Users },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -125,8 +225,8 @@ const AnimeDetail: React.FC = () => {
           {activeTab === 'details' && (
             <div className="space-y-5">
               <div>
-                <h3 className="text-sm font-black text-white mb-2">القصة</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">{anime.synopsis || 'لا يوجد وصف.'}</p>
+                <h3 className="text-sm font-black text-white mb-2">{t('anime.synopsis')}</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">{anime.synopsis || t('anime.noSynopsis')}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {(anime.genres || []).map((g, i) => (
@@ -145,7 +245,7 @@ const AnimeDetail: React.FC = () => {
                   rel="noopener noreferrer"
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-bold hover:bg-red-500/20 transition"
                 >
-                  <PlayCircle className="w-5 h-5" /> مشاهدة التريلر
+                  <PlayCircle className="w-5 h-5" /> {t('anime.trailer')}
                 </a>
               )}
             </div>
@@ -153,31 +253,44 @@ const AnimeDetail: React.FC = () => {
 
           {activeTab === 'episodes' && (
             <div className="space-y-2">
-              <h3 className="text-sm font-black text-white mb-3">الحلقات المتاحة</h3>
-              {Array.from({ length: episodeCount }, (_, i) => i + 1).map((ep) => (
+              <h3 className="text-sm font-black text-white mb-3">
+                {t('anime.listTitle')} ({listCount})
+              </h3>
+              {listCount === 0 && (
+                <p className="text-center text-xs text-slate-500 py-6">{t('anime.notAired')}</p>
+              )}
+              {Array.from({ length: Math.min(listCount, visibleEps) }, (_, i) => i + 1).map((ep) => (
                 <button
                   key={ep}
                   onClick={() => navigate(`/watch/${anime.mal_id}/${ep}`)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-right"
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-start"
                 >
-                  <span className="text-sm font-bold text-white">الحلقة {ep}</span>
+                  <span className="text-sm font-bold text-white">{t('anime.episodeN', { n: ep })}</span>
                   <PlayCircle className="w-4 h-4 text-primary-400" />
                 </button>
               ))}
+              {listCount > visibleEps && (
+                <button
+                  onClick={() => setVisibleEps((v) => v + EP_PAGE)}
+                  className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-primary-400 text-xs font-bold"
+                >
+                  {t('common.more')}
+                </button>
+              )}
             </div>
           )}
 
           {activeTab === 'stats' && (
             <div className="card p-6 text-center">
               <BarChart2 className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-sm text-slate-400">إحصائيات المشاهدة والتفاعل ستظهر هنا.</p>
+              <p className="text-sm text-slate-400">{t('anime.statsSoon')}</p>
             </div>
           )}
 
           {activeTab === 'characters' && (
             <div className="card p-6 text-center">
               <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-sm text-slate-400">شخصيات الأنمي والمؤدون الصوتيون سيظهرون هنا.</p>
+              <p className="text-sm text-slate-400">{t('anime.charsSoon')}</p>
             </div>
           )}
         </div>
