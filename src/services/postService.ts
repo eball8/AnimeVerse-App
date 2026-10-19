@@ -16,6 +16,8 @@ export interface Post {
   mediaType?: 'image' | 'video';
   repostOfId?: string;
   repostOfAuthorId?: string;
+  mentions?: string[];
+  collaborators?: string[];
   likesCount: number;
   commentsCount: number;
   createdAt: any;
@@ -31,19 +33,57 @@ export interface PostComment {
   createdAt: any;
 }
 
-export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>) => {
+// استخراج @username من نص المنشور وتحويلها إلى معرّفات مستخدمين حقيقيين (حد أقصى 10)
+const extractMentionIds = async (content: string, authorId: string): Promise<string[]> => {
+  const names = new Set<string>();
+  const re = /(^|\s)@([a-zA-Z0-9_]{3,30})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    names.add(m[2].toLowerCase());
+    if (names.size >= 10) break;
+  }
+  if (names.size === 0) return [];
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('username', 'in', Array.from(names))));
+    return snap.docs.map((d) => d.id).filter((id) => id !== authorId);
+  } catch (e) {
+    console.error('mentions lookup failed:', e);
+    return [];
+  }
+};
+
+export const createPost = async (
+  postData: Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount' | 'mentions'>
+) => {
   try {
     // Firestore يرفض القيم undefined، فنحذف الحقول الفارغة قبل الإرسال
     const clean = Object.fromEntries(
       Object.entries(postData).filter(([, v]) => v !== undefined && v !== '')
-    ) as typeof postData;
-    const docRef = await addDoc(collection(db, 'posts'), {
+    ) as Record<string, unknown>;
+    delete clean.collaborators;
+
+    const collab = Array.from(new Set(postData.collaborators || []))
+      .filter((id) => id && id !== postData.authorId)
+      .slice(0, 10);
+    const mentionIds = await extractMentionIds(postData.content ?? '', postData.authorId);
+    const allMentions = Array.from(new Set([...mentionIds, ...collab])).slice(0, 20);
+
+    const payload: Record<string, unknown> = {
       ...clean,
       content: postData.content ?? '',
       likesCount: 0,
       commentsCount: 0,
       createdAt: serverTimestamp(),
-    });
+    };
+    if (allMentions.length) payload.mentions = allMentions;
+    if (collab.length) payload.collaborators = collab;
+
+    const docRef = await addDoc(collection(db, 'posts'), payload);
+
+    // إشعار كل شخص تمت الإشارة إليه أو إضافته كمتعاون
+    mentionIds.forEach((uid) => notify(uid, 'comment', 'أشار إليك في منشور', docRef.id));
+    collab.forEach((uid) => notify(uid, 'comment', 'شاركك في منشور تعاوني', docRef.id));
+
     return docRef.id;
   } catch (error) {
     console.error('Error creating post:', error);
@@ -115,6 +155,33 @@ export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 
     items.sort((a, b) => ms(b) - ms(a));
     return { items, cursor: null, done: true };
   }
+};
+
+const createdMs = (p: Post) => p.createdAt?.toMillis?.() ?? 0;
+
+// منشورات مستخدم معيّن (الأحدث أولاً). إن لم يُنشأ الفهرس المركّب نرتّب محلياً.
+export const getUserPosts = async (uid: string, max = 100): Promise<Post[]> => {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'posts'), where('authorId', '==', uid), orderBy('createdAt', 'desc'), limit(max))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
+  } catch (e: any) {
+    if (e?.code !== 'failed-precondition') throw e;
+    console.error('User posts index is missing. Open the link inside this error to create it:', e);
+    const snap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), limit(max)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
+    items.sort((a, b) => createdMs(b) - createdMs(a));
+    return items;
+  }
+};
+
+// المنشورات التي تمت الإشارة إلى هذا المستخدم فيها (@mention) أو أُضيف فيها كمتعاون
+export const getMentionedPosts = async (uid: string, max = 100): Promise<Post[]> => {
+  const snap = await getDocs(query(collection(db, 'posts'), where('mentions', 'array-contains', uid), limit(max)));
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
+  items.sort((a, b) => createdMs(b) - createdMs(a));
+  return items;
 };
 
 export const deletePost = async (postId: string) => {
