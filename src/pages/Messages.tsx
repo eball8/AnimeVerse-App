@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Lock, Loader2, Search, Plus, Bell, Users, X, Trash2 } from 'lucide-react';
+import { MessageCircle, Lock, Loader2, Search, Plus, Users, X, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
@@ -12,7 +12,6 @@ import { subscribeStories, hasSeenAll } from '../services/storyService';
 import type { StoryGroup } from '../services/storyService';
 import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
 import type { Note } from '../services/noteService';
-import { subscribeNotifications } from '../services/notificationService';
 import { usePresence } from '../services/presenceService';
 import { useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
@@ -298,29 +297,15 @@ const Messages: React.FC = () => {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [showCreateGroup, setShowCreateGroup] = useState(false);
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
   const showActivity = (profile as any)?.showActivity !== false;
 
-  useEffect(() => {
-    if (!user) return;
-    return subscribeNotifications(user.uid, (items) => setUnreadNotifs(items.filter((n) => !n.read).length));
-  }, [user]);
-
+  // ملاحظة: الهيدر العلوي (اسم المستخدم + بحث + إشعارات + رسائل) يأتي من Layout،
+  // لذلك هذه الشاشة نظيفة بلا شعار ولا زر ☰ ولا أزرار مكررة.
   return (
-    <div className="px-4 py-6 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <MessageCircle className="w-6 h-6 text-primary-400" />
-          <h2 className="text-xl font-black text-white">{t('chat.title')}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title="إنشاء مجموعة"><Users className="w-5 h-5" /></button>
-          <button onClick={() => navigate('/search')} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition"><Search className="w-5 h-5" /></button>
-          <button onClick={() => navigate('/notifications')} className="relative p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" aria-label="الإشعارات">
-            <Bell className="w-5 h-5" />
-            {unreadNotifs > 0 && <span className="absolute top-1 end-1 w-2.5 h-2.5 bg-red-500 border-2 border-dark-950 rounded-full" />}
-          </button>
-        </div>
+    <div className="px-4 py-4 max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-black text-white">{t('chat.title')}</h2>
+        <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title="إنشاء مجموعة" aria-label="إنشاء مجموعة"><Users className="w-5 h-5" /></button>
       </div>
 
       {user && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
