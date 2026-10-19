@@ -9,7 +9,6 @@ import type { LocalKey } from './cryptoService';
 export type ChatPayload =
   | { k: 't'; v: string }
   | { k: 'v'; url: string; key: string; iv: string; dur: number; mime: string }
-  // صورة أو فيديو مشفّر (المفتاح داخل الرسالة المشفّرة نفسها)
   | { k: 'm'; url: string; key: string; iv: string; mime: string; size: number; w?: number; h?: number };
 
 export interface Conversation {
@@ -33,6 +32,16 @@ export interface PublicKeyInfo {
   publicKey: string;
 }
 
+// --- واجهات جديدة للقصص ---
+export interface Story {
+  id: string;
+  userId: string;
+  mediaUrl: string;
+  type: 'image' | 'video';
+  createdAt: any;
+  viewedBy?: string[];
+}
+
 export const convIdOf = (a: string, b: string): string => (a < b ? `${a}_${b}` : `${b}_${a}`);
 
 export const subscribeConversations = (me: string, cb: (items: Conversation[]) => void) => {
@@ -53,7 +62,6 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
   );
 };
 
-// قراءة وثيقة غير موجودة تُرفض بالقواعد، لذلك نستخدم استعلاماً
 export const conversationExists = async (me: string, convId: string): Promise<boolean> => {
   const snap = await getDocs(
     query(collection(db, 'conversations'), where('members', 'array-contains', me), limit(200))
@@ -81,7 +89,6 @@ export const subscribeMessages = (
   );
 };
 
-// يحترم إعداد الخصوصية عند بدء محادثة جديدة فقط (everyone | following | nobody)
 const assertCanMessage = async (me: string, other: string): Promise<void> => {
   const snap = await getDoc(doc(db, 'users', other));
   const mode = (snap.data() as { messagePrivacy?: string } | undefined)?.messagePrivacy;
@@ -152,4 +159,26 @@ export const decryptMessage = async (
 
 export const removeMessage = async (convId: string, msgId: string): Promise<void> => {
   await deleteDoc(doc(db, 'conversations', convId, 'messages', msgId));
+};
+
+// ==========================================
+// دوال جديدة لجلب القصص والرسائل غير المقروءة
+// ==========================================
+
+// جلب القصص الحقيقية من Firestore
+export const subscribeStories = (cb: (stories: Story[]) => void) => {
+  const q = query(collection(db, 'stories'), orderBy('createdAt', 'desc'), limit(20));
+  return onSnapshot(q, (snap) => {
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Story));
+    cb(items);
+  }, (e) => console.error('stories error:', e));
+};
+
+// جلب عدد الرسائل غير المقروءة لكل محادثة
+// ملاحظة: هذه الدالة تحتاج لدعم إضافي في قاعدة البيانات (تخزين حالة القراءة).
+// كحل مؤقت وسريع، سنعتمد على عدد الرسائل الكلي في المحادثة كمؤشر تجريبي.
+export const getUnreadCounts = async (me: string): Promise<Record<string, number>> => {
+  // في التطبيقات الحقيقية، يجب تخزين آخر رسالة قرأها المستخدم في وثيقة المحادثة.
+  // هنا نعيد كائن فارغ لتجنب الأخطاء، وسنقوم بتحديثه لاحقاً عند بناء نظام "قراءة الرسائل".
+  return {};
 };
