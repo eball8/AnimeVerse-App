@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Lock, Loader2, Search, Plus, Bell, Users, X } from 'lucide-react';
+import { MessageCircle, Lock, Loader2, Search, Plus, Bell, Users, X, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
-import { subscribeConversations, subscribeStories, createGroup } from '../services/chatService';
-import type { Conversation, Story } from '../services/chatService';
+import StoryViewer from '../components/StoryViewer';
+import { subscribeConversations, createGroup, isUnread } from '../services/chatService';
+import type { Conversation } from '../services/chatService';
+import { subscribeStories, hasSeenAll } from '../services/storyService';
+import type { StoryGroup } from '../services/storyService';
+import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
+import type { Note } from '../services/noteService';
+import { subscribeNotifications } from '../services/notificationService';
+import { usePresence } from '../services/presenceService';
 import { useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 
@@ -18,7 +25,10 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
   const [name, setName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [convs, setConvs] = useState<Conversation[]>([]);
-  const briefs = useUserBriefs(convs.map(c => c.otherUid));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const direct = convs.filter((c) => c.type !== 'group');
+  const briefs = useUserBriefs(direct.map((c) => c.otherUid));
 
   useEffect(() => {
     const unsub = subscribeConversations(me, setConvs);
@@ -26,31 +36,39 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
   }, [me]);
 
   const handleCreate = async () => {
-    if (!name.trim() || selectedUsers.length === 0) return;
-    const groupId = await createGroup(me, name.trim(), selectedUsers);
-    onCreated(groupId);
+    if (!name.trim() || selectedUsers.length === 0 || busy) return;
+    setBusy(true); setErr('');
+    try {
+      const groupId = await createGroup(me, name.trim(), selectedUsers);
+      onCreated(groupId);
+    } catch (e) {
+      console.error(e);
+      setErr('تعذّر إنشاء المجموعة.');
+      setBusy(false);
+    }
   };
 
   const toggleUser = (uid: string) => {
-    setSelectedUsers(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
+    setSelectedUsers((prev) => (prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]));
   };
 
   return (
     <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
         <div className="p-4 border-b border-white/10 flex justify-between items-center">
           <h3 className="text-white font-bold">{step === 1 ? 'اختر الأعضاء' : 'اسم المجموعة'}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        
+
         <div className="p-4">
           {step === 1 ? (
             <div className="max-h-64 overflow-y-auto space-y-2">
-              {convs.filter(c => c.type !== 'group').map(c => {
+              {direct.length === 0 && <p className="text-xs text-slate-400 text-center py-4">ابدأ محادثة فردية مع شخص أولاً لتتمكن من إضافته.</p>}
+              {direct.map((c) => {
                 const b = briefs[c.otherUid];
                 return (
                   <button key={c.id} onClick={() => toggleUser(c.otherUid)} className="w-full flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl transition">
-                    <Avatar src={b?.photoURL} seed={c.otherUid} name={b?.displayName} className="w-10 h-10 rounded-full" />
+                    <Avatar src={b?.photoURL} seed={c.otherUid} name={b?.displayName} className="w-10 h-10 rounded-full object-cover" />
                     <span className="flex-1 text-sm font-bold text-white text-start">{b?.displayName || '...'}</span>
                     <div className={`w-5 h-5 rounded-full border-2 ${selectedUsers.includes(c.otherUid) ? 'bg-primary-500 border-primary-500' : 'border-slate-500'}`} />
                   </button>
@@ -58,8 +76,9 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
               })}
             </div>
           ) : (
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="اسم المجموعة..." className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white outline-none focus:border-primary-500" />
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder="اسم المجموعة..." className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white outline-none focus:border-primary-500" />
           )}
+          {err && <p className="text-xs text-red-400 mt-3">{err}</p>}
         </div>
 
         <div className="p-4 border-t border-white/10 flex justify-end gap-2">
@@ -67,7 +86,7 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
           {step === 1 ? (
             <button onClick={() => setStep(2)} disabled={selectedUsers.length === 0} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">التالي</button>
           ) : (
-            <button onClick={handleCreate} disabled={!name.trim()} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">إنشاء</button>
+            <button onClick={handleCreate} disabled={!name.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : 'إنشاء'}</button>
           )}
         </div>
       </div>
@@ -76,49 +95,154 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
 };
 
 // ==========================================
-// شريط القصص
+// نافذة الملاحظة (تظهر فوق صورة البروفايل 24 ساعة)
 // ==========================================
-const StoriesBar: React.FC<{ myPhoto?: string | null; myName?: string; myUid: string }> = ({ myPhoto, myName, myUid }) => {
-  const [stories, setStories] = useState<Story[]>([]);
-  const briefs = useUserBriefs(stories.map(s => s.userId));
-  useEffect(() => { const unsub = subscribeStories(setStories); return () => unsub(); }, []);
+const NoteModal: React.FC<{ uid: string; current?: string; onClose: () => void }> = ({ uid, current, onClose }) => {
+  const [text, setText] = useState(current || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true); setErr('');
+    try { await setNote(uid, text); onClose(); }
+    catch (e) { console.error(e); setErr('تعذّر حفظ الملاحظة. تأكد من نشر قواعد Firestore الجديدة.'); setBusy(false); }
+  };
+  const remove = async () => {
+    setBusy(true);
+    try { await deleteNote(uid); onClose(); }
+    catch (e) { console.error(e); setErr('تعذّر حذف الملاحظة.'); setBusy(false); }
+  };
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4 pt-2 px-1 scrollbar-hide">
-      <div className="flex flex-col items-center gap-1 shrink-0">
-        <div className="relative p-[2px] rounded-full bg-white/10">
-          <div className="bg-dark-950 rounded-full p-[2px]">
-            <Avatar src={myPhoto} seed={myUid} name={myName} className="w-16 h-16 rounded-full object-cover" />
-          </div>
-          <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full p-1 border-2 border-dark-950 cursor-pointer"><Plus className="w-3 h-3 text-white" /></div>
+    <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+          <h3 className="text-white font-bold">ملاحظتك</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <span className="text-[10px] text-slate-300 truncate w-16 text-center">قصتي</span>
+        <div className="p-4 space-y-2">
+          <input autoFocus value={text} onChange={(e) => setText(e.target.value.slice(0, NOTE_MAX))} placeholder="شاركهم ما يدور في بالك..." className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+          <p className="text-[11px] text-slate-500 flex justify-between"><span>تظهر فوق صورتك لمدة 24 ساعة.</span><span>{text.length}/{NOTE_MAX}</span></p>
+          {err && <p className="text-xs text-red-400">{err}</p>}
+        </div>
+        <div className="p-4 border-t border-white/10 flex items-center justify-between gap-2">
+          {current ? <button onClick={remove} disabled={busy} className="px-3 py-2 text-red-400 text-sm flex items-center gap-1"><Trash2 className="w-4 h-4" /> حذف</button> : <span />}
+          <button onClick={save} disabled={!text.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : 'مشاركة'}</button>
+        </div>
       </div>
-      {stories.map((story) => {
-        const b = briefs[story.userId];
-        return (
-          <div key={story.id} className="flex flex-col items-center gap-1 shrink-0">
-            <div className={`relative p-[2px] rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500`}>
-              <div className="bg-dark-950 rounded-full p-[2px]">
-                <Avatar src={b?.photoURL} seed={story.userId} name={b?.displayName} className="w-16 h-16 rounded-full object-cover" />
-              </div>
-            </div>
-            <span className="text-[10px] text-slate-300 truncate w-16 text-center">{b?.displayName || '...'}</span>
-          </div>
-        );
-      })}
     </div>
   );
 };
 
 // ==========================================
-// قائمة المحادثات (دعم المجموعات)
+// شريط القصص والملاحظات
 // ==========================================
-const ConversationList: React.FC<{ me: string }> = ({ me }) => {
+const NoteBubble: React.FC<{ text: string; onClick?: () => void }> = ({ text, onClick }) => (
+  <button
+    type="button"
+    onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+    className="absolute -top-5 left-1/2 -translate-x-1/2 max-w-[84px] px-2 py-0.5 rounded-xl bg-dark-800 border border-white/15 text-[10px] text-white leading-tight shadow-lg z-10 truncate"
+  >
+    {text}
+  </button>
+);
+
+const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, showActivity }) => {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  const [groups, setGroups] = useState<StoryGroup[]>([]);
+  const [notes, setNotes] = useState<Record<string, Note>>({});
+  const [viewer, setViewer] = useState<number | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => subscribeStories(setGroups), []);
+  useEffect(() => subscribeNotes(setNotes), []);
+
+  const mine = groups.find((g) => g.authorId === me);
+  const others = groups.filter((g) => g.authorId !== me);
+  const ordered = mine ? [mine, ...others] : others;
+  const noteOnlyUids = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
+  const briefs = useUserBriefs(noteOnlyUids);
+  const online = usePresence([...others.map((g) => g.authorId), ...noteOnlyUids], showActivity);
+
+  const ring = (active: boolean) => (active ? 'bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400' : 'bg-white/15');
+  const myNote = notes[me]?.text;
+
+  return (
+    <>
+      <div className="flex gap-4 overflow-x-auto no-scrollbar -mx-4 px-4 pb-2 pt-6">
+        {/* أنا */}
+        <div className="shrink-0 w-[68px] flex flex-col items-center gap-1.5">
+          <div className="relative">
+            {myNote ? <NoteBubble text={myNote} onClick={() => setNoteOpen(true)} /> : (
+              <button type="button" onClick={() => setNoteOpen(true)} className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-xl bg-dark-800 border border-dashed border-white/20 text-[10px] text-slate-400 z-10 whitespace-nowrap">ملاحظة...</button>
+            )}
+            <button type="button" onClick={() => (mine ? setViewer(0) : navigate('/create-post?mode=story'))} className={`block w-[68px] h-[68px] rounded-full p-[2.5px] ${ring(!!mine && !hasSeenAll(mine))}`}>
+              <Avatar src={profile?.photoURL} seed={me} name={profile?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+            </button>
+            <button type="button" onClick={() => navigate('/create-post?mode=story')} className="absolute -bottom-0.5 -start-0.5 w-6 h-6 rounded-full bg-gradient-to-tr from-primary-500 to-accent-500 border-2 border-dark-950 flex items-center justify-center">
+              <Plus className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">قصتك</span>
+        </div>
+
+        {/* أصحاب القصص */}
+        {others.map((g) => {
+          const seen = hasSeenAll(g);
+          const note = notes[g.authorId]?.text;
+          return (
+            <button key={g.authorId} onClick={() => setViewer(ordered.indexOf(g))} className="shrink-0 w-[68px] flex flex-col items-center gap-1.5">
+              <div className="relative">
+                {note && <NoteBubble text={note} />}
+                <div className={`w-[68px] h-[68px] rounded-full p-[2.5px] ${ring(!seen)}`}>
+                  <Avatar src={g.authorPhotoURL} seed={g.authorId} name={g.authorName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+                </div>
+                {online[g.authorId] && <span className="absolute bottom-0.5 end-0.5 w-4 h-4 bg-green-500 border-2 border-dark-950 rounded-full" />}
+              </div>
+              <span className={`text-[11px] font-semibold truncate w-full text-center ${seen ? 'text-slate-500' : 'text-slate-200'}`}>{g.authorName}</span>
+            </button>
+          );
+        })}
+
+        {/* أصحاب ملاحظات فقط (بدون قصة) */}
+        {noteOnlyUids.map((uid) => {
+          const b = briefs[uid];
+          return (
+            <button key={uid} onClick={() => navigate(`/user/${uid}`)} className="shrink-0 w-[68px] flex flex-col items-center gap-1.5">
+              <div className="relative">
+                <NoteBubble text={notes[uid].text} />
+                <div className="w-[68px] h-[68px] rounded-full p-[2.5px] bg-white/15">
+                  <Avatar src={b?.photoURL} seed={uid} name={b?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+                </div>
+                {online[uid] && <span className="absolute bottom-0.5 end-0.5 w-4 h-4 bg-green-500 border-2 border-dark-950 rounded-full" />}
+              </div>
+              <span className="text-[11px] font-semibold truncate w-full text-center text-slate-300">{b?.displayName || '...'}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {viewer !== null && (
+        <StoryViewer groups={ordered} startGroup={viewer} onClose={() => { setViewer(null); setTick((n) => n + 1); }} />
+      )}
+      {noteOpen && <NoteModal uid={me} current={myNote} onClose={() => setNoteOpen(false)} />}
+    </>
+  );
+};
+
+// ==========================================
+// قائمة المحادثات (فردية + مجموعات)
+// ==========================================
+const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me, showActivity }) => {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const [items, setItems] = useState<Conversation[] | null>(null);
-  const briefs = useUserBriefs((items || []).filter(c => c.type !== 'group').map(c => c.otherUid));
+  const directUids = (items || []).filter((c) => c.type !== 'group').map((c) => c.otherUid);
+  const briefs = useUserBriefs(directUids);
+  const online = usePresence(directUids, showActivity);
 
   useEffect(() => subscribeConversations(me, setItems), [me]);
 
@@ -138,27 +262,27 @@ const ConversationList: React.FC<{ me: string }> = ({ me }) => {
         const isGroup = c.type === 'group';
         const b = !isGroup ? briefs[c.otherUid] : null;
         const name = isGroup ? (c.name || 'مجموعة') : (b?.displayName || '...');
-        const avatarSeed = isGroup ? c.id : c.otherUid;
-        const avatarSrc = isGroup ? c.photoURL : b?.photoURL;
-        const targetUid = isGroup ? c.id : c.otherUid; // في المجموعة، ننتقل إلى معرف المجموعة
+        const targetUid = isGroup ? c.id : c.otherUid;
+        const unread = isUnread(c, me);
 
         return (
-          <button key={c.id} onClick={() => navigate(`/messages/${targetUid}`)} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-start hover:bg-white/10 transition">
+          <button key={c.id} onClick={() => navigate(`/messages/${targetUid}`)} className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start hover:bg-white/10 transition ${unread ? 'bg-primary-500/10 border-primary-500/30' : 'bg-white/5 border-white/10'}`}>
             <div className="relative shrink-0">
               {isGroup ? (
-                 <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center border border-white/10">
-                   <Users className="w-6 h-6 text-slate-400" />
-                 </div>
+                <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center border border-white/10"><Users className="w-6 h-6 text-slate-400" /></div>
               ) : (
-                <Avatar src={avatarSrc} seed={avatarSeed} name={name} className="w-14 h-14 rounded-full object-cover bg-dark-900" />
+                <Avatar src={b?.photoURL} seed={c.otherUid} name={name} className="w-14 h-14 rounded-full object-cover bg-dark-900" />
               )}
-              {!isGroup && <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-dark-950 rounded-full"></span>}
+              {!isGroup && online[c.otherUid] && <span className="absolute bottom-0 end-0 w-3.5 h-3.5 bg-green-500 border-2 border-dark-950 rounded-full" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">{name}</p>
+              <p className={`text-sm truncate ${unread ? 'font-black text-white' : 'font-bold text-white'}`}>{name}</p>
               <p className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>
             </div>
-            <div className="flex flex-col items-end gap-1.5 shrink-0"><span className="text-[10px] text-slate-500">{timeAgo(c.lastMessageAt, lang)}</span></div>
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <span className="text-[10px] text-slate-500">{timeAgo(c.lastMessageAt, lang)}</span>
+              {unread && <span className="w-3 h-3 rounded-full bg-red-500" />}
+            </div>
           </button>
         );
       })}
@@ -170,10 +294,17 @@ const ConversationList: React.FC<{ me: string }> = ({ me }) => {
 // الصفحة الرئيسية (Messages)
 // ==========================================
 const Messages: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const showActivity = (profile as any)?.showActivity !== false;
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeNotifications(user.uid, (items) => setUnreadNotifs(items.filter((n) => !n.read).length));
+  }, [user]);
 
   return (
     <div className="px-4 py-6 max-w-2xl mx-auto">
@@ -183,24 +314,27 @@ const Messages: React.FC = () => {
           <h2 className="text-xl font-black text-white">{t('chat.title')}</h2>
         </div>
         <div className="flex items-center gap-2">
-           <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title="إنشاء مجموعة"><Users className="w-5 h-5" /></button>
-           <button onClick={() => navigate('/search')} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition"><Search className="w-5 h-5" /></button>
-           <button className="relative p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition"><Bell className="w-5 h-5" /><span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-dark-950 rounded-full"></span></button>
+          <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title="إنشاء مجموعة"><Users className="w-5 h-5" /></button>
+          <button onClick={() => navigate('/search')} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition"><Search className="w-5 h-5" /></button>
+          <button onClick={() => navigate('/notifications')} className="relative p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" aria-label="الإشعارات">
+            <Bell className="w-5 h-5" />
+            {unreadNotifs > 0 && <span className="absolute top-1 end-1 w-2.5 h-2.5 bg-red-500 border-2 border-dark-950 rounded-full" />}
+          </button>
         </div>
       </div>
 
-      <StoriesBar myPhoto={user?.photoURL} myName={user?.displayName || ''} myUid={user?.uid || ''} />
+      {user && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
 
-      {user && (<E2EEGate><ConversationList me={user.uid} /></E2EEGate>)}
+      {user && (<E2EEGate><ConversationList me={user.uid} showActivity={showActivity} /></E2EEGate>)}
 
       {showCreateGroup && user && (
-        <CreateGroupModal 
-          me={user.uid} 
-          onClose={() => setShowCreateGroup(false)} 
+        <CreateGroupModal
+          me={user.uid}
+          onClose={() => setShowCreateGroup(false)}
           onCreated={(groupId) => {
             setShowCreateGroup(false);
             navigate(`/messages/${groupId}`);
-          }} 
+          }}
         />
       )}
     </div>
