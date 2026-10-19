@@ -2,7 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'admin' | 'moderator' | 'user';
 export type AccountType = 'public' | 'private';
-export type Gender = 'male' | 'female';
+export type Gender = 'male' | 'female' | 'none';
 
 export interface UserProfile {
   uid: string;
@@ -12,6 +12,7 @@ export interface UserProfile {
   photoURL?: string;
   bio?: string;
   gender?: Gender;
+  pronouns?: string;
   age?: number;
   role: UserRole;
   accountType: AccountType;
