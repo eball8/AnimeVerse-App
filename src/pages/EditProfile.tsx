@@ -6,6 +6,7 @@ import { auth } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { checkUsernameAvailable, updateUserProfile } from '../services/userService';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
+import { invalidateUser } from '../services/userCache';
 
 const field =
   'w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500';
@@ -71,6 +72,8 @@ const EditProfile: React.FC = () => {
         await fbUpdateProfile(auth.currentUser, { displayName: name, photoURL: photoURL || null }).catch(console.error);
       }
       await refreshProfile();
+      // إبطال الكاش: كل المنشورات والتعليقات والريلز ستجلب الاسم والصورة الجديدة فوراً
+      invalidateUser(user.uid);
       navigate('/profile');
     } catch (err: any) {
       console.error(err);
@@ -86,7 +89,7 @@ const EditProfile: React.FC = () => {
     <div className="px-4 py-6 space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300" aria-label="رجوع">
-          <ArrowRight className="w-5 h-5" />
+          <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
         </button>
         <h2 className="text-xl font-black text-white">تعديل الملف الشخصي</h2>
       </div>
@@ -94,7 +97,7 @@ const EditProfile: React.FC = () => {
       <form onSubmit={save} className="card p-5 space-y-4">
         <label className="block w-24 h-24 mx-auto relative cursor-pointer">
           <img src={avatar} alt="" className="w-24 h-24 rounded-full object-cover ring-4 ring-primary-500/40 bg-dark-900" />
-          <span className="absolute bottom-0 left-0 p-1.5 rounded-full bg-primary-500 text-white"><Camera className="w-4 h-4" /></span>
+          <span className="absolute bottom-0 start-0 p-1.5 rounded-full bg-primary-500 text-white"><Camera className="w-4 h-4" /></span>
           <input type="file" accept="image/*" hidden onChange={pickFile} />
         </label>
 
