@@ -3,11 +3,15 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { I18nProvider } from './i18n/I18nContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Explore from './pages/Explore';
 import Search from './pages/Search';
 import Messages from './pages/Messages';
+import Chat from './pages/Chat';
+import Reels from './pages/Reels';
+import PostView from './pages/PostView';
 import Profile from './pages/Profile';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
@@ -51,37 +55,43 @@ const RequireAdmin: React.FC<{ children: React.ReactElement }> = ({ children }) 
 const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <HashRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
-            <Route path="/verify-email" element={<VerifyEmail />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/auth/action" element={<AuthAction />} />
-            <Route path="/create-post" element={<RequireAuth><CreatePost /></RequireAuth>} />
+      <I18nProvider>
+        <AuthProvider>
+          <HashRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/auth/action" element={<AuthAction />} />
+              <Route path="/create-post" element={<RequireAuth><CreatePost /></RequireAuth>} />
 
-            <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-              <Route index element={<Home />} />
-              <Route path="explore" element={<Explore />} />
-              <Route path="list/:kind" element={<AnimeList />} />
-              <Route path="search" element={<Search />} />
-              <Route path="community" element={<Community />} />
-              <Route path="messages" element={<Messages />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="edit-profile" element={<EditProfile />} />
-              <Route path="user/:uid" element={<UserProfilePage />} />
-              <Route path="library" element={<Library />} />
-              <Route path="notifications" element={<Notifications />} />
-              <Route path="admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="anime/:id" element={<AnimeDetail />} />
-              <Route path="watch/:animeId/:episodeNumber" element={<Watch />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </HashRouter>
-      </AuthProvider>
+              <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
+                <Route index element={<Home />} />
+                <Route path="explore" element={<Explore />} />
+                <Route path="reels" element={<Reels />} />
+                <Route path="reels/:id" element={<Reels />} />
+                <Route path="post/:id" element={<PostView />} />
+                <Route path="list/:kind" element={<AnimeList />} />
+                <Route path="search" element={<Search />} />
+                <Route path="community" element={<Community />} />
+                <Route path="messages" element={<Messages />} />
+                <Route path="messages/:uid" element={<Chat />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="edit-profile" element={<EditProfile />} />
+                <Route path="user/:uid" element={<UserProfilePage />} />
+                <Route path="library" element={<Library />} />
+                <Route path="notifications" element={<Notifications />} />
+                <Route path="admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="anime/:id" element={<AnimeDetail />} />
+                <Route path="watch/:animeId/:episodeNumber" element={<Watch />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </HashRouter>
+        </AuthProvider>
+      </I18nProvider>
     </ThemeProvider>
   );
 };
