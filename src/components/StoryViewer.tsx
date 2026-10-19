@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Trash2, Volume2, VolumeX, Loader2, Heart, Eye, Send } from 'lucide-react';
+import { X, Volume2, VolumeX, Loader2, Heart, Eye, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from './Avatar';
@@ -9,6 +9,8 @@ import {
 import type { StoryGroup, StoryView, StoryViewRecord } from '../services/storyService';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
+import DeleteButton from './DeleteButton';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   groups: StoryGroup[];
@@ -21,6 +23,7 @@ const IMAGE_MS = 5000;
 const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const { user, isAdmin } = useAuth();
   const { t, lang } = useI18n();
+  const confirm = useConfirm();
   const [gi, setGi] = useState(startGroup);
   const [si, setSi] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -43,7 +46,8 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const authorBriefs = useUserBriefs(groups.map((g) => g.authorId));
   const viewerBriefs = useUserBriefs(isOwner ? views.map((v) => v.viewerId) : []);
 
-  const paused = held || inputFocus || sheetOpen;
+  const [confirming, setConfirming] = useState(false);
+  const paused = held || inputFocus || sheetOpen || confirming;
   const pausedRef = useRef(false);
   pausedRef.current = paused || !loaded;
 
@@ -160,7 +164,11 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   };
 
   const onDelete = async () => {
-    if (!story || !confirm(t('story.deleteConfirm'))) return;
+    if (!story) return;
+    setConfirming(true);
+    const ok = await confirm({ title: t('story.deleteConfirm') });
+    setConfirming(false);
+    if (!ok) return;
     try {
       await deleteStory(story.id);
       onClose();
@@ -274,9 +282,13 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
             </button>
           )}
           {canDelete && (
-            <button onPointerDown={stop} onPointerUp={stop} onClick={onDelete} className="p-2 text-white" aria-label={t('common.delete')}>
-              <Trash2 className="w-5 h-5" />
-            </button>
+            <DeleteButton
+              variant="glass"
+              label={t('common.delete')}
+              onPointerDown={stop}
+              onPointerUp={stop}
+              onClick={onDelete}
+            />
           )}
           <button onPointerDown={stop} onPointerUp={stop} onClick={onClose} className="p-2 text-white" aria-label={t('story.close')}>
             <X className="w-6 h-6" />
