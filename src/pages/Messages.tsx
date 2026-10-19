@@ -5,8 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
-import { subscribeConversations, subscribeStories } from '../services/chatService';
-import type { Conversation, Story } from '../services/chatService';
+import { subscribeConversations } from '../services/chatService';
+import type { Conversation } from '../services/chatService';
 import { useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 
@@ -14,13 +14,15 @@ import { timeAgo } from '../utils/timeAgo';
 // 1. مكون شريط القصص (Stories Bar)
 // ==========================================
 const StoriesBar: React.FC<{ myPhoto?: string | null; myName?: string; myUid: string }> = ({ myPhoto, myName, myUid }) => {
-  const [stories, setStories] = useState<Story[]>([]);
-  const briefs = useUserBriefs(stories.map(s => s.userId));
-
-  useEffect(() => {
-    const unsub = subscribeStories(setStories);
-    return () => unsub();
-  }, []);
+  const navigate = useNavigate();
+  
+  // بيانات تجريبية للقصص (للتجربة فقط)
+  const mockStories = [
+    { id: '2', name: 'أحمد', photoURL: 'https://i.pravatar.cc/150?img=11', hasUnread: true, isMine: false },
+    { id: '3', name: 'سارة', photoURL: 'https://i.pravatar.cc/150?img=5', hasUnread: true, isMine: false },
+    { id: '4', name: 'خالد', photoURL: 'https://i.pravatar.cc/150?img=3', hasUnread: false, isMine: false },
+    { id: '5', name: 'نورة', photoURL: 'https://i.pravatar.cc/150?img=9', hasUnread: true, isMine: false },
+  ];
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 pt-2 px-1 scrollbar-hide">
@@ -30,35 +32,31 @@ const StoriesBar: React.FC<{ myPhoto?: string | null; myName?: string; myUid: st
           <div className="bg-dark-950 rounded-full p-[2px]">
             <Avatar src={myPhoto} seed={myUid} name={myName} className="w-16 h-16 rounded-full object-cover" />
           </div>
-          <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full p-1 border-2 border-dark-950 cursor-pointer">
+          <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full p-1 border-2 border-dark-950">
             <Plus className="w-3 h-3 text-white" />
           </div>
         </div>
         <span className="text-[10px] text-slate-300 truncate w-16 text-center">قصتي</span>
       </div>
 
-      {/* قصص الآخرين الحقيقية */}
-      {stories.map((story) => {
-        const b = briefs[story.userId];
-        const name = b?.displayName || '...';
-        return (
-          <div key={story.id} className="flex flex-col items-center gap-1 shrink-0">
-            <div className={`relative p-[2px] rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500`}>
-              <div className="bg-dark-950 rounded-full p-[2px]">
-                <Avatar
-                  src={b?.photoURL}
-                  seed={story.userId}
-                  name={name}
-                  className="w-16 h-16 rounded-full object-cover"
-                />
-              </div>
+      {/* قصص الآخرين */}
+      {mockStories.map((story) => (
+        <div key={story.id} className="flex flex-col items-center gap-1 shrink-0">
+          <div className={`relative p-[2px] rounded-full ${story.hasUnread ? 'bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500' : 'bg-white/10'}`}>
+            <div className="bg-dark-950 rounded-full p-[2px]">
+              <Avatar
+                src={story.photoURL}
+                seed={story.id}
+                name={story.name}
+                className="w-16 h-16 rounded-full object-cover"
+              />
             </div>
-            <span className="text-[10px] text-slate-300 truncate w-16 text-center">
-              {name}
-            </span>
           </div>
-        );
-      })}
+          <span className="text-[10px] text-slate-300 truncate w-16 text-center">
+            {story.name}
+          </span>
+        </div>
+      ))}
     </div>
   );
 };
@@ -100,6 +98,9 @@ const ConversationList: React.FC<{ me: string }> = ({ me }) => {
       {items.map((c) => {
         const b = briefs[c.otherUid];
         const name = b?.displayName || '...';
+        
+        // عداد تجريبي (سيتم استبداله بالعدد الحقيقي لاحقاً)
+        const mockUnreadCount = c.id.charCodeAt(0) % 3; 
 
         return (
           <button
@@ -107,8 +108,10 @@ const ConversationList: React.FC<{ me: string }> = ({ me }) => {
             onClick={() => navigate(`/messages/${c.otherUid}`)}
             className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-start hover:bg-white/10 transition"
           >
+            {/* الحاوية الخاصة بالصورة الرمزية مع النقطة الخضراء */}
             <div className="relative shrink-0">
               <Avatar src={b?.photoURL} seed={c.otherUid} name={name} className="w-14 h-14 rounded-full object-cover bg-dark-900" />
+              {/* النقطة الخضراء (Online Indicator) */}
               <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-dark-950 rounded-full"></span>
             </div>
             
@@ -121,6 +124,11 @@ const ConversationList: React.FC<{ me: string }> = ({ me }) => {
             
             <div className="flex flex-col items-end gap-1.5 shrink-0">
               <span className="text-[10px] text-slate-500">{timeAgo(c.lastMessageAt, lang)}</span>
+              {mockUnreadCount > 0 && (
+                <span className="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {mockUnreadCount}
+                </span>
+              )}
             </div>
           </button>
         );
@@ -139,6 +147,7 @@ const Messages: React.FC = () => {
 
   return (
     <div className="px-4 py-6 max-w-2xl mx-auto">
+      {/* الهيدر العلوي */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <MessageCircle className="w-6 h-6 text-primary-400" />
@@ -148,15 +157,19 @@ const Messages: React.FC = () => {
            <button onClick={() => navigate('/search')} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition">
              <Search className="w-5 h-5" />
            </button>
+           {/* أيقونة الإشعارات مع النقطة الحمراء */}
            <button className="relative p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition">
              <Bell className="w-5 h-5" />
+             {/* النقطة الحمراء للإشعارات */}
              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-dark-950 rounded-full"></span>
            </button>
         </div>
       </div>
 
+      {/* شريط القصص */}
       <StoriesBar myPhoto={user?.photoURL} myName={user?.displayName || ''} myUid={user?.uid || ''} />
 
+      {/* قائمة المحادثات */}
       {user && (
         <E2EEGate>
           <ConversationList me={user.uid} />
