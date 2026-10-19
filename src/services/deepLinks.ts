@@ -1,25 +1,9 @@
-
 export type DeepLinkTarget =
-  | {
-      type: 'post';
-      id: string;
-    }
-  | {
-      type: 'anime';
-      id: string;
-    }
-  | {
-      type: 'episode';
-      id: string;
-    }
-  | {
-      type: 'profile';
-      id: string;
-    }
-  | {
-      type: 'story';
-      id: string;
-    };
+  | { type: 'post'; id: string }
+  | { type: 'anime'; id: string }
+  | { type: 'episode'; id: string }
+  | { type: 'profile'; id: string }
+  | { type: 'story'; id: string };
 
 const MAX_ID_LENGTH = 200;
 
@@ -128,4 +112,65 @@ export function createDeepLink(
   };
 
   return `https://animeverse.app/${paths[target.type]}/${encodeURIComponent(target.id)}`;
+}
+
+const PENDING_ROUTE_KEY = 'av_pending_route';
+
+/**
+ * تحويل رابط خارجي إلى مسار داخلي في التطبيق (react-router).
+ * يرجع null إذا كان الرابط غير صالح أو لا توجد صفحة له.
+ */
+export function routeFromUrl(url: string): string | null {
+  const target = parseDeepLink(url);
+
+  if (!target) {
+    return null;
+  }
+
+  const id = encodeURIComponent(target.id);
+
+  switch (target.type) {
+    case 'post':
+      return `/post/${id}`;
+
+    case 'anime':
+      return `/anime/${id}`;
+
+    case 'profile':
+      return `/user/${id}`;
+
+    // لا توجد صفحات مخصصة للحلقة أو القصة حالياً
+    case 'episode':
+    case 'story':
+    default:
+      return null;
+  }
+}
+
+/**
+ * حفظ الوجهة إلى أن ينتهي تسجيل الدخول.
+ */
+export function savePendingRoute(route: string): void {
+  try {
+    sessionStorage.setItem(PENDING_ROUTE_KEY, route);
+  } catch {
+    /* تجاهل */
+  }
+}
+
+/**
+ * قراءة الوجهة المحفوظة وحذفها (مرة واحدة).
+ */
+export function takePendingRoute(): string | null {
+  try {
+    const route = sessionStorage.getItem(PENDING_ROUTE_KEY);
+
+    if (route) {
+      sessionStorage.removeItem(PENDING_ROUTE_KEY);
+    }
+
+    return route;
+  } catch {
+    return null;
+  }
 }
