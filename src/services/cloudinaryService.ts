@@ -51,20 +51,21 @@ export const uploadVideoToCloudinary = (
 // الخطة المجانية في Cloudinary تقبل غالباً حتى 10MB للملفات raw، ولذلك لا نتجاوزه.
 export const MAX_ENCRYPTED_UPLOAD_MB = 10;
 
-// رفع ملف مشفّر (الرسائل الصوتية والصور والفيديو). يُرفع كملف raw ولا يمكن لأحد فتحه بدون المفتاح
-export const uploadEncryptedBlob = (
+// امتدادات غير صور/فيديو نجرّبها بالترتيب، لأن Cloudinary ترفض صيغ الصور في ملفات raw
+// وقد ترفض بعض الامتدادات حسب إعدادات الحساب
+const RAW_EXTENSIONS = ['bin', 'txt', 'dat', 'enc', 'json'];
+
+class NotAllowedError extends Error {}
+
+const uploadRawOnce = (
   blob: Blob,
+  ext: string,
   onProgress?: (percent: number) => void
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    if (blob.size > MAX_ENCRYPTED_UPLOAD_MB * 1024 * 1024) {
-      reject(new Error('الملف كبير جداً.'));
-      return;
-    }
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
     const formData = new FormData();
-    // الامتداد png فقط لتجاوز قيد الصيغ المسموحة في الـ preset، والمحتوى مشفّر ولا يُفحص كصورة
-    formData.append('file', blob, 'enc.png');
+    formData.append('file', blob, `enc.${ext}`);
     formData.append('upload_preset', UPLOAD_PRESET);
 
     const xhr = new XMLHttpRequest();
@@ -75,8 +76,12 @@ export const uploadEncryptedBlob = (
     xhr.onload = () => {
       try {
         const res = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) resolve(res.secure_url);
-        else reject(new Error(res?.error?.message || 'فشل رفع الملف.'));
+        if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) {
+          resolve(res.secure_url);
+          return;
+        }
+        const msg: string = res?.error?.message || 'فشل رفع الملف.';
+        reject(/not allowed/i.test(msg) ? new NotAllowedError(`Cloudinary: ${msg}`) : new Error(`Cloudinary: ${msg}`));
       } catch {
         reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
       }
@@ -84,4 +89,27 @@ export const uploadEncryptedBlob = (
     xhr.onerror = () => reject(new Error('حدث خطأ في الشبكة أثناء الرفع.'));
     xhr.send(formData);
   });
+};
+
+// رفع ملف مشفّر (الرسائل الصوتية والصور والفيديو). يُرفع كملف raw ولا يمكن لأحد فتحه بدون المفتاح
+export const uploadEncryptedBlob = async (
+  blob: Blob,
+  onProgress?: (percent: number) => void
+): Promise<string> => {
+  if (blob.size > MAX_ENCRYPTED_UPLOAD_MB * 1024 * 1024) {
+    throw new Error('الملف كبير جداً.');
+  }
+  const failures: string[] = [];
+  for (const ext of RAW_EXTENSIONS) {
+    try {
+      return await uploadRawOnce(blob, ext, onProgress);
+    } catch (e: any) {
+      if (e instanceof NotAllowedError) {
+        failures.push(`${ext}: ${e.message}`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error(`كل الامتدادات مرفوضة [${failures.join(' | ')}]`);
 };
