@@ -47,25 +47,35 @@ export const uploadVideoToCloudinary = (
   });
 };
 
-// رفع ملف مشفّر (الرسائل الصوتية). يُرفع كملف raw ولا يمكن لأحد سماعه بدون المفتاح
-export const uploadEncryptedBlob = (blob: Blob): Promise<string> => {
+// الحد الأقصى للملف المشفّر (صوت/صورة/فيديو في الرسائل). يُرفع كملف raw.
+// الخطة المجانية في Cloudinary تقبل غالباً حتى 10MB للملفات raw، ولذلك لا نتجاوزه.
+export const MAX_ENCRYPTED_UPLOAD_MB = 10;
+
+// رفع ملف مشفّر (الرسائل الصوتية والصور والفيديو). يُرفع كملف raw ولا يمكن لأحد فتحه بدون المفتاح
+export const uploadEncryptedBlob = (
+  blob: Blob,
+  onProgress?: (percent: number) => void
+): Promise<string> => {
   return new Promise((resolve, reject) => {
-    if (blob.size > 8 * 1024 * 1024) {
-      reject(new Error('الرسالة الصوتية كبيرة جداً.'));
+    if (blob.size > MAX_ENCRYPTED_UPLOAD_MB * 1024 * 1024) {
+      reject(new Error('الملف كبير جداً.'));
       return;
     }
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
     const formData = new FormData();
-    formData.append('file', blob, 'voice.bin');
+    formData.append('file', blob, 'enc.bin');
     formData.append('upload_preset', UPLOAD_PRESET);
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
     xhr.onload = () => {
       try {
         const res = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) resolve(res.secure_url);
-        else reject(new Error(res?.error?.message || 'فشل رفع الصوت.'));
+        else reject(new Error(res?.error?.message || 'فشل رفع الملف.'));
       } catch {
         reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
       }
