@@ -1,79 +1,197 @@
-import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
+
+import { auth, db } from '../config/firebase';
 import { notifySecurity } from './notificationService';
 
 const DEVICE_ID_KEY = 'av_device_id';
-const checkedKey = (uid: string) => `av_dev_ok_${uid}`;
+const DEVICE_CHECK_PREFIX = 'av_dev_ok_';
+
+const checkedKey = (uid: string): string =>
+  `${DEVICE_CHECK_PREFIX}${uid}`;
 
 const randomId = (): string => {
-  try {
-    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  } catch {
-    /* ignore */
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
   }
-  return Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.getRandomValues === 'function'
+  ) {
+    return Array.from(
+      crypto.getRandomValues(new Uint8Array(16))
+    )
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  throw new Error('Secure random ID generation is unavailable');
 };
 
-// المعرّف يُحفظ في تخزين التطبيق: يُفقد مع مسح البيانات/إعادة التثبيت/فرمتة الهاتف/جهاز جديد
+/**
+ * الحصول على معرّف ثابت للجهاز داخل تخزين المتصفح.
+ * قد يتغير المعرّف بعد مسح بيانات التطبيق أو إعادة تثبيته.
+ */
 export const getDeviceId = (): string => {
   try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id = randomId();
-      localStorage.setItem(DEVICE_ID_KEY, id);
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+
+    if (existing && existing !== 'unknown') {
+      return existing;
     }
+
+    const id = randomId();
+    localStorage.setItem(DEVICE_ID_KEY, id);
+
     return id;
-  } catch {
+  } catch (error) {
+    console.warn('Unable to persist device ID:', error);
     return 'unknown';
   }
 };
 
+/**
+ * اسم مختصر للجهاز، دون تخزين معلومات غير ضرورية.
+ */
 export const deviceLabel = (): string => {
-  const ua = navigator.userAgent || '';
-  const m = ua.match(/Android [\d.]+; ([^;)]+?)(?: Build|\)|;)/);
-  if (m) {
-    const model = m[1].trim();
-    if (model.length > 1 && model !== 'K') return model.slice(0, 40);
+  const ua =
+    typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  const androidMatch = ua.match(
+    /Android [\d.]+;\s*([^;)]+?)(?: Build|\)|;)/
+  );
+
+  if (androidMatch) {
+    const model = androidMatch[1].trim();
+
+    if (model.length > 1 && model !== 'K') {
+      return model.slice(0, 40);
+    }
+
     return 'Android';
   }
-  if (/iPhone|iPad/.test(ua)) return 'iOS';
+
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    return 'iOS';
+  }
+
   return 'Web';
 };
 
-// يُستدعى بعد تسجيل الدخول: أول جهاز يُسجَّل بصمت، وأي جهاز جديد بعده يُنبّه صاحب الحساب
-export const checkDevice = async (uid: string): Promise<void> => {
-  const id = getDeviceId();
-  if (id === 'unknown') return;
-  try {
-    if (localStorage.getItem(checkedKey(uid)) === id) return; // تم التحقق سابقاً بدون أي قراءة
-  } catch {
-    /* ignore */
-  }
+const getPlatform = (): 'android' | 'web' => {
+  const ua =
+    typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
 
-  const ref = doc(db, 'userDevices', uid, 'items', id);
-  const mark = () => {
-    try {
-      localStorage.setItem(checkedKey(uid), id);
-    } catch {
-      /* ignore */
-    }
-  };
+  return /Android/i.test(ua) ? 'android' : 'web';
+};
 
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    mark();
+/**
+ * التحقق من الجهاز بعد نجاح تسجيل الدخول.
+ *
+ * أول جهاز يُسجّل دون إشعار.
+ * الجهاز الجديد يُسجّل ثم يُرسل إشعار أمان.
+ */
+export const checkDevice = async (
+  uid: string
+): Promise<void> => {
+  const currentUser = auth.currentUser;
+
+  // لا نسمح بتسجيل جهاز لحساب غير المستخدم المسجل دخوله.
+  if (!currentUser || currentUser.uid !== uid) {
     return;
   }
 
-  const others = await getDocs(query(collection(db, 'userDevices', uid, 'items'), limit(1)));
-  const label = deviceLabel();
-  await setDoc(ref, {
-    label,
-    platform: /Android/i.test(navigator.userAgent) ? 'android' : 'web',
-    createdAt: serverTimestamp(),
-  });
-  mark();
-  if (!others.empty) await notifySecurity(uid, 'new_device', label);
+  const id = getDeviceId();
+
+  if (id === 'unknown') {
+    console.warn('Device check skipped: no persistent device ID');
+    return;
+  }
+
+  const key = checkedKey(uid);
+
+  try {
+    if (localStorage.getItem(key) === id) {
+      return;
+    }
+  } catch {
+    // نتابع التحقق من Firestore إذا تعذر استخدام localStorage.
+  }
+
+  const deviceRef = doc(
+    db,
+    'userDevices',
+    uid,
+    'items',
+    id
+  );
+
+  try {
+    const deviceSnapshot = await getDoc(deviceRef);
+
+    // ربما تغيّر الحساب أثناء تنفيذ العملية.
+    if (auth.currentUser?.uid !== uid) {
+      return;
+    }
+
+    if (deviceSnapshot.exists()) {
+      try {
+        localStorage.setItem(key, id);
+      } catch {
+        // عدم توفر التخزين المحلي لا يمنع إكمال العملية.
+      }
+
+      return;
+    }
+
+    const devicesQuery = query(
+      collection(db, 'userDevices', uid, 'items'),
+      limit(1)
+    );
+
+    const otherDevicesSnapshot = await getDocs(devicesQuery);
+
+    if (auth.currentUser?.uid !== uid) {
+      return;
+    }
+
+    const isNewDevice = !otherDevicesSnapshot.empty;
+    const label = deviceLabel();
+
+    await setDoc(deviceRef, {
+      label,
+      platform: getPlatform(),
+      createdAt: serverTimestamp(),
+    });
+
+    try {
+      localStorage.setItem(key, id);
+    } catch {
+      // سيُعاد التحقق عبر Firestore في المرة القادمة.
+    }
+
+    if (isNewDevice && auth.currentUser?.uid === uid) {
+      await notifySecurity(uid, 'new_device', label);
+    }
+  } catch (error) {
+    // لا نوقف تسجيل الدخول إذا فشل التحقق من الجهاز.
+    console.error('Device security check failed:', error);
+  }
 };
