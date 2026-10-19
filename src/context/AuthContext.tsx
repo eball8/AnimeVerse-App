@@ -16,6 +16,7 @@ import { createUserProfile, getUserProfile } from '../services/userService';
 import type { UserProfile } from '../types';
 import { Capacitor } from '@capacitor/core';
 import { saveAccount } from '../utils/savedAccounts';
+import { checkDevice } from '../services/deviceService';
 
 interface AuthContextType {
   user: User | null;
@@ -90,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setProfile(p);
         writeCachedProfile(p);
+        checkDevice(fbUser.uid).catch(() => undefined);
         saveAccount({
           uid: fbUser.uid,
           email: fbUser.email || '',
