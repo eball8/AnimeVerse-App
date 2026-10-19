@@ -8,9 +8,20 @@ export interface VoiceResult {
 
 const MAX_SECONDS = 120;
 
-const pickMime = (): string | undefined => {
-  const list = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
-  return list.find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m));
+const pickMime = (): string => {
+  // نفضل mp4 لأجهزة iOS، و webm للأندرويد
+  const list = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+  ];
+  for (const m of list) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
+      return m;
+    }
+  }
+  return 'audio/webm'; // القيمة الافتراضية
 };
 
 export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) => {
@@ -44,21 +55,17 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     chunksRef.current = [];
-    const mimeType = pickMime();
-
-    // بعض أجهزة أندرويد ترفض الصيغة المحددة، فنجرب بدونها قبل أن نفشل
+    
+    const preferredMime = pickMime();
     let rec: MediaRecorder;
+
     try {
-      try {
-        rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      } catch {
-        rec = new MediaRecorder(stream);
-      }
-    } catch (e) {
-      stream.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      throw e;
+      rec = new MediaRecorder(stream, { mimeType: preferredMime });
+    } catch {
+      // في حال رفض الجهاز الصيغة، نستخدم الافتراضي
+      rec = new MediaRecorder(stream);
     }
+
     recRef.current = rec;
     startedRef.current = Date.now();
 
@@ -72,14 +79,14 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
       };
       rec.onstop = () => {
         const duration = Math.round((Date.now() - startedRef.current) / 1000);
-        const mime = rec.mimeType || mimeType || 'audio/webm';
-        const blob = new Blob(chunksRef.current, { type: mime });
+        // نأخذ الصيغة التي أنتجها المسجل فعلياً، وإن لم توجد نأخذ المفضلة
+        const actualMime = rec.mimeType || preferredMime;
+        const blob = new Blob(chunksRef.current, { type: actualMime });
         cleanup();
-        resolve(duration < 1 || blob.size === 0 ? null : { blob, mime, duration });
+        resolve(duration < 1 || blob.size === 0 ? null : { blob, mime: actualMime, duration });
       };
     });
 
-    // تمرير 250ms يجعل المتصفح يسلّم البيانات تدريجياً (أضمن على WebView أندرويد)
     rec.start(250);
     setSeconds(0);
     setRecording(true);
