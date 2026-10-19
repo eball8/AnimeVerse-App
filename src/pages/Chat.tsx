@@ -322,9 +322,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       const url = await uploadEncryptedBlob(enc.data);
       setBusy(false);
       await doSend({ k: 'v', url, key: enc.key, iv: enc.iv, dur: r.duration, mime: r.mime });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError(t('chat.sendFailed'));
+      // نعرض السبب الحقيقي حتى نعرف أين المشكلة بالضبط
+      setError(`${t('chat.sendFailed')} (${e?.message || e?.name || ''})`.trim());
       setBusy(false);
     }
   };
