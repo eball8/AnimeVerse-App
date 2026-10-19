@@ -2,6 +2,16 @@
 type Dict = Record<string, string>;
 
 export const extraAr: Dict = {
+  // ---- نافذة التأكيد والمرفقات ----
+  'confirm.ok': 'تأكيد',
+  'chat.attach': 'إرفاق صورة أو فيديو',
+  'chat.uploading': 'جارٍ رفع الوسائط...',
+  'chat.video': 'فيديو',
+  'chat.mediaError': 'تعذّر تحميل الوسائط. اضغط للمحاولة',
+  'chat.mediaType': 'يمكنك إرسال الصور والفيديو فقط.',
+  'chat.videoTooBig': 'الفيديو كبير جداً. الحد الأقصى {mb} ميجابايت.',
+  'chat.micMissing': 'لم يتم العثور على ميكروفون في هذا الجهاز.',
+  'chat.micSettingsHint': 'إن كنت رفضت الإذن سابقاً: الإعدادات ← التطبيقات ← AnimeVerse ← الأذونات ← الميكروفون.',
   // ---- كود الأمان PIN ----
   'pin.setupTitle': 'أنشئ كود الأمان لرسائلك',
   'pin.setupDesc':
@@ -210,6 +220,16 @@ export const extraAr: Dict = {
 };
 
 export const extraEn: Dict = {
+  // ---- Confirm dialog & attachments ----
+  'confirm.ok': 'Confirm',
+  'chat.attach': 'Attach photo or video',
+  'chat.uploading': 'Uploading media...',
+  'chat.video': 'Video',
+  'chat.mediaError': 'Could not load media. Tap to retry',
+  'chat.mediaType': 'You can only send photos and videos.',
+  'chat.videoTooBig': 'Video is too large. Maximum is {mb} MB.',
+  'chat.micMissing': 'No microphone was found on this device.',
+  'chat.micSettingsHint': 'If you denied it before: Settings → Apps → AnimeVerse → Permissions → Microphone.',
   // ---- Security PIN ----
   'pin.setupTitle': 'Create your messages security PIN',
   'pin.setupDesc':
