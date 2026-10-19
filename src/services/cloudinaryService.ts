@@ -51,8 +51,8 @@ export const uploadVideoToCloudinary = (
 // الخطة المجانية في Cloudinary تقبل غالباً حتى 10MB للملفات raw، ولذلك لا نتجاوزه.
 export const MAX_ENCRYPTED_UPLOAD_MB = 10;
 
-// امتدادات مسموحة فقط في مسار raw، تمت إزالة الامتدادات المحظورة (bin, dat, json) لحل مشكلة الرفض
-const RAW_EXTENSIONS = ['txt', 'enc']; 
+// نجرّب الامتدادات بالترتيب، وأي امتداد يرفضه Cloudinary ننتقل بعده للتالي
+const RAW_EXTENSIONS = ['txt', 'enc', 'bin'];
 
 class NotAllowedError extends Error {}
 
