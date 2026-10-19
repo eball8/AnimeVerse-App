@@ -8,7 +8,9 @@ import type { LocalKey } from './cryptoService';
 
 export type ChatPayload =
   | { k: 't'; v: string }
-  | { k: 'v'; url: string; key: string; iv: string; dur: number; mime: string };
+  | { k: 'v'; url: string; key: string; iv: string; dur: number; mime: string }
+  // صورة أو فيديو مشفّر (المفتاح داخل الرسالة المشفّرة نفسها)
+  | { k: 'm'; url: string; key: string; iv: string; mime: string; size: number; w?: number; h?: number };
 
 export interface Conversation {
   id: string;
