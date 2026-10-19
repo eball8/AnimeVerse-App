@@ -1,6 +1,6 @@
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc, where,
+  serverTimestamp, setDoc, updateDoc, where, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { decryptJson, encryptJson, getLocalKey, getSharedKey } from './cryptoService';
@@ -25,6 +25,9 @@ export interface RawMessage {
   senderKeyId: string;
   recipientKeyId: string;
   createdAt: any;
+  // حقول جديدة
+  replyTo?: string; // معرف الرسالة التي تم الرد عليها
+  reactions?: Record<string, string[]>; // الإيموجي ومصفوفة بمعرفات المستخدمين الذين تفاعلوا
 }
 
 export interface PublicKeyInfo {
@@ -32,7 +35,6 @@ export interface PublicKeyInfo {
   publicKey: string;
 }
 
-// --- واجهات جديدة للقصص ---
 export interface Story {
   id: string;
   userId: string;
@@ -62,7 +64,6 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
   );
 };
 
-// قراءة وثيقة غير موجودة تُرفض بالقواعد، لذلك نستخدم استعلاماً
 export const conversationExists = async (me: string, convId: string): Promise<boolean> => {
   const snap = await getDocs(
     query(collection(db, 'conversations'), where('members', 'array-contains', me), limit(200))
@@ -90,7 +91,6 @@ export const subscribeMessages = (
   );
 };
 
-// يحترم إعداد الخصوصية عند بدء محادثة جديدة فقط (everyone | following | nobody)
 const assertCanMessage = async (me: string, other: string): Promise<void> => {
   const snap = await getDoc(doc(db, 'users', other));
   const mode = (snap.data() as { messagePrivacy?: string } | undefined)?.messagePrivacy;
@@ -105,7 +105,8 @@ export const sendPayload = async (
   me: string,
   other: string,
   payload: ChatPayload,
-  conversationAlreadyExists: boolean
+  conversationAlreadyExists: boolean,
+  replyTo?: string // معامل جديد للرد
 ): Promise<void> => {
   const local = await getLocalKey(me);
   if (!local) throw new Error('NO_LOCAL_KEY');
@@ -126,14 +127,18 @@ export const sendPayload = async (
     });
   }
 
-  await addDoc(collection(db, 'conversations', convId, 'messages'), {
+  const msgData: any = {
     senderId: me,
     ciphertext,
     iv,
     senderKeyId: local.keyId,
     recipientKeyId: theirs.keyId,
     createdAt: serverTimestamp(),
-  });
+  };
+  
+  if (replyTo) msgData.replyTo = replyTo;
+
+  await addDoc(collection(db, 'conversations', convId, 'messages'), msgData);
 
   if (conversationAlreadyExists) {
     await updateDoc(doc(db, 'conversations', convId), { lastMessageAt: serverTimestamp() });
@@ -163,9 +168,28 @@ export const removeMessage = async (convId: string, msgId: string): Promise<void
   await deleteDoc(doc(db, 'conversations', convId, 'messages', msgId));
 };
 
-// ==========================================
-// دوال جديدة لجلب القصص (Stories)
-// ==========================================
+// دوال جديدة للتفاعلات
+export const sendReaction = async (convId: string, msgId: string, emoji: string, uid: string): Promise<void> => {
+  const msgRef = doc(db, 'conversations', convId, 'messages', msgId);
+  const snap = await getDoc(msgRef);
+  if (!snap.exists()) return;
+  
+  const data = snap.data();
+  const currentReactions = data.reactions || {};
+  const users = currentReactions[emoji] || [];
+  
+  // إذا كان المستخدم قد تفاعل بالفعل، نقوم بإزالة تفاعله (Toggle)
+  const newUsers = users.includes(uid) ? users.filter((id: string) => id !== uid) : [...users, uid];
+  
+  // إزالة الإيموجي إذا لم يتبق أحد
+  if (newUsers.length === 0) {
+    delete currentReactions[emoji];
+  } else {
+    currentReactions[emoji] = newUsers;
+  }
+
+  await updateDoc(msgRef, { reactions: currentReactions });
+};
 
 export const subscribeStories = (cb: (stories: Story[]) => void) => {
   const q = query(collection(db, 'stories'), orderBy('createdAt', 'desc'), limit(20));
