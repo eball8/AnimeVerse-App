@@ -79,6 +79,17 @@ export const subscribeMessages = (
   );
 };
 
+// يحترم إعداد الخصوصية عند بدء محادثة جديدة فقط (everyone | following | nobody)
+const assertCanMessage = async (me: string, other: string): Promise<void> => {
+  const snap = await getDoc(doc(db, 'users', other));
+  const mode = (snap.data() as { messagePrivacy?: string } | undefined)?.messagePrivacy;
+  if (mode === 'nobody') throw new Error('MESSAGES_CLOSED');
+  if (mode === 'following') {
+    const f = await getDoc(doc(db, 'follows', `${other}_${me}`));
+    if (!f.exists()) throw new Error('MESSAGES_CLOSED');
+  }
+};
+
 export const sendPayload = async (
   me: string,
   other: string,
@@ -95,6 +106,7 @@ export const sendPayload = async (
 
   const convId = convIdOf(me, other);
   if (!conversationAlreadyExists) {
+    await assertCanMessage(me, other);
     const members = [me, other].sort();
     await setDoc(doc(db, 'conversations', convId), {
       members,
