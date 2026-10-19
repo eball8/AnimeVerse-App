@@ -1,26 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Lock, UserPlus, UserCheck, Clock } from 'lucide-react';
+import { ArrowRight, Loader2, Lock, UserPlus, UserCheck, Clock, MessageCircle, Share2, Link2, Check } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import type { UserProfile } from '../types';
 import {
   getFollowCounts, getFollowState, followUser, unfollowUser, cancelRequest,
 } from '../services/followService';
 import type { FollowState } from '../services/followService';
 import { notify } from '../services/notificationService';
+import { copyText, profileLink, shareLink } from '../utils/links';
+import Avatar from '../components/Avatar';
 
 const UserProfilePage: React.FC = () => {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useI18n();
   const [p, setP] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<FollowState>('none');
   const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!uid) {
@@ -49,7 +54,7 @@ const UserProfilePage: React.FC = () => {
         }
       } catch (e) {
         console.error(e);
-        if (!cancelled) setError('تعذر تحميل الملف الشخصي.');
+        if (!cancelled) setError(t('user.loadFail'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -83,7 +88,6 @@ const UserProfilePage: React.FC = () => {
         );
         setState(next);
         if (next === 'following') setCounts((c) => ({ ...c, followers: c.followers + 1 }));
-        // إشعار لصاحب الحساب
         notify(
           p.uid,
           next === 'following' ? 'follow' : 'request',
@@ -92,14 +96,15 @@ const UserProfilePage: React.FC = () => {
       }
     } catch (e: any) {
       console.error(e);
-      setError(
-        e?.code === 'permission-denied'
-          ? 'لا يمكنك متابعة هذا الحساب.'
-          : 'حدث خطأ، حاول مرة أخرى.'
-      );
+      setError(e?.code === 'permission-denied' ? t('user.followError') : t('common.error'));
     } finally {
       setBusy(false);
     }
+  };
+
+  const flash = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   if (loading) {
@@ -113,7 +118,7 @@ const UserProfilePage: React.FC = () => {
   if (!p) {
     return (
       <div className="px-4 py-10 text-center text-sm text-slate-400">
-        {error || 'المستخدم غير موجود.'}
+        {error || t('user.notFound')}
       </div>
     );
   }
@@ -121,28 +126,52 @@ const UserProfilePage: React.FC = () => {
   const isPrivate = p.accountType === 'private';
   const label =
     state === 'following'
-      ? 'تتابعه'
+      ? t('user.following')
       : state === 'requested'
-      ? 'تم إرسال الطلب'
+      ? t('user.requested')
       : isPrivate
-      ? 'إرسال طلب متابعة'
-      : 'متابعة';
+      ? t('user.requestFollow')
+      : t('user.follow');
   const Icon = state === 'following' ? UserCheck : state === 'requested' ? Clock : UserPlus;
+  const link = profileLink(p.uid);
 
   return (
     <div className="px-4 py-6 space-y-4">
       <button
         onClick={() => navigate(-1)}
         className="p-2 rounded-xl hover:bg-white/10 text-slate-300"
-        aria-label="رجوع"
+        aria-label={t('common.back')}
       >
-        <ArrowRight className="w-5 h-5" />
+        <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
       </button>
 
-      <div className="card p-6 text-center">
-        <img
-          src={p.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${p.uid}`}
-          alt=""
+      <div className="card p-6 text-center relative">
+        <div className="absolute top-3 start-3 flex gap-1">
+          <button
+            onClick={async () => {
+              if (await copyText(link)) flash();
+            }}
+            className="p-2 rounded-xl hover:bg-white/10 text-slate-400"
+            aria-label={t('common.copyLink')}
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={async () => {
+              const r = await shareLink(link, p.displayName);
+              if (r === 'copied') flash();
+            }}
+            className="p-2 rounded-xl hover:bg-white/10 text-slate-400"
+            aria-label={t('common.share')}
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+        </div>
+
+        <Avatar
+          src={p.photoURL}
+          seed={p.uid}
+          name={p.displayName}
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{p.displayName}</h2>
@@ -152,41 +181,49 @@ const UserProfilePage: React.FC = () => {
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
             <div className="text-lg font-black text-white">{counts.posts}</div>
-            <div className="text-[10px] text-slate-500 font-bold">منشور</div>
+            <div className="text-[10px] text-slate-500 font-bold">{t('profile.posts')}</div>
           </div>
           <div>
             <div className="text-lg font-black text-white">{counts.followers}</div>
-            <div className="text-[10px] text-slate-500 font-bold">متابع</div>
+            <div className="text-[10px] text-slate-500 font-bold">{t('profile.followers')}</div>
           </div>
           <div>
             <div className="text-lg font-black text-white">{counts.following}</div>
-            <div className="text-[10px] text-slate-500 font-bold">يتابع</div>
+            <div className="text-[10px] text-slate-500 font-bold">{t('profile.following')}</div>
           </div>
         </div>
 
-        <button
-          onClick={handleFollow}
-          disabled={busy}
-          className={`mt-5 w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50 ${
-            state === 'none'
-              ? 'btn-primary'
-              : 'rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold'
-          }`}
-        >
-          {busy ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <>
-              <Icon className="w-4 h-4" /> {label}
-            </>
-          )}
-        </button>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={handleFollow}
+            disabled={busy}
+            className={`flex-1 py-3 flex items-center justify-center gap-2 disabled:opacity-50 ${
+              state === 'none'
+                ? 'btn-primary'
+                : 'rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold'
+            }`}
+          >
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <Icon className="w-4 h-4" /> {label}
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => navigate(`/messages/${p.uid}`)}
+            className="px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2"
+          >
+            <MessageCircle className="w-4 h-4" /> {t('user.message')}
+          </button>
+        </div>
 
         {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mt-3">{error}</p>}
 
         {isPrivate && state !== 'following' && (
           <p className="text-[11px] text-slate-500 mt-3 flex items-center justify-center gap-1">
-            <Lock className="w-3 h-3" /> هذا الحساب خاص
+            <Lock className="w-3 h-3" /> {t('user.privateNote')}
           </p>
         )}
       </div>
