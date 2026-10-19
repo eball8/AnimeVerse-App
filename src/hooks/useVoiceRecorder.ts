@@ -45,13 +45,30 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
     streamRef.current = stream;
     chunksRef.current = [];
     const mimeType = pickMime();
-    const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+    // بعض أجهزة أندرويد ترفض الصيغة المحددة، فنجرب بدونها قبل أن نفشل
+    let rec: MediaRecorder;
+    try {
+      try {
+        rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      } catch {
+        rec = new MediaRecorder(stream);
+      }
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      throw e;
+    }
     recRef.current = rec;
     startedRef.current = Date.now();
 
     resultRef.current = new Promise<VoiceResult | null>((resolve) => {
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onerror = () => {
+        cleanup();
+        resolve(null);
       };
       rec.onstop = () => {
         const duration = Math.round((Date.now() - startedRef.current) / 1000);
@@ -62,7 +79,8 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
       };
     });
 
-    rec.start();
+    // تمرير 250ms يجعل المتصفح يسلّم البيانات تدريجياً (أضمن على WebView أندرويد)
+    rec.start(250);
     setSeconds(0);
     setRecording(true);
     timerRef.current = window.setInterval(() => {
