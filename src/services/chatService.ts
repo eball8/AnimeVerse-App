@@ -1,6 +1,6 @@
 import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc, where, arrayUnion,
+  serverTimestamp, setDoc, updateDoc, where, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { decryptJson, encryptJson, getLocalKey, getSharedKey } from './cryptoService';
@@ -13,8 +13,13 @@ export type ChatPayload =
 
 export interface Conversation {
   id: string;
-  otherUid: string;
+  otherUid: string; // سيتم استخدامه للمحادثات الفردية فقط
   lastMessageAt: any;
+  type?: 'direct' | 'group'; // نوع المحادثة
+  name?: string; // اسم المجموعة
+  members?: string[]; // قائمة معرفات الأعضاء (للمجموعات)
+  admins?: string[]; // قائمة معرفات المشرفين
+  photoURL?: string; // صورة المجموعة
 }
 
 export interface RawMessage {
@@ -25,9 +30,8 @@ export interface RawMessage {
   senderKeyId: string;
   recipientKeyId: string;
   createdAt: any;
-  // حقول جديدة
-  replyTo?: string; // معرف الرسالة التي تم الرد عليها
-  reactions?: Record<string, string[]>; // الإيموجي ومصفوفة بمعرفات المستخدمين الذين تفاعلوا
+  replyTo?: string;
+  reactions?: Record<string, string[]>;
 }
 
 export interface PublicKeyInfo {
@@ -53,8 +57,19 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
     (snap) => {
       const items = snap.docs.map((d) => {
         const data = d.data() as any;
-        const other = (data.members as string[]).find((m) => m !== me) || '';
-        return { id: d.id, otherUid: other, lastMessageAt: data.lastMessageAt } as Conversation;
+        const isGroup = data.type === 'group';
+        // في المجموعات، لا يوجد "otherUid" واحد، نتركه فارغاً
+        const other = isGroup ? '' : (data.members as string[]).find((m) => m !== me) || '';
+        return { 
+          id: d.id, 
+          otherUid: other, 
+          lastMessageAt: data.lastMessageAt,
+          type: data.type || 'direct',
+          name: data.name,
+          members: data.members,
+          admins: data.admins,
+          photoURL: data.photoURL
+        } as Conversation;
       });
       const t = (c: Conversation) => c.lastMessageAt?.toMillis?.() ?? Date.now();
       items.sort((a, b) => t(b) - t(a));
@@ -103,25 +118,60 @@ const assertCanMessage = async (me: string, other: string): Promise<void> => {
 
 export const sendPayload = async (
   me: string,
-  other: string,
+  other: string, // في المجموعات، سنمرر معرف المجموعة هنا (convId)
   payload: ChatPayload,
   conversationAlreadyExists: boolean,
-  replyTo?: string // معامل جديد للرد
+  replyTo?: string
 ): Promise<void> => {
   const local = await getLocalKey(me);
   if (!local) throw new Error('NO_LOCAL_KEY');
-  const theirs = await getPublicKeyInfo(other);
-  if (!theirs) throw new Error('RECIPIENT_NO_KEY');
+  
+  // ملاحظة: التشفير في المجموعات يحتاج لتشفير المفتاح لكل عضو (وهذا معقد جداً).
+  // حالياً، سنستخدم مفتاح الطرف الآخر في المحادثات الفردية.
+  // للمجموعات، سنستخدم مفتاح "عام" (أو مفتاح العضو الأول) لتجنب تعقيد التشفير الجماعي.
+  
+  let sharedKey: CryptoKey;
+  let recipientKeyId: string;
 
-  const shared = await getSharedKey(local.privateKey, local.keyId, theirs.keyId, theirs.publicKey);
-  const { ciphertext, iv } = await encryptJson(shared, payload);
+  if (conversationAlreadyExists) {
+    // إذا كانت المحادثة موجودة، نجلب عضويتها
+    const convSnap = await getDoc(doc(db, 'conversations', other));
+    if (convSnap.exists()) {
+      const data = convSnap.data();
+      if (data.type === 'group') {
+        // في المجموعات: نستخدم مفتاح أول عضو (مؤقتاً لحين بناء نظام التشفير الجماعي)
+        const firstMember = data.members.find((m: string) => m !== me);
+        const theirKey = await getPublicKeyInfo(firstMember);
+        if (!theirKey) throw new Error('RECIPIENT_NO_KEY');
+        sharedKey = await getSharedKey(local.privateKey, local.keyId, theirKey.keyId, theirKey.publicKey);
+        recipientKeyId = theirKey.keyId; // سنستخدم هذا الحقل لتخزين مفتاح العضو الأول
+      } else {
+        // محادثة فردية
+        const theirKey = await getPublicKeyInfo(other);
+        if (!theirKey) throw new Error('RECIPIENT_NO_KEY');
+        sharedKey = await getSharedKey(local.privateKey, local.keyId, theirKey.keyId, theirKey.publicKey);
+        recipientKeyId = theirKey.keyId;
+      }
+    } else {
+      throw new Error('CONV_NOT_FOUND');
+    }
+  } else {
+    // محادثة جديدة (فردية)
+    const theirKey = await getPublicKeyInfo(other);
+    if (!theirKey) throw new Error('RECIPIENT_NO_KEY');
+    sharedKey = await getSharedKey(local.privateKey, local.keyId, theirKey.keyId, theirKey.publicKey);
+    recipientKeyId = theirKey.keyId;
+  }
 
-  const convId = convIdOf(me, other);
+  const { ciphertext, iv } = await encryptJson(sharedKey, payload);
+  const convId = other; // في الحالة الفردية، other هو معرف المستخدم، وفي المجموعة هو معرف المجموعة
+
   if (!conversationAlreadyExists) {
     await assertCanMessage(me, other);
     const members = [me, other].sort();
     await setDoc(doc(db, 'conversations', convId), {
       members,
+      type: 'direct',
       createdAt: serverTimestamp(),
       lastMessageAt: serverTimestamp(),
     });
@@ -132,17 +182,13 @@ export const sendPayload = async (
     ciphertext,
     iv,
     senderKeyId: local.keyId,
-    recipientKeyId: theirs.keyId,
+    recipientKeyId: recipientKeyId,
     createdAt: serverTimestamp(),
   };
-  
   if (replyTo) msgData.replyTo = replyTo;
 
   await addDoc(collection(db, 'conversations', convId, 'messages'), msgData);
-
-  if (conversationAlreadyExists) {
-    await updateDoc(doc(db, 'conversations', convId), { lastMessageAt: serverTimestamp() });
-  }
+  await updateDoc(doc(db, 'conversations', convId), { lastMessageAt: serverTimestamp() });
 };
 
 export const decryptMessage = async (
@@ -168,26 +214,15 @@ export const removeMessage = async (convId: string, msgId: string): Promise<void
   await deleteDoc(doc(db, 'conversations', convId, 'messages', msgId));
 };
 
-// دوال جديدة للتفاعلات
 export const sendReaction = async (convId: string, msgId: string, emoji: string, uid: string): Promise<void> => {
   const msgRef = doc(db, 'conversations', convId, 'messages', msgId);
   const snap = await getDoc(msgRef);
   if (!snap.exists()) return;
-  
   const data = snap.data();
   const currentReactions = data.reactions || {};
   const users = currentReactions[emoji] || [];
-  
-  // إذا كان المستخدم قد تفاعل بالفعل، نقوم بإزالة تفاعله (Toggle)
   const newUsers = users.includes(uid) ? users.filter((id: string) => id !== uid) : [...users, uid];
-  
-  // إزالة الإيموجي إذا لم يتبق أحد
-  if (newUsers.length === 0) {
-    delete currentReactions[emoji];
-  } else {
-    currentReactions[emoji] = newUsers;
-  }
-
+  if (newUsers.length === 0) { delete currentReactions[emoji]; } else { currentReactions[emoji] = newUsers; }
   await updateDoc(msgRef, { reactions: currentReactions });
 };
 
@@ -197,4 +232,23 @@ export const subscribeStories = (cb: (stories: Story[]) => void) => {
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Story));
     cb(items);
   }, (e) => console.error('stories error:', e));
+};
+
+// ==========================================
+// دالة إنشاء مجموعة جديدة
+// ==========================================
+export const createGroup = async (me: string, groupName: string, memberUids: string[]): Promise<string> => {
+  const allMembers = [me, ...memberUids];
+  const newGroupRef = doc(collection(db, 'conversations'));
+  
+  await setDoc(newGroupRef, {
+    type: 'group',
+    name: groupName,
+    members: allMembers,
+    admins: [me], // المالك هو الأدمن الأول
+    createdAt: serverTimestamp(),
+    lastMessageAt: serverTimestamp(),
+  });
+
+  return newGroupRef.id;
 };
