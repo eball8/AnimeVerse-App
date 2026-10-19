@@ -4,18 +4,23 @@ import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { Bell, Heart, MessageCircle, UserPlus, Megaphone } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import { markAllRead, subscribeNotifications } from '../services/notificationService';
 import type { AppNotification } from '../services/notificationService';
+import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
+import Avatar from '../components/Avatar';
 
 const icons = { like: Heart, comment: MessageCircle, follow: UserPlus, request: UserPlus } as const;
 
 const Notifications: React.FC = () => {
   const { user } = useAuth();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [anns, setAnns] = useState<any[]>([]);
   const marked = useRef(false);
+  const briefs = useUserBriefs(items.map((n) => n.fromUid));
 
   useEffect(() => {
     if (!user) return;
@@ -39,7 +44,7 @@ const Notifications: React.FC = () => {
     <div className="px-4 py-6 space-y-4">
       <div className="flex items-center gap-2">
         <Bell className="w-6 h-6 text-primary-400" />
-        <h2 className="text-xl font-black text-white">الإشعارات</h2>
+        <h2 className="text-xl font-black text-white">{t('header.notifications')}</h2>
       </div>
 
       {anns.map((a) => (
@@ -53,26 +58,27 @@ const Notifications: React.FC = () => {
       ))}
 
       {items.length === 0 && anns.length === 0 && (
-        <p className="text-center text-sm text-slate-500 py-16">لا توجد إشعارات.</p>
+        <p className="text-center text-sm text-slate-500 py-16">{t('notif.empty')}</p>
       )}
 
       <div className="space-y-2">
         {items.map((n) => {
           const Icon = icons[n.type] || Bell;
+          const a = pickAuthor(briefs, n.fromUid, n.fromName, n.fromPhotoURL);
           return (
             <button
               key={n.id}
-              onClick={() => (n.type === 'follow' || n.type === 'request' ? navigate(`/user/${n.fromUid}`) : n.postId && navigate('/community'))}
-              className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-right ${n.read ? 'bg-white/5 border-white/10' : 'bg-primary-500/10 border-primary-500/30'}`}
+              onClick={() =>
+                n.type === 'follow' || n.type === 'request'
+                  ? navigate(`/user/${n.fromUid}`)
+                  : n.postId && navigate(`/post/${n.postId}`)
+              }
+              className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start ${n.read ? 'bg-white/5 border-white/10' : 'bg-primary-500/10 border-primary-500/30'}`}
             >
-              <img
-                src={n.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${n.fromUid}`}
-                alt=""
-                className="w-10 h-10 rounded-full bg-dark-900 shrink-0"
-              />
+              <Avatar src={a.photo} seed={n.fromUid} name={a.name} className="w-10 h-10 rounded-full object-cover bg-dark-900 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-white break-words"><b>{n.fromName}</b> {n.text}</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">{timeAgo(n.createdAt)}</p>
+                <p className="text-xs text-white break-words"><b>{a.name}</b> {n.text}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{timeAgo(n.createdAt, lang)}</p>
               </div>
               <Icon className="w-4 h-4 text-primary-400 shrink-0" />
             </button>
