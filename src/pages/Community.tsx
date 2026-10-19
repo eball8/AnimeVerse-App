@@ -9,12 +9,14 @@ import { logAdmin } from '../services/adminLog';
 import CommentsSheet from '../components/CommentsSheet';
 import StoriesBar from '../components/StoriesBar';
 import PostCard from '../components/PostCard';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const PAGE = 20;
 
 const Community: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<Post[]>([]);
   const [max, setMax] = useState(PAGE);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,7 @@ const Community: React.FC = () => {
   };
 
   const onDelete = async (post: Post) => {
-    if (!post.id || !confirm(t('post.deleteConfirm'))) return;
+    if (!post.id || !(await confirm({ title: t('post.deleteConfirm') }))) return;
     try {
       await deletePost(post.id);
       if (isAdmin && post.authorId !== user?.uid) {
