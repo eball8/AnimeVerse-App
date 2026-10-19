@@ -3,6 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw, CornerUpLeft, Share2, Users
 } from 'lucide-react';
+// --- استيراد دوال Firebase المفقودة ---
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { db } from '../config/firebase';
+
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
@@ -157,11 +161,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   
-  // حالة لمعرفة ما إذا كانت المحادثة مجموعة أم لا
   const [isGroup, setIsGroup] = useState<boolean | undefined>(undefined);
   const [groupInfo, setGroupInfo] = useState<Conversation | null>(null);
+  const [theme, setTheme] = useState<string>('default');
   
-  // جلب معلومات الطرف الآخر (فقط للمحادثات الفردية)
   const briefs = useUserBriefs(isGroup === false ? [other] : []);
   const b = briefs[other];
 
@@ -184,18 +187,15 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const pressTimer = useRef<number | null>(null);
 
-  // تهيئة المحادثة: هل هي مجموعة أم فردية؟
   useEffect(() => {
     let off = false;
     (async () => {
-      // نحاول جلب المحادثة كمجموعة
-      const groupRef = doc(db, 'conversations', other); // نحتاج لاستيراد doc و db
-      // ملاحظة: هنا سنستخدم استعلاماً بسيطاً للتحقق من النوع
       const convSnap = await getDocs(query(collection(db, 'conversations'), where('members', 'array-contains', me), limit(50)));
       const found = convSnap.docs.find(d => d.id === other);
       
       if (found) {
         const data = found.data();
+        if (data.theme) setTheme(data.theme);
         if (data.type === 'group') {
           setIsGroup(true);
           setGroupInfo({ id: found.id, ...data } as Conversation);
@@ -203,13 +203,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           setIsGroup(false);
         }
       } else {
-        setIsGroup(false); // محادثة فردية جديدة
+        setIsGroup(false);
       }
     })().catch(e => { console.error(e); if (!off) setIsGroup(false); });
     return () => { off = true; };
   }, [me, other]);
 
-  // جلب مفاتيح التشفير (فقط للمحادثات الفردية)
   useEffect(() => {
     if (isGroup !== false) return;
     let off = false;
@@ -221,14 +220,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     return () => { off = true; };
   }, [isGroup, me, other]);
 
-  // الاشتراك في الرسائل
   useEffect(() => {
     if (isGroup === undefined) return;
     const convId = isGroup ? other : convIdOf(me, other);
     return subscribeMessages(convId, setMessages, (e) => console.error('messages error:', e));
   }, [isGroup, me, other]);
 
-  // فك تشفير الرسائل
   useEffect(() => {
     if (isGroup || !local || theirs === undefined) return;
     let off = false;
@@ -246,10 +243,8 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     setBusy(true); setError('');
     try {
       const convId = isGroup ? other : convIdOf(me, targetUid);
-      // ملاحظة: إرسال الملفات في المجموعات غير مدعوم حالياً (يحتاج لتشفير المفتاح لكل عضو)
-      if (isGroup && payload.k !== 't') {
-        throw new Error('الملفات غير مدعومة في المجموعات حالياً.');
-      }
+      if (isGroup && payload.k !== 't') throw new Error('الملفات غير مدعومة في المجموعات حالياً.');
+      
       await sendPayload(me, convId, payload, exists === true, replyTo?.id);
       if (!exists && targetUid === other && !isGroup) setExists(true);
       if (!theirs && targetUid === other && !isGroup) getPublicKeyInfo(other).then(setTheirs).catch(console.error);
@@ -268,8 +263,49 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     if (await doSend({ k: 't', v: v.slice(0, 1500) })) setText('');
   };
 
-  // (باقي الدوال مثل sendVoice و sendOneMedia و onPickFiles بقيت كما هي، سأختصرها هنا لتوفير المساحة)
-  // ... يمكنك نسخها من الكود السابق ...
+  const sendVoice = async (r: VoiceResult | null) => {
+    if (!r) return;
+    setBusy(true); setError('');
+    try {
+      const enc = await encryptBlob(r.blob);
+      const url = await uploadEncryptedBlob(enc.data);
+      setBusy(false);
+      await doSend({ k: 'v', url, key: enc.key, iv: enc.iv, dur: r.duration, mime: r.mime });
+    } catch (e: any) { console.error(e); setError(`${t('chat.sendFailed')} (${e?.message || e?.name || ''})`.trim()); setBusy(false); }
+  };
+
+  const sendOneMedia = async (file: File): Promise<boolean> => {
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    if (!isImage && !isVideo) { setError(t('chat.mediaType')); return false; }
+    if (isVideo && file.size > MAX_VIDEO_MB * 1024 * 1024) { setError(t('chat.videoTooBig', { mb: MAX_VIDEO_MB })); return false; }
+
+    setBusy(true); setError(''); setProgress(0);
+    try {
+      let blob: Blob = file; let mime = file.type; let w: number | undefined; let h: number | undefined;
+      if (isImage && mime !== 'image/gif') { const c = await compressImage(file); blob = c.blob; mime = c.mime; w = c.w; h = c.h; }
+      const enc = await encryptBlob(blob);
+      const url = await uploadEncryptedBlob(enc.data, setProgress);
+      rememberMedia(url, blob); setBusy(false);
+      const payload: MediaPayload = { k: 'm', url, key: enc.key, iv: enc.iv, mime, size: blob.size };
+      if (w && h) { payload.w = w; payload.h = h; }
+      return await doSend(payload);
+    } catch (e) { console.error(e); setError(t('chat.sendFailed')); setBusy(false); return false; }
+  };
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, MAX_ATTACH_PER_PICK);
+    e.target.value = '';
+    if (!files.length || busy) return;
+    for (const f of files) { const ok = await sendOneMedia(f); if (!ok) break; }
+    setProgress(null);
+  };
+
+  const { recording, seconds, start, stop, cancel } = useVoiceRecorder(sendVoice);
+  const startRec = async () => {
+    setError('');
+    try { await start(); } catch (e: any) { console.error(e); setError(e?.name === 'NotFoundError' || !navigator.mediaDevices ? t('chat.micMissing') : `${t('chat.micDenied')} ${t('chat.micSettingsHint')}`); }
+  };
 
   const name = isGroup ? (groupInfo?.name || 'مجموعة') : (b?.displayName || '...');
   const avatarSrc = isGroup ? groupInfo?.photoURL : b?.photoURL;
@@ -277,7 +313,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
   return (
     <>
-      <div className="fixed inset-x-0 z-30 mx-auto max-w-2xl flex flex-col bg-dark-950" style={{ top: 'var(--app-header-h, calc(env(safe-area-inset-top) + 3.75rem))', bottom: 0 }}>
+      <div 
+        className={`fixed inset-x-0 z-30 mx-auto max-w-2xl flex flex-col ${theme === 'dark' ? 'bg-black' : theme === 'romantic' ? 'bg-pink-950' : theme === 'friends' ? 'bg-blue-950' : 'bg-dark-950'}`} 
+        style={{ top: 'var(--app-header-h, calc(env(safe-area-inset-top) + 3.75rem))', bottom: 0 }}
+      >
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0">
           <button onClick={() => navigate('/messages')} className="p-2 rounded-xl hover:bg-white/10 text-slate-300"><ArrowRight className="w-5 h-5" /></button>
           <button onClick={() => !isGroup && navigate(`/user/${other}`)} className="flex items-center gap-3 min-w-0">
@@ -305,9 +344,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'} relative`}>
-                {!mine && isGroup && (
-                  <span className="text-[10px] text-slate-400 mb-1 px-1">{senderBrief?.displayName || 'عضو'}</span>
-                )}
+                {!mine && isGroup && (<span className="text-[10px] text-slate-400 mb-1 px-1">{senderBrief?.displayName || 'عضو'}</span>)}
                 <div className="relative max-w-[80%]">
                   {activeMsg === m.id && (
                     <ReactionBar 
@@ -325,7 +362,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     {repliedMsg && (
                       <div className="text-[11px] bg-black/20 p-2 rounded-lg mb-2 border-l-2 border-white/50">
                         <p className="font-bold opacity-80 mb-1">{repliedMsg.senderId === me ? 'أنت' : 'عضو'}</p>
-                        <p className="opacity-70 truncate">{repliedP?.k === 't' ? repliedP.v : '📷 وسائط'}</p>
+                        {/* إصلاح الخطأ: التحقق من أن repliedP ليس null قبل قراءة v */}
+                        <p className="opacity-70 truncate">
+                          {repliedP && repliedP.k === 't' ? repliedP.v : '📷 وسائط'}
+                        </p>
                       </div>
                     )}
                     {p === undefined ? (<Loader2 className="w-4 h-4 animate-spin" />) : p === null ? (<span className="text-xs opacity-70">غير قابل للقراءة</span>) : p.k === 't' ? (<p className="whitespace-pre-wrap">{p.v}</p>) : p.k === 'm' ? (<MediaBubble payload={p} onOpenImage={setViewer} />) : p.k === 'v' ? (<VoiceBubble payload={p} />) : null}
@@ -341,11 +381,17 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           <div ref={endRef} />
         </div>
 
-        <div className="shrink-0 border-t border-white/10 bg-dark-950 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-white/10 bg-dark-950/90 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm">
           {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mb-2">{error}</p>}
           {replyTo && (
             <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2 border-l-2 border-primary-500">
-              <div className="min-w-0"><p className="text-[10px] text-primary-400 font-bold mb-0.5">الرد على</p><p className="text-xs text-slate-300 truncate">{plain[replyTo.id]?.k === 't' ? plain[replyTo.id].v : '📷 وسائط'}</p></div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-primary-400 font-bold mb-0.5">الرد على</p>
+                {/* إصلاح الخطأ: التحقق من النوع بشكل صريح */}
+                <p className="text-xs text-slate-300 truncate">
+                   {plain[replyTo.id] && plain[replyTo.id]?.k === 't' ? (plain[replyTo.id] as {k: 't', v: string}).v : '📷 وسائط'}
+                </p>
+              </div>
               <button onClick={() => setReplyTo(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -353,11 +399,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             <div className="mb-2"><div className="flex items-center justify-between text-[11px] text-slate-400 mb-1"><span>{t('chat.uploading')}</span><span className="tabular-nums">{progress}%</span></div><div className="h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all" style={{ width: `${progress}%` }} /></div></div>
           )}
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden onChange={() => {}} /> {/* معطل للمجموعات */}
+            <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden onChange={onPickFiles} />
             <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendText()} maxLength={1500} placeholder={t('chat.placeholder')} className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
             {!isGroup && <button onClick={() => fileRef.current?.click()} disabled={busy} className="p-3 rounded-full bg-white/5 border border-white/10 text-slate-300 active:scale-90 transition disabled:opacity-50"><Paperclip className="w-4 h-4" /></button>}
             {text.trim() ? (<button onClick={sendText} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>) : 
-             (!isGroup && <button onClick={() => {}} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50"><Mic className="w-4 h-4" /></button>)}
+             (!isGroup && <button onClick={startRec} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>)}
           </div>
         </div>
       </div>
