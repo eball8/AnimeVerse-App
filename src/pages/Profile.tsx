@@ -1,26 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  User, Settings, LogOut, LogIn, UserPlus, Share2, Pencil, Lock, Check, X, Bookmark, Shield, Link2,
-} from 'lucide-react';
+import { User, LogIn, UserPlus, Share2, Pencil, Check, X, Link2 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
-import { updateUserProfile } from '../services/userService';
 import {
   getFollowCounts, subscribeFollowRequests, acceptRequest, rejectRequest,
 } from '../services/followService';
 import { copyText, profileLink, shareLink } from '../utils/links';
+import Avatar from '../components/Avatar';
+import InsightsCard from '../components/InsightsCard';
+import ProfileTabs from '../components/ProfileTabs';
 import type { UserProfile } from '../types';
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut, loading, refreshProfile, isAdmin } = useAuth();
+  const { user, profile, loading } = useAuth();
   const { t } = useI18n();
   const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
   const [requests, setRequests] = useState<UserProfile[]>([]);
-  const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -78,7 +77,6 @@ const Profile: React.FC = () => {
     );
   }
 
-  const isPrivate = profile?.accountType === 'private';
   const link = profileLink(user.uid);
 
   const flash = () => {
@@ -94,20 +92,6 @@ const Profile: React.FC = () => {
 
   const handleCopy = async () => {
     if (await copyText(link)) flash();
-  };
-
-  const togglePrivacy = async () => {
-    if (savingPrivacy) return;
-    setSavingPrivacy(true);
-    try {
-      await updateUserProfile(user.uid, { accountType: isPrivate ? 'public' : 'private' });
-      await refreshProfile();
-    } catch (e) {
-      console.error(e);
-      alert(t('common.error'));
-    } finally {
-      setSavingPrivacy(false);
-    }
   };
 
   const handleAccept = async (followerId: string) => {
@@ -129,41 +113,30 @@ const Profile: React.FC = () => {
     }
   };
 
-  const itemCls = 'w-full flex items-center gap-3 p-4 hover:bg-white/5 transition text-start';
+  const genderLabel =
+    profile?.gender === 'male' ? 'ذكر' : profile?.gender === 'female' ? 'أنثى' : '';
 
   return (
-    <div className="px-4 py-6 space-y-4">
-      {/* Profile Card */}
-      <div className="card p-6 text-center relative">
-        <div className="absolute top-3 start-3 flex gap-1">
-          <button
-            onClick={handleCopy}
-            className="p-2 rounded-xl hover:bg-white/10 text-slate-400"
-            aria-label={t('common.copyLink')}
-          >
-            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={handleShare}
-            className="p-2 rounded-xl hover:bg-white/10 text-slate-400"
-            aria-label={t('common.share')}
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-        </div>
-
-        <img
-          src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}
-          alt=""
+    <div className="px-4 py-4 space-y-4">
+      {/* بطاقة الملف الشخصي */}
+      <div className="card p-5 text-center">
+        <Avatar
+          src={profile?.photoURL}
+          seed={user.uid}
+          name={profile?.displayName}
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{profile?.displayName}</h2>
-        <p className="text-sm text-slate-500">@{profile?.username}</p>
+        <p className="text-sm text-slate-500">
+          @{profile?.username}
+          {profile?.pronouns ? <span className="text-slate-400"> · {profile.pronouns}</span> : null}
+        </p>
+        {genderLabel && <p className="text-[11px] text-slate-500 mt-0.5">{genderLabel}</p>}
         {profile?.bio && (
-          <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto">{profile.bio}</p>
+          <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
         )}
 
-        {/* Stats */}
+        {/* العدّادات */}
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
             <div className="text-lg font-black text-white">{counts.posts}</div>
@@ -178,7 +151,34 @@ const Profile: React.FC = () => {
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.following')}</div>
           </div>
         </div>
+
+        {/* أزرار */}
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={() => navigate('/edit-profile')}
+            className="flex-1 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition"
+          >
+            <Pencil className="w-4 h-4" /> {t('profile.edit')}
+          </button>
+          <button
+            onClick={handleShare}
+            className="px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white flex items-center justify-center hover:bg-white/10 transition"
+            aria-label={t('common.share')}
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleCopy}
+            className="px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-white flex items-center justify-center hover:bg-white/10 transition"
+            aria-label={t('common.copyLink')}
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
+
+      {/* كارت إحصائيات الوصول */}
+      <InsightsCard uid={user.uid} />
 
       {/* طلبات المتابعة */}
       {requests.length > 0 && (
@@ -186,9 +186,10 @@ const Profile: React.FC = () => {
           <h3 className="text-sm font-black text-white">{t('profile.requests')} ({requests.length})</h3>
           {requests.map((r) => (
             <div key={r.uid} className="flex items-center gap-3">
-              <img
-                src={r.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${r.uid}`}
-                alt=""
+              <Avatar
+                src={r.photoURL}
+                seed={r.uid}
+                name={r.displayName}
                 className="w-10 h-10 rounded-full object-cover"
               />
               <div className="flex-1 min-w-0">
@@ -214,45 +215,8 @@ const Profile: React.FC = () => {
         </div>
       )}
 
-      {/* Menu */}
-      <div className="card divide-y divide-white/5">
-        <button onClick={() => navigate('/library')} className={itemCls}>
-          <Bookmark className="w-5 h-5 text-primary-400" />
-          <span className="text-sm font-bold text-white">{t('profile.library')}</span>
-        </button>
-        {/* زر لوحة التحكم يظهر للأدمن فقط */}
-        {isAdmin && (
-          <button onClick={() => navigate('/admin')} className={itemCls}>
-            <Shield className="w-5 h-5 text-primary-400" />
-            <span className="text-sm font-bold text-white">{t('profile.admin')}</span>
-          </button>
-        )}
-        <button onClick={() => navigate('/edit-profile')} className={itemCls}>
-          <Pencil className="w-5 h-5 text-primary-400" />
-          <span className="text-sm font-bold text-white">{t('profile.edit')}</span>
-        </button>
-        <button
-          onClick={togglePrivacy}
-          disabled={savingPrivacy}
-          className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition text-start disabled:opacity-50"
-        >
-          <div className="flex items-center gap-3">
-            <Lock className="w-5 h-5 text-primary-400" />
-            <span className="text-sm font-bold text-white">{t('profile.private')}</span>
-          </div>
-          <span className={`text-xs font-bold ${isPrivate ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {isPrivate ? t('profile.on') : t('profile.off')}
-          </span>
-        </button>
-        <button onClick={() => navigate('/settings')} className={itemCls}>
-          <Settings className="w-5 h-5 text-primary-400" />
-          <span className="text-sm font-bold text-white">{t('profile.settings')}</span>
-        </button>
-        <button onClick={signOut} className={`${itemCls} text-red-400`}>
-          <LogOut className="w-5 h-5" />
-          <span className="text-sm font-bold">{t('profile.logout')}</span>
-        </button>
-      </div>
+      {/* التبويبات الأربعة: المنشورات / الريلز / إعادة النشر / الإشارات */}
+      <ProfileTabs uid={user.uid} />
     </div>
   );
 };
