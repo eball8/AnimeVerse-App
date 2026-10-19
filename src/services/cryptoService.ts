@@ -421,7 +421,15 @@ export const encryptBlob = async (blob: Blob): Promise<{ data: Blob; key: string
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, await blob.arrayBuffer());
-  return { data: new Blob([ct], { type: 'application/octet-stream' }), key: toB64(raw), iv: toB64(iv) };
+  
+  // التعديل الهندسي: إجبار نوع الملف على أن يكون text/plain
+  // هذا يمنع المتصفح من إعطائه امتداد .bin الذي يرفضه Cloudinary
+  // التشفير نفسه لم يتغير ولن يتأثر
+  return { 
+    data: new Blob([ct], { type: 'text/plain' }), 
+    key: toB64(raw), 
+    iv: toB64(iv) 
+  };
 };
 
 export const decryptBlob = async (
@@ -432,5 +440,6 @@ export const decryptBlob = async (
 ): Promise<Blob> => {
   const key = await crypto.subtle.importKey('raw', fromB64(keyB64), 'AES-GCM', false, ['decrypt']);
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(ivB64) }, key, buf);
+  // هنا نقوم بإرجاع الملف بالـ MIME الأصلي الذي تم تمريره (صوت/صورة/فيديو) لكي يعمل المشغل بشكل صحيح
   return new Blob([pt], { type: mime });
 };
