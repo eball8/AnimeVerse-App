@@ -5,11 +5,12 @@ import type { Anime } from '../services/animeService';
 import { getTopAnime, getSeasonNow } from '../services/animeService';
 import { listCustomAnime } from '../services/customAnimeService';
 import AnimeCard from '../components/AnimeCard';
+import { useI18n } from '../i18n/I18nContext';
 
-const TITLES: Record<string, string> = {
-  top: 'الأكثر رواجاً',
-  season: 'يُعرض حالياً',
-  custom: 'حصرياً على AnimeVerse',
+const TITLE_KEYS: Record<string, string> = {
+  top: 'home.trending',
+  season: 'home.airing',
+  custom: 'home.exclusive',
 };
 
 const STEP = 20;
@@ -18,6 +19,7 @@ const MAX = 50;
 const AnimeList: React.FC = () => {
   const { kind = 'top' } = useParams<{ kind: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [limit, setLimit] = useState(STEP);
   const [items, setItems] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,11 +67,11 @@ const AnimeList: React.FC = () => {
         <button
           onClick={() => navigate(-1)}
           className="p-2 rounded-xl bg-white/5 border border-white/10 text-white"
-          aria-label="رجوع"
+          aria-label={t('common.back')}
         >
           <ArrowRight className="w-5 h-5" />
         </button>
-        <h2 className="text-xl font-black text-white">{TITLES[kind] || 'الأنمي'}</h2>
+        <h2 className="text-xl font-black text-white">{TITLE_KEYS[kind] ? t(TITLE_KEYS[kind]) : t('list.anime')}</h2>
       </div>
 
       {items.length > 0 && (
@@ -87,11 +89,11 @@ const AnimeList: React.FC = () => {
       )}
 
       {!loading && error && items.length === 0 && (
-        <p className="text-center text-sm text-slate-400 py-10">تعذّر تحميل القائمة. حاول لاحقاً.</p>
+        <p className="text-center text-sm text-slate-400 py-10">{t('list.loadFail')}</p>
       )}
 
       {!loading && !error && items.length === 0 && (
-        <p className="text-center text-sm text-slate-400 py-10">لا توجد أنميات هنا بعد.</p>
+        <p className="text-center text-sm text-slate-400 py-10">{t('list.empty')}</p>
       )}
 
       {canLoadMore && (
@@ -99,7 +101,7 @@ const AnimeList: React.FC = () => {
           onClick={() => setLimit((l) => Math.min(l + STEP, MAX))}
           className="w-full btn-primary py-3 text-sm font-bold"
         >
-          عرض المزيد
+          {t('common.more')}
         </button>
       )}
     </div>
