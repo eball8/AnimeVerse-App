@@ -20,6 +20,7 @@ import type { DocumentReference } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, db } from '../config/firebase';
+import { tr } from '../i18n/staticT';
 import { hasProvider, reauthGoogle } from './settingsService';
 
 // true أثناء التعطيل أو الحذف: يمنع مستمع الدخول من إعادة التفعيل أو إنشاء ملف جديد
@@ -100,39 +101,39 @@ export const deleteAccount = async (
   accountGuard.busy = true;
   try {
     // 1) إعادة التحقق من الهوية أولاً، فلا نحذف شيئاً إن فشلت
-    onStep?.('التحقق من الهوية...');
+    onStep?.(tr('svc.step.verify'));
     await reauth(user, password);
 
     // 2) حذف بيانات المستخدم (نتابع حتى لو فشلت خطوة منفردة)
     const steps: [string, () => Promise<void>][] = [
-      ['حذف المنشورات...', () => deleteWhere('posts', 'authorId', uid)],
-      ['حذف التعليقات...', () => deleteWhere('comments', 'authorId', uid)],
-      ['حذف القصص...', async () => {
+      [tr('svc.step.posts'), () => deleteWhere('posts', 'authorId', uid)],
+      [tr('svc.step.comments'), () => deleteWhere('comments', 'authorId', uid)],
+      [tr('svc.step.stories'), async () => {
         await deleteWhere('stories', 'authorId', uid);
         await deleteWhere('storyViews', 'viewerId', uid);
         await deleteWhere('storyViews', 'authorId', uid);
       }],
-      ['حذف الإعجابات...', async () => {
+      [tr('svc.step.likes'), async () => {
         await deleteWhere('likes', 'userId', uid);
         await deleteWhere('friendActivity', 'userId', uid);
       }],
-      ['حذف المتابعات...', async () => {
+      [tr('svc.step.follows'), async () => {
         await deleteWhere('follows', 'followerId', uid);
         await deleteWhere('follows', 'followingId', uid);
         await deleteWhere('followRequests', 'followerId', uid);
         await deleteWhere('followRequests', 'followingId', uid);
       }],
-      ['حذف الإشعارات والحظر...', async () => {
+      [tr('svc.step.notifs'), async () => {
         await deleteWhere('notifications', 'toUid', uid);
         await deleteWhere('blocks', 'blockerId', uid);
       }],
-      ['حذف المكتبة والتقييمات...', async () => {
+      [tr('svc.step.library'), async () => {
         await deleteWhere('library', 'userId', uid);
         await deleteWhere('episodeRatings', 'userId', uid);
         await deleteWhere('chatPrefs', 'userId', uid);
       }],
-      ['حذف رسائلك...', () => deleteMyMessages(uid)],
-      ['حذف المفاتيح والأجهزة...', async () => {
+      [tr('svc.step.messages'), () => deleteMyMessages(uid)],
+      [tr('svc.step.keys'), async () => {
         for (const col of ['notes', 'publicKeys', 'keyBackups', 'userPrivate']) {
           await deleteDoc(doc(db, col, uid)).catch(() => undefined);
         }
@@ -151,7 +152,7 @@ export const deleteAccount = async (
     }
 
     // 3) ملف المستخدم يُحذف أخيراً (يحرّر اسم المستخدم) ثم حساب الدخول
-    onStep?.('حذف الحساب...');
+    onStep?.(tr('svc.step.account'));
     await deleteDoc(doc(db, 'users', uid));
     await deleteUser(user);
     await nativeSignOut();
