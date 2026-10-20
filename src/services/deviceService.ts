@@ -1,4 +1,3 @@
-
 import {
   collection,
   doc,
@@ -8,7 +7,10 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  deleteDoc,
 } from 'firebase/firestore';
+
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 import { auth, db } from '../config/firebase';
 import { notifySecurity } from './notificationService';
@@ -41,17 +43,49 @@ const randomId = (): string => {
   throw new Error('Secure random ID generation is unavailable');
 };
 
-/**
- * إنشاء معرّف ثابت نسبيًا للجهاز داخل تخزين التطبيق.
- * قد يتغير عند مسح بيانات التطبيق أو إعادة تثبيته.
- */
-export const getDeviceId = (): string => {
+const DeviceIdNative = registerPlugin<{ get(): Promise<{ id: string }> }>(
+  'DeviceId'
+);
+
+// معرّف الجهاز الثابت (من نظام أندرويد) محفوظ في الذاكرة بعد التهيئة.
+let nativeDeviceId: string | null = null;
+
+const readLocalId = (): string | null => {
   try {
     const existing = localStorage.getItem(DEVICE_ID_KEY);
+    return existing && existing !== 'unknown' ? existing : null;
+  } catch {
+    return null;
+  }
+};
 
-    if (existing && existing !== 'unknown') {
-      return existing;
-    }
+/**
+ * يجب استدعاؤها مرة واحدة عند بدء التطبيق (قبل أي تحقق).
+ * داخل تطبيق الأندرويد: المعرّف مشتق من ANDROID_ID فيبقى ثابتاً بعد
+ * مسح البيانات أو إعادة التثبيت، ويتغير فقط بعد إعادة ضبط المصنع أو بهاتف جديد.
+ */
+export const initDeviceId = async (): Promise<void> => {
+  if (nativeDeviceId) return;
+  if (!Capacitor.isNativePlatform()) return;
+
+  try {
+    const { id } = await DeviceIdNative.get();
+    if (id && id.length >= 8) nativeDeviceId = id;
+  } catch (error) {
+    console.warn('Native device id unavailable, using local id.', error);
+  }
+};
+
+/**
+ * معرّف الجهاز: ثابت عبر مسح البيانات وإعادة التثبيت على أندرويد.
+ * (على الويب أو عند تعذر المعرّف الأصلي يُستخدم معرّف محلي.)
+ */
+export const getDeviceId = (): string => {
+  if (nativeDeviceId) return nativeDeviceId;
+
+  try {
+    const existing = readLocalId();
+    if (existing) return existing;
 
     const id = randomId();
     localStorage.setItem(DEVICE_ID_KEY, id);
@@ -60,6 +94,37 @@ export const getDeviceId = (): string => {
   } catch {
     return 'unknown';
   }
+};
+
+/**
+ * ترحيل الأجهزة المسجلة سابقاً بمعرّف عشوائي إلى المعرّف الثابت،
+ * حتى لا يظهر جهاز المستخدم الحالي كجهاز جديد بعد التحديث.
+ */
+const migrateLegacyDevice = async (
+  uid: string,
+  newId: string
+): Promise<boolean> => {
+  const legacyId = readLocalId();
+  if (!nativeDeviceId || !legacyId || legacyId === newId) return false;
+
+  const legacyRef = doc(db, 'userDevices', uid, 'items', legacyId);
+  const legacySnap = await getDoc(legacyRef);
+  if (!legacySnap.exists()) return false;
+
+  await setDoc(doc(db, 'userDevices', uid, 'items', newId), {
+    label: deviceLabel(),
+    platform: getPlatform(),
+    createdAt: serverTimestamp(),
+  });
+  await deleteDoc(legacyRef).catch(() => undefined);
+
+  try {
+    localStorage.removeItem(DEVICE_ID_KEY);
+  } catch {
+    // لا يؤثر على النتيجة.
+  }
+
+  return true;
 };
 
 /**
@@ -157,6 +222,15 @@ export const checkDevice = async (
         // التخزين المحلي ليس شرطًا لنجاح التحقق.
       }
 
+      return;
+    }
+
+    if (await migrateLegacyDevice(uid, deviceId)) {
+      try {
+        localStorage.setItem(localKey, deviceId);
+      } catch {
+        // التخزين المحلي ليس شرطًا.
+      }
       return;
     }
 
