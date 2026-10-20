@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, Loader2, X } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, X, ChevronLeft, UserPlus, UserRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../config/firebase';
 import { getSavedAccounts, removeSavedAccount } from '../utils/savedAccounts';
@@ -15,7 +15,10 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState<SavedAccount[]>(getSavedAccounts());
+  const [showForm, setShowForm] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+  // مثل فيسبوك: إن وُجدت حسابات محفوظة نعرضها أولاً، والنموذج يظهر عند اختيار «استخدام حساب آخر»
+  const showPicker = saved.length > 0 && !showForm;
 
   // إذا كان المستخدم مسجّلاً أصلاً لا نعرض له شاشة الدخول
   useEffect(() => {
@@ -30,6 +33,7 @@ const Login: React.FC = () => {
     } else {
       setEmail(acc.email);
       setPassword('');
+      setShowForm(true);
       setTimeout(() => passwordRef.current?.focus(), 50);
     }
   };
@@ -104,30 +108,46 @@ const Login: React.FC = () => {
           <p className="text-sm text-slate-400">سجّل دخولك للمتابعة</p>
         </div>
 
-        {saved.length > 0 && (
-          <div className="card p-4 space-y-2">
-            <p className="text-xs font-bold text-slate-300 mb-1">الحسابات المحفوظة</p>
+        {showPicker && (
+          <div className="space-y-3">
+            {error && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
             {saved.map((acc) => (
-              <div key={acc.uid} className="flex items-center gap-3 p-2 rounded-2xl bg-white/5 border border-white/10">
-                <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0">
+              <div key={acc.uid} className="card flex items-center gap-3 p-3">
+                <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0 disabled:opacity-60">
                   <img
                     src={acc.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc.uid}`}
                     alt=""
-                    className="w-10 h-10 rounded-full object-cover ring-2 ring-primary-500/40 shrink-0"
+                    className="w-12 h-12 rounded-full object-cover ring-2 ring-primary-500/40 shrink-0"
                   />
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block text-sm font-bold text-white truncate">{acc.displayName}</span>
                     <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{acc.email}</span>
                   </span>
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <ChevronLeft className="w-4 h-4 text-slate-500" />}
                 </button>
                 <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label="إزالة">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
+
+            <button
+              type="button"
+              onClick={() => { setError(''); setShowForm(true); }}
+              className="w-full py-3.5 rounded-full bg-white/10 hover:bg-white/15 transition flex items-center justify-center gap-2 text-sm font-bold text-white"
+            >
+              <UserRound className="w-4 h-4" /> استخدام حساب آخر
+            </button>
+            <Link
+              to="/signup"
+              className="w-full py-3.5 rounded-full border border-primary-500/60 hover:bg-primary-500/10 transition flex items-center justify-center gap-2 text-sm font-bold text-primary-400"
+            >
+              <UserPlus className="w-4 h-4" /> إنشاء حساب جديد
+            </Link>
           </div>
         )}
 
+        {!showPicker && (
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
@@ -219,7 +239,14 @@ const Login: React.FC = () => {
               أنشئ حساب جديد
             </Link>
           </p>
+
+          {saved.length > 0 && (
+            <button type="button" onClick={() => setShowForm(false)} className="w-full text-center text-xs text-slate-400 hover:text-white font-bold">
+              الرجوع إلى الحسابات المحفوظة
+            </button>
+          )}
         </form>
+        )}
       </div>
     </div>
   );
