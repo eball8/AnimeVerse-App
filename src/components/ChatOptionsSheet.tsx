@@ -1,0 +1,202 @@
+import React, { useState } from 'react';
+import {
+  X, User, Search, Bell, BellOff, Timer, Palette, Image as ImageIcon, EyeOff, Flag, Ban, Loader2,
+} from 'lucide-react';
+import type { ReportKind } from '../services/chatService';
+
+// ---------------------------------------------------------------
+// عناصر مشتركة
+// ---------------------------------------------------------------
+const Switch: React.FC<{ on: boolean }> = ({ on }) => (
+  <span className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${on ? 'bg-primary-500' : 'bg-white/15'}`}>
+    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${on ? 'start-[22px]' : 'start-0.5'}`} />
+  </span>
+);
+
+interface RowProps {
+  icon: React.ElementType;
+  label: string;
+  sub?: string;
+  onClick: () => void;
+  right?: React.ReactNode;
+  danger?: boolean;
+}
+
+const Row: React.FC<RowProps> = ({ icon: Icon, label, sub, onClick, right, danger }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 active:bg-white/10 text-start"
+  >
+    <Icon className={`w-5 h-5 shrink-0 ${danger ? 'text-red-400' : 'text-slate-300'}`} />
+    <div className="flex-1 min-w-0">
+      <p className={`text-sm font-bold ${danger ? 'text-red-400' : 'text-white'}`}>{label}</p>
+      {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
+    </div>
+    {right}
+  </button>
+);
+
+// ---------------------------------------------------------------
+// قائمة خيارات المحادثة (الثلاث نقاط)
+// ---------------------------------------------------------------
+export interface ChatOptionsSheetProps {
+  isGroup: boolean;
+  name: string;
+  muted: boolean;
+  restricted: boolean;
+  blocked: boolean;
+  disappearing: boolean;
+  onClose: () => void;
+  onProfile: () => void;
+  onSearch: () => void;
+  onToggleMute: () => void;
+  onToggleDisappear: () => void;
+  onTheme: () => void;
+  onMedia: () => void;
+  onToggleRestrict: () => void;
+  onReport: () => void;
+  onToggleBlock: () => void;
+}
+
+const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => (
+  <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={p.onClose}>
+    <div
+      className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <h3 className="text-white font-black truncate">{p.name}</h3>
+        <button type="button" onClick={p.onClose} className="text-slate-400 p-1" aria-label="إغلاق">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="divide-y divide-white/5 border-t border-white/10">
+        {!p.isGroup && (
+          <Row icon={User} label="الوصول للملف الشخصي" sub="افتح صفحة هذا المستخدم" onClick={p.onProfile} />
+        )}
+        <Row icon={Search} label="البحث في المحادثة" sub="ابحث في نصوص الرسائل" onClick={p.onSearch} />
+        <Row
+          icon={p.muted ? BellOff : Bell}
+          label="كتم الإشعارات"
+          sub={p.muted ? 'مكتومة: لا تصلك علامات رسائل جديدة' : 'استقبال الإشعارات كالمعتاد'}
+          onClick={p.onToggleMute}
+          right={<Switch on={p.muted} />}
+        />
+        <Row
+          icon={Timer}
+          label="الرسائل المؤقتة"
+          sub={p.disappearing ? 'مفعّلة: تُحذف الرسائل بعد 24 ساعة' : 'حذف الرسائل تلقائياً بعد 24 ساعة'}
+          onClick={p.onToggleDisappear}
+          right={<Switch on={p.disappearing} />}
+        />
+        <Row icon={Palette} label="تغيير الثيم" sub="ثيم وخلفية هذه المحادثة" onClick={p.onTheme} />
+        <Row icon={ImageIcon} label="الوسائط المشتركة" sub="الصور والفيديوهات في هذه المحادثة" onClick={p.onMedia} />
+      </div>
+
+      {!p.isGroup && (
+        <div className="divide-y divide-white/5 border-t border-white/10 mt-2">
+          <Row
+            icon={EyeOff}
+            label="تقييد المستخدم"
+            sub={p.restricted ? 'مقيّد: رسائله تصل بصمت دون علامات' : 'تصلك رسائله بصمت دون أن يعرف'}
+            onClick={p.onToggleRestrict}
+            right={<Switch on={p.restricted} />}
+          />
+          <Row icon={Flag} label="الإبلاغ" sub="أبلغ الإدارة عن إساءة أو سبام" onClick={p.onReport} danger />
+          <Row
+            icon={Ban}
+            label={p.blocked ? 'إلغاء الحظر' : 'حظر المستخدم'}
+            sub={p.blocked ? 'سيستطيع مراسلتك من جديد' : 'لن يستطيع بدء محادثة جديدة معك'}
+            onClick={p.onToggleBlock}
+            danger={!p.blocked}
+          />
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+export default ChatOptionsSheet;
+
+// ---------------------------------------------------------------
+// نافذة الإبلاغ
+// ---------------------------------------------------------------
+const REPORT_REASONS: { id: string; label: string; kind: ReportKind }[] = [
+  { id: 'abuse', label: 'إساءة أو تحرّش', kind: 'abuse' },
+  { id: 'spam', label: 'رسائل مزعجة (سبام)', kind: 'spam' },
+  { id: 'impersonation', label: 'انتحال شخصية', kind: 'abuse' },
+  { id: 'inappropriate', label: 'محتوى غير لائق', kind: 'abuse' },
+  { id: 'other', label: 'سبب آخر', kind: 'abuse' },
+];
+
+export const ReportSheet: React.FC<{
+  name: string;
+  busy: boolean;
+  onSubmit: (kind: ReportKind, reason: string) => void;
+  onClose: () => void;
+}> = ({ name, busy, onSubmit, onClose }) => {
+  const [reasonId, setReasonId] = useState<string>('');
+  const [details, setDetails] = useState('');
+  const picked = REPORT_REASONS.find((r) => r.id === reasonId);
+
+  const submit = () => {
+    if (!picked || busy) return;
+    const extra = details.trim();
+    onSubmit(picked.kind, extra ? `${picked.label} — ${extra}` : picked.label);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/60 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[88vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-white font-black flex items-center gap-2">
+            <Flag className="w-5 h-5 text-red-400" /> الإبلاغ عن {name}
+          </h3>
+          <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label="إغلاق">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">اختر السبب. يصل البلاغ إلى الإدارة فقط ولا يعرف المستخدم أنك أبلغت عنه.</p>
+
+        <div className="space-y-2">
+          {REPORT_REASONS.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => setReasonId(r.id)}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-start text-sm font-bold ${
+                reasonId === r.id ? 'bg-primary-500/15 border-primary-500/50 text-white' : 'bg-white/5 border-white/10 text-white'
+              }`}
+            >
+              <span>{r.label}</span>
+              <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${reasonId === r.id ? 'bg-primary-500 border-primary-500' : 'border-slate-500'}`} />
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          value={details}
+          onChange={(e) => setDetails(e.target.value.slice(0, 200))}
+          rows={3}
+          placeholder="تفاصيل إضافية (اختياري)..."
+          className="w-full mt-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white outline-none focus:border-primary-500"
+        />
+        <p className="text-[11px] text-slate-500 text-end mt-1">{details.length}/200</p>
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!picked || busy}
+          className="w-full mt-3 py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]"
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />} إرسال البلاغ
+        </button>
+      </div>
+    </div>
+  );
+};
