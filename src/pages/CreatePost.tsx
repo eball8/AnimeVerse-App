@@ -210,7 +210,7 @@ const CreatePost: React.FC = () => {
       else setSelectedId(null);
     } catch (e: any) {
       console.error(e);
-      setError(e?.message || t('cp.errOpenFile'));
+      setError(t('cp.errOpenFile'));
       setSelectedId(null);
     } finally {
       setPicking(false);
