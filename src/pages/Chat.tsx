@@ -38,22 +38,22 @@ const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 // ---------------------------------------------------------------
-// الثيمات والخلفيات (تُحفظ في وثيقة المحادثة، فيراها الطرفان)
+// الثيمات والخلفيات (تُحفظ في وثيقة المحادثة، فيراها الطرفان). اسم كل ثيم يُترجم بالمفتاح chatTheme.<id>
 // ---------------------------------------------------------------
-interface ChatTheme { id: string; label: string; bg: string; mine: string; }
+interface ChatTheme { id: string; bg: string; mine: string; }
 const THEMES: ChatTheme[] = [
-  { id: 'default', label: 'الافتراضي', bg: 'var(--av-chat-bg)', mine: 'linear-gradient(135deg,#8b5cf6,#ec4899)' },
-  { id: 'dark', label: 'أسود', bg: '#000000', mine: 'linear-gradient(135deg,#334155,#475569)' },
-  { id: 'romantic', label: 'رومانسي', bg: 'linear-gradient(160deg,#4a0d2e,#1a0510)', mine: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
-  { id: 'friends', label: 'أصدقاء', bg: 'linear-gradient(160deg,#0b2a5b,#06122b)', mine: 'linear-gradient(135deg,#3b82f6,#06b6d4)' },
-  { id: 'sunset', label: 'غروب', bg: 'linear-gradient(160deg,#4a1d0a,#2a0a2e)', mine: 'linear-gradient(135deg,#f97316,#ec4899)' },
-  { id: 'ocean', label: 'محيط', bg: 'linear-gradient(160deg,#032b3a,#04121f)', mine: 'linear-gradient(135deg,#06b6d4,#3b82f6)' },
-  { id: 'forest', label: 'غابة', bg: 'linear-gradient(160deg,#0b3320,#04140c)', mine: 'linear-gradient(135deg,#10b981,#84cc16)' },
-  { id: 'aurora', label: 'شفق', bg: 'linear-gradient(160deg,#1b0b3b,#052e2b)', mine: 'linear-gradient(135deg,#a855f7,#14b8a6)' },
-  { id: 'sakura', label: 'ساكورا', bg: 'linear-gradient(160deg,#3b1030,#17081a)', mine: 'linear-gradient(135deg,#f472b6,#c084fc)' },
-  { id: 'fire', label: 'نار', bg: 'linear-gradient(160deg,#3b0a0a,#140404)', mine: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
-  { id: 'midnight', label: 'منتصف الليل', bg: 'linear-gradient(160deg,#0f0c29,#302b63)', mine: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
-  { id: 'mint', label: 'نعناع', bg: 'linear-gradient(160deg,#06302b,#0b1a2e)', mine: 'linear-gradient(135deg,#2dd4bf,#38bdf8)' },
+  { id: 'default', bg: 'var(--av-chat-bg)', mine: 'linear-gradient(135deg,#8b5cf6,#ec4899)' },
+  { id: 'dark', bg: '#000000', mine: 'linear-gradient(135deg,#334155,#475569)' },
+  { id: 'romantic', bg: 'linear-gradient(160deg,#4a0d2e,#1a0510)', mine: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
+  { id: 'friends', bg: 'linear-gradient(160deg,#0b2a5b,#06122b)', mine: 'linear-gradient(135deg,#3b82f6,#06b6d4)' },
+  { id: 'sunset', bg: 'linear-gradient(160deg,#4a1d0a,#2a0a2e)', mine: 'linear-gradient(135deg,#f97316,#ec4899)' },
+  { id: 'ocean', bg: 'linear-gradient(160deg,#032b3a,#04121f)', mine: 'linear-gradient(135deg,#06b6d4,#3b82f6)' },
+  { id: 'forest', bg: 'linear-gradient(160deg,#0b3320,#04140c)', mine: 'linear-gradient(135deg,#10b981,#84cc16)' },
+  { id: 'aurora', bg: 'linear-gradient(160deg,#1b0b3b,#052e2b)', mine: 'linear-gradient(135deg,#a855f7,#14b8a6)' },
+  { id: 'sakura', bg: 'linear-gradient(160deg,#3b1030,#17081a)', mine: 'linear-gradient(135deg,#f472b6,#c084fc)' },
+  { id: 'fire', bg: 'linear-gradient(160deg,#3b0a0a,#140404)', mine: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
+  { id: 'midnight', bg: 'linear-gradient(160deg,#0f0c29,#302b63)', mine: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
+  { id: 'mint', bg: 'linear-gradient(160deg,#06302b,#0b1a2e)', mine: 'linear-gradient(135deg,#2dd4bf,#38bdf8)' },
 ];
 const themeOf = (id?: string): ChatTheme => THEMES.find((x) => x.id === id) || THEMES[0];
 
@@ -69,11 +69,11 @@ const firstEmoji = (s: string): string | null => {
   return parts.find((g) => EMOJI_RE.test(g)) ?? null;
 };
 
-const previewOf = (p: ChatPayload | null | undefined): string => {
-  if (!p) return '🔒 رسالة';
+const previewOf = (p: ChatPayload | null | undefined, t: (k: string) => string): string => {
+  if (!p) return t('chatUi.previewLocked');
   if (p.k === 't') return p.v;
-  if (p.k === 'v') return '🎤 رسالة صوتية';
-  return p.mime.startsWith('video/') ? '🎬 فيديو' : '📷 صورة';
+  if (p.k === 'v') return t('chatUi.previewVoice');
+  return p.mime.startsWith('video/') ? t('chatUi.previewVideo') : t('chatUi.previewImage');
 };
 
 const mediaCache = new Map<string, string>();
@@ -234,6 +234,7 @@ const MessageSheet: React.FC<{
   onDelete: () => void;
   onClose: () => void;
 }> = ({ mine, canCopy, myEmojis, onReact, onReply, onForward, onCopy, onDelete, onClose }) => {
+  const { t } = useI18n();
   const [picker, setPicker] = useState(false);
   const [val, setVal] = useState('');
   const btn = 'w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/5 active:bg-white/10 text-start';
@@ -249,7 +250,7 @@ const MessageSheet: React.FC<{
 
         {picker && (
           <div className="bg-dark-900 border border-white/10 rounded-2xl p-3">
-            <p className="text-[11px] text-slate-400 mb-2">افتح الإيموجي من لوحة مفاتيح هاتفك واختر ما تريد:</p>
+            <p className="text-[11px] text-slate-400 mb-2">{t('chatUi.emojiHint')}</p>
             <input
               autoFocus
               value={val}
@@ -264,10 +265,10 @@ const MessageSheet: React.FC<{
         )}
 
         <div className="bg-dark-900 border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5">
-          <button onClick={onReply} className={btn}><CornerUpLeft className="w-4 h-4 text-slate-300" /> رد</button>
-          <button onClick={onForward} className={btn}><Share2 className="w-4 h-4 text-slate-300" /> إعادة توجيه</button>
-          {canCopy && <button onClick={onCopy} className={btn}><Copy className="w-4 h-4 text-slate-300" /> نسخ</button>}
-          {mine && <button onClick={onDelete} className={`${btn} !text-red-400`}><Trash2 className="w-4 h-4" /> حذف</button>}
+          <button onClick={onReply} className={btn}><CornerUpLeft className="w-4 h-4 text-slate-300" /> {t('chatUi.reply')}</button>
+          <button onClick={onForward} className={btn}><Share2 className="w-4 h-4 text-slate-300" /> {t('chatUi.forward')}</button>
+          {canCopy && <button onClick={onCopy} className={btn}><Copy className="w-4 h-4 text-slate-300" /> {t('chatUi.copy')}</button>}
+          {mine && <button onClick={onDelete} className={`${btn} !text-red-400`}><Trash2 className="w-4 h-4" /> {t('chatUi.delete')}</button>}
         </div>
       </div>
     </div>
@@ -278,16 +279,17 @@ const MessageSheet: React.FC<{
 // إعادة التوجيه
 // ---------------------------------------------------------------
 const ForwardModal: React.FC<{ convs: Conversation[]; onClose: () => void; onPick: (c: Conversation) => void }> = ({ convs, onClose, onPick }) => {
+  const { t } = useI18n();
   const briefs = useUserBriefs(convs.filter((c) => c.type !== 'group').map((c) => c.otherUid));
   return (
     <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
         <div className="p-4 border-b border-white/10 flex justify-between items-center">
-          <h3 className="text-white font-bold">إعادة التوجيه إلى...</h3>
+          <h3 className="text-white font-bold">{t('chatUi.forwardTo')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
         <div className="max-h-72 overflow-y-auto p-2">
-          {convs.length === 0 && <p className="text-xs text-slate-400 p-4 text-center">لا توجد محادثات.</p>}
+          {convs.length === 0 && <p className="text-xs text-slate-400 p-4 text-center">{t('chatUi.noChats')}</p>}
           {convs.map((c) => {
             const isGroup = c.type === 'group';
             const b = !isGroup ? briefs[c.otherUid] : null;
@@ -296,7 +298,7 @@ const ForwardModal: React.FC<{ convs: Conversation[]; onClose: () => void; onPic
                 {isGroup
                   ? <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center"><Users className="w-5 h-5 text-slate-400" /></div>
                   : <Avatar src={b?.photoURL} seed={c.otherUid} name={b?.displayName} className="w-10 h-10 rounded-full object-cover" />}
-                <span className="text-sm font-bold text-white truncate">{isGroup ? (c.name || 'مجموعة') : b?.displayName || '...'}</span>
+                <span className="text-sm font-bold text-white truncate">{isGroup ? (c.name || t('chatUi.group')) : b?.displayName || '...'}</span>
               </button>
             );
           })}
@@ -309,11 +311,13 @@ const ForwardModal: React.FC<{ convs: Conversation[]; onClose: () => void; onPic
 // ---------------------------------------------------------------
 // ثيم وخلفية المحادثة (تُفتح من قائمة الخيارات)
 // ---------------------------------------------------------------
-const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onClose: () => void }> = ({ current, onPick, onClose }) => (
+const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onClose: () => void }> = ({ current, onPick, onClose }) => {
+  const { t } = useI18n();
+  return (
   <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={onClose}>
     <div className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white font-black flex items-center gap-2"><Palette className="w-5 h-5 text-primary-400" /> ثيم وخلفية المحادثة</h3>
+        <h3 className="text-white font-black flex items-center gap-2"><Palette className="w-5 h-5 text-primary-400" /> {t('chatUi.themeTitle')}</h3>
         <button onClick={onClose} className="text-slate-400"><X className="w-5 h-5" /></button>
       </div>
       <div className="grid grid-cols-4 gap-3">
@@ -323,14 +327,15 @@ const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onCl
               <span className="w-6 h-3 rounded-full" style={{ background: th.mine }} />
               {current === th.id && <span className="absolute inset-0 bg-black/40 flex items-center justify-center"><Check className="w-5 h-5 text-white" /></span>}
             </span>
-            <span className="text-[10px] text-slate-300 truncate max-w-full">{th.label}</span>
+            <span className="text-[10px] text-slate-300 truncate max-w-full">{t(`chatTheme.${th.id}`)}</span>
           </button>
         ))}
       </div>
-      <p className="text-[11px] text-slate-500 mt-4">الثيم يُطبّق على هذه المحادثة فقط ويراه جميع المشاركين فيها.</p>
+      <p className="text-[11px] text-slate-500 mt-4">{t('chatUi.themeNote')}</p>
     </div>
   </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------
 // الوسائط المشتركة (صور وفيديوهات المحادثة)
@@ -365,27 +370,30 @@ const SharedMediaSheet: React.FC<{
   items: MediaPayload[];
   onOpen: (src: string, type: 'image' | 'video') => void;
   onClose: () => void;
-}> = ({ items, onOpen, onClose }) => (
+}> = ({ items, onOpen, onClose }) => {
+  const { t } = useI18n();
+  return (
   <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={onClose}>
     <div
       className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white font-black">الوسائط المشتركة ({items.length})</h3>
-        <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label="إغلاق"><X className="w-5 h-5" /></button>
+        <h3 className="text-white font-black">{t('chatUi.mediaTitle', { count: items.length })}</h3>
+        <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label={t('chatUi.close')}><X className="w-5 h-5" /></button>
       </div>
       {items.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-10">لا توجد صور أو فيديوهات في هذه المحادثة بعد.</p>
+        <p className="text-sm text-slate-400 text-center py-10">{t('chatUi.mediaEmpty')}</p>
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {items.map((p) => <MediaThumb key={p.url} payload={p} onOpen={onOpen} />)}
         </div>
       )}
-      <p className="text-[11px] text-slate-500 mt-4">تظهر وسائط آخر الرسائل المحمّلة في المحادثة، وتُفك تشفيرها على جهازك فقط.</p>
+      <p className="text-[11px] text-slate-500 mt-4">{t('chatUi.mediaNote')}</p>
     </div>
   </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------
 // جسم المحادثة
@@ -442,7 +450,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const isOnline = !!otherPresence?.online;
   const presenceText = formatPresence(otherPresence, lang);
 
-  const nameOf = (uid: string) => (uid === me ? 'أنت' : briefs[uid]?.displayName || 'عضو');
+  const nameOf = (uid: string) => (uid === me ? t('chatUi.you') : briefs[uid]?.displayName || t('chatUi.member'));
 
   // ---- كتم / تقييد / حظر / الرسائل المؤقتة ----
   useEffect(() => subscribeChatPrefs(me, setPrefs), [me]);
@@ -568,15 +576,15 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const errText = (e: any): string => {
     const c = String(e?.message || '');
     if (c === 'RECIPIENT_NO_KEY') return t('chat.noKey');
-    if (c === 'MESSAGES_CLOSED') return 'هذا المستخدم لا يستقبل رسائل جديدة.';
+    if (c === 'MESSAGES_CLOSED') return t('chatUi.messagesClosed');
     if (c === 'NO_LOCAL_KEY') return t('chat.errorGate');
-    if (e?.code === 'permission-denied') return 'تم رفض الإرسال من الخادم. تأكد من نشر قواعد Firestore الجديدة.';
+    if (e?.code === 'permission-denied') return t('chatUi.permissionDenied');
     return `${t('chat.sendFailed')}${c ? ` (${c})` : ''}`;
   };
 
   // ---- الإرسال ----
   const doSend = async (payload: ChatPayload): Promise<boolean> => {
-    if (iBlocked) { setError('لقد حظرت هذا المستخدم. ألغِ الحظر لتتمكن من مراسلته.'); return false; }
+    if (iBlocked) { setError(t('chatUi.youBlocked')); return false; }
     setBusy(true); setError('');
     try {
       if (isGroup) await sendGroup(me, other, conv?.members || [], payload, replyTo?.id);
@@ -651,26 +659,26 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   };
   const finishRec = async () => {
     const r = await stop();
-    if (!r) { setError('التسجيل قصير جداً.'); return; }
+    if (!r) { setError(t('chatUi.recTooShort')); return; }
     await sendVoice(r);
   };
 
   // ---- التفاعلات / الرد / التوجيه ----
   const react = (m: RawMessage, emoji: string) => {
     const has = !!m.reactions?.[emoji]?.includes(me);
-    toggleReaction(convId, m.id, emoji, me, has).catch((e) => { console.error(e); setError('تعذّر إرسال التفاعل.'); });
+    toggleReaction(convId, m.id, emoji, me, has).catch((e) => { console.error(e); setError(t('chatUi.reactFail')); });
   };
 
   const forwardTo = async (c: Conversation) => {
     const src = forwardMsg;
     setForwardMsg(null);
     const p = src ? plain[src.id] : null;
-    if (!p) { setError('لا يمكن توجيه هذه الرسالة.'); return; }
+    if (!p) { setError(t('chatUi.cannotForward')); return; }
     const payload = { ...p, f: 1 } as ChatPayload;
     try {
       if (c.type === 'group') await sendGroup(me, c.id, c.members || [], payload);
       else await sendDirect(me, c.otherUid, payload, true);
-      flash('تمت إعادة التوجيه ✓');
+      flash(t('chatUi.forwarded'));
     } catch (e: any) { console.error(e); setError(errText(e)); }
   };
 
@@ -688,13 +696,13 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     if (Math.abs(e.clientX - press.current.x) > 10 || Math.abs(e.clientY - press.current.y) > 10) clearPress();
   };
 
-  const name = isGroup ? (conv?.name || 'مجموعة') : (briefs[other]?.displayName || '...');
+  const name = isGroup ? (conv?.name || t('chatUi.group')) : (briefs[other]?.displayName || '...');
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
   // ---- إجراءات قائمة الخيارات ----
   const needConv = (): boolean => {
     if (conv) return true;
-    setError('ابدأ المحادثة بإرسال رسالة أولاً ثم استخدم هذا الخيار.');
+    setError(t('chatUi.needConv'));
     return false;
   };
 
@@ -704,8 +712,8 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     setShowOptions(false);
     const next = !pref?.muted;
     setChatPref(me, convId, { muted: next }, pref)
-      .then(() => flash(next ? 'تم كتم الإشعارات' : 'تم إلغاء الكتم'))
-      .catch((e) => { console.error(e); setError('تعذّر تغيير إعداد الكتم. تأكد من نشر قواعد Firestore الجديدة.'); });
+      .then(() => flash(next ? t('chatUi.muted') : t('chatUi.unmuted')))
+      .catch((e) => { console.error(e); setError(t('chatUi.muteFail')); });
   };
 
   const toggleRestrict = async () => {
@@ -714,21 +722,21 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     try {
       if (next) {
         const ok = await confirm({
-          title: `تقييد ${name}؟`,
-          message: 'ستصلك رسائله بصمت: دون إشعارات أو علامة رسائل جديدة، ولن يعرف أنك قيّدته.',
-          confirmLabel: 'تقييد',
+          title: t('chatUi.restrictTitle', { name }),
+          message: t('chatUi.restrictMsg'),
+          confirmLabel: t('chatUi.restrictConfirm'),
           danger: true,
         });
         if (!ok) return;
         await setChatPref(me, convId, { restricted: true, muted: true }, pref);
-        flash('تم تقييد المستخدم');
+        flash(t('chatUi.restricted'));
       } else {
         await setChatPref(me, convId, { restricted: false }, pref);
-        flash('تم إلغاء التقييد');
+        flash(t('chatUi.unrestricted'));
       }
     } catch (e) {
       console.error(e);
-      setError('تعذّر تغيير التقييد. تأكد من نشر قواعد Firestore الجديدة.');
+      setError(t('chatUi.restrictFail'));
     }
   };
 
@@ -738,20 +746,20 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     try {
       if (disappearAfter > 0) {
         await setDisappearAfter(convId, 0);
-        flash('تم إيقاف الرسائل المؤقتة');
+        flash(t('chatUi.disappearOff'));
         return;
       }
       const ok = await confirm({
-        title: 'تفعيل الرسائل المؤقتة؟',
-        message: 'ستُحذف الرسائل تلقائياً بعد 24 ساعة من إرسالها، ويشمل ذلك الرسائل الأقدم من 24 ساعة الموجودة الآن. يراها ويتأثر بها جميع المشاركين.',
-        confirmLabel: 'تفعيل',
+        title: t('chatUi.disappearTitle'),
+        message: t('chatUi.disappearMsg'),
+        confirmLabel: t('chatUi.enable'),
       });
       if (!ok) return;
       await setDisappearAfter(convId, DISAPPEAR_24H_MS);
-      flash('تم تفعيل الرسائل المؤقتة (24 ساعة)');
+      flash(t('chatUi.disappearOn'));
     } catch (e) {
       console.error(e);
-      setError('تعذّر تغيير الرسائل المؤقتة. تأكد من نشر قواعد Firestore الجديدة.');
+      setError(t('chatUi.disappearFail'));
     }
   };
 
@@ -760,21 +768,21 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     try {
       if (iBlocked) {
         await unblockUser(me, other);
-        flash('تم إلغاء الحظر');
+        flash(t('chatUi.unblocked'));
         return;
       }
       const ok = await confirm({
-        title: `حظر ${name}؟`,
-        message: 'لن يستطيع بدء محادثة جديدة معك، ولن تستطيع أنت مراسلته حتى تلغي الحظر.',
-        confirmLabel: 'حظر',
+        title: t('chatUi.blockTitle', { name }),
+        message: t('chatUi.blockMsg'),
+        confirmLabel: t('chatUi.blockConfirm'),
         danger: true,
       });
       if (!ok) return;
       await blockUser(me, other);
-      flash('تم حظر المستخدم');
+      flash(t('chatUi.blockedDone'));
     } catch (e) {
       console.error(e);
-      setError('تعذّر تنفيذ الحظر. تأكد من نشر قواعد Firestore الجديدة.');
+      setError(t('chatUi.blockFail'));
     }
   };
 
@@ -783,11 +791,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     try {
       await reportUser(me, other, kind, reason);
       setSheet(null);
-      flash('تم إرسال البلاغ، شكراً لك ✓');
+      flash(t('chatUi.reported'));
     } catch (e: any) {
       console.error(e);
       setSheet(null);
-      setError(e?.code === 'permission-denied' ? 'تعذّر إرسال البلاغ. تأكد من نشر قواعد Firestore الجديدة.' : 'تعذّر إرسال البلاغ.');
+      setError(e?.code === 'permission-denied' ? t('chatUi.reportPermission') : t('chatUi.reportFail'));
     } finally {
       setReporting(false);
     }
@@ -818,7 +826,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                 : <p className="text-[10px] text-emerald-400 flex items-center gap-1"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>}
             </div>
           </button>
-          <button onClick={() => setShowOptions(true)} className="p-2 rounded-xl hover:bg-white/10 text-slate-200" aria-label="خيارات المحادثة"><MoreVertical className="w-5 h-5" /></button>
+          <button onClick={() => setShowOptions(true)} className="p-2 rounded-xl hover:bg-white/10 text-slate-200" aria-label={t('chatUi.optionsAria')}><MoreVertical className="w-5 h-5" /></button>
         </div>
 
         {/* البحث في المحادثة */}
@@ -829,20 +837,20 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
               autoFocus
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              placeholder="ابحث في الرسائل..."
+              placeholder={t('chatUi.searchPlaceholder')}
               className="flex-1 min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
             />
-            {q && <span className="text-[11px] text-slate-300 tabular-nums shrink-0">{matchIds.length ? `${safeIdx + 1}/${matchIds.length}` : 'لا نتائج'}</span>}
-            <button onClick={() => setSearchIdx(Math.max(0, safeIdx - 1))} disabled={!matchIds.length || safeIdx <= 0} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label="الأقدم"><ChevronUp className="w-4 h-4" /></button>
-            <button onClick={() => setSearchIdx(Math.min(matchIds.length - 1, safeIdx + 1))} disabled={!matchIds.length || safeIdx >= matchIds.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label="الأحدث"><ChevronDown className="w-4 h-4" /></button>
-            <button onClick={closeSearch} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200" aria-label="إغلاق البحث"><X className="w-4 h-4" /></button>
+            {q && <span className="text-[11px] text-slate-300 tabular-nums shrink-0">{matchIds.length ? `${safeIdx + 1}/${matchIds.length}` : t('chatUi.noResults')}</span>}
+            <button onClick={() => setSearchIdx(Math.max(0, safeIdx - 1))} disabled={!matchIds.length || safeIdx <= 0} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label={t('chatUi.older')}><ChevronUp className="w-4 h-4" /></button>
+            <button onClick={() => setSearchIdx(Math.min(matchIds.length - 1, safeIdx + 1))} disabled={!matchIds.length || safeIdx >= matchIds.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label={t('chatUi.newer')}><ChevronDown className="w-4 h-4" /></button>
+            <button onClick={closeSearch} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200" aria-label={t('chatUi.closeSearch')}><X className="w-4 h-4" /></button>
           </div>
         )}
 
         {/* شريط الرسائل المؤقتة */}
         {disappearAfter > 0 && (
           <div className="px-4 py-1.5 text-[11px] text-center text-primary-300 chat-bar shrink-0 flex items-center justify-center gap-1.5 border-b border-white/5">
-            <Timer className="w-3 h-3" /> الرسائل المؤقتة مفعّلة: تُحذف بعد 24 ساعة
+            <Timer className="w-3 h-3" /> {t('chatUi.disappearBar')}
           </div>
         )}
 
@@ -870,11 +878,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     style={{ ...(mine ? { background: theme.mine } : {}), WebkitTouchCallout: 'none' } as React.CSSProperties}
                     className={`rounded-2xl text-sm break-words select-none text-white ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'keep-dark' : 'bg-white/10'} ${m.id === currentMatch ? 'ring-2 ring-amber-400' : matchSet.has(m.id) ? 'ring-1 ring-white/50' : ''}`}
                   >
-                    {p?.f ? <p className="text-[10px] opacity-70 mb-1 flex items-center gap-1"><Share2 className="w-3 h-3" /> معاد توجيهها</p> : null}
+                    {p?.f ? <p className="text-[10px] opacity-70 mb-1 flex items-center gap-1"><Share2 className="w-3 h-3" /> {t('chatUi.forwardedTag')}</p> : null}
                     {repliedMsg && (
                       <div className="chat-quote text-[11px] p-2 rounded-lg mb-2 border-s-2">
                         <p className="font-bold opacity-80 mb-0.5">{nameOf(repliedMsg.senderId)}</p>
-                        <p className="opacity-70 truncate">{previewOf(plain[repliedMsg.id])}</p>
+                        <p className="opacity-70 truncate">{previewOf(plain[repliedMsg.id], t)}</p>
                       </div>
                     )}
                     {p === undefined ? (<Loader2 className="w-4 h-4 animate-spin" />)
@@ -914,8 +922,8 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           {replyTo && (
             <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2 border-s-2 border-primary-500">
               <div className="min-w-0">
-                <p className="text-[10px] text-primary-400 font-bold mb-0.5">الرد على {nameOf(replyTo.senderId)}</p>
-                <p className="text-xs text-slate-300 truncate">{previewOf(plain[replyTo.id])}</p>
+                <p className="text-[10px] text-primary-400 font-bold mb-0.5">{t('chatUi.replyingTo', { name: nameOf(replyTo.senderId) })}</p>
+                <p className="text-xs text-slate-300 truncate">{previewOf(plain[replyTo.id], t)}</p>
               </div>
               <button onClick={() => setReplyTo(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
@@ -928,8 +936,8 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
           {iBlocked ? (
             <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10">
-              <p className="text-xs text-slate-300 flex items-center gap-2"><Ban className="w-4 h-4 text-red-400 shrink-0" /> لقد حظرت هذا المستخدم</p>
-              <button onClick={toggleBlock} className="px-3 py-1.5 rounded-lg bg-primary-500/20 text-primary-300 text-xs font-bold shrink-0">إلغاء الحظر</button>
+              <p className="text-xs text-slate-300 flex items-center gap-2"><Ban className="w-4 h-4 text-red-400 shrink-0" /> {t('chatUi.youBlockedBar')}</p>
+              <button onClick={toggleBlock} className="px-3 py-1.5 rounded-lg bg-primary-500/20 text-primary-300 text-xs font-bold shrink-0">{t('chatUi.unblock')}</button>
             </div>
           ) : recording ? (
             <div className="flex items-center gap-3">
@@ -962,7 +970,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             onClick={(e) => { e.stopPropagation(); closeViewer(); }}
             className="absolute start-4 p-2.5 rounded-full bg-white/15 text-white z-10"
             style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
-            aria-label="رجوع"
+            aria-label={t('chatUi.back')}
           >
             <BackIcon className="w-5 h-5" />
           </button>
@@ -982,12 +990,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           onForward={() => { setForwardMsg(activeMsg); setActiveMsg(null); }}
           onCopy={() => {
             const p = plain[activeMsg.id];
-            if (p && p.k === 't') navigator.clipboard?.writeText(p.v).then(() => flash('تم النسخ ✓')).catch(() => {});
+            if (p && p.k === 't') navigator.clipboard?.writeText(p.v).then(() => flash(t('chatUi.copied'))).catch(() => {});
             setActiveMsg(null);
           }}
           onDelete={async () => {
             const id = activeMsg.id; setActiveMsg(null);
-            if (await confirm({ title: 'حذف الرسالة؟' })) removeMessage(convId, id).catch(console.error);
+            if (await confirm({ title: t('chatUi.deleteMsgTitle') })) removeMessage(convId, id).catch(console.error);
           }}
           onClose={() => setActiveMsg(null)}
         />
@@ -1021,7 +1029,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       {sheet === 'theme' && (
         <ThemeSheet
           current={theme.id}
-          onPick={(id) => { setSheet(null); setConversationTheme(convId, id).catch((e) => { console.error(e); setError('تعذّر تغيير الثيم. تأكد من نشر قواعد Firestore الجديدة.'); }); }}
+          onPick={(id) => { setSheet(null); setConversationTheme(convId, id).catch((e) => { console.error(e); setError(t('chatUi.themeFail')); }); }}
           onClose={() => setSheet(null)}
         />
       )}
