@@ -1,4 +1,4 @@
-export type EmailCheckResult = { ok: true } | { ok: false; message: string };
+export type EmailCheckResult = { ok: true } | { ok: false; message: string; key?: string; vars?: Record<string, string> };
 
 const COMMON_DOMAINS = [
   'gmail.com',
@@ -30,16 +30,16 @@ const levenshtein = (a: string, b: string): number => {
 export const checkEmail = (raw: string): EmailCheckResult => {
   const email = raw.trim().toLowerCase();
 
-  if (!email) return { ok: false, message: 'اكتب البريد الإلكتروني.' };
+  if (!email) return { ok: false, message: 'اكتب البريد الإلكتروني.', key: 'auth.emailEmpty' };
   if (!EMAIL_REGEX.test(email)) {
-    return { ok: false, message: 'البريد الإلكتروني غير صحيح. تأكد من كتابته.' };
+    return { ok: false, message: 'البريد الإلكتروني غير صحيح. تأكد من كتابته.', key: 'auth.emailBad' };
   }
 
   const domain = email.split('@')[1];
   if (!COMMON_DOMAINS.includes(domain)) {
     const close = COMMON_DOMAINS.find((d) => levenshtein(domain, d) <= 2);
     if (close) {
-      return { ok: false, message: `هل تقصد @${close}؟ تأكد من كتابة البريد.` };
+      return { ok: false, message: `هل تقصد @${close}؟ تأكد من كتابة البريد.`, key: 'auth.emailDidYouMean', vars: { domain: close } };
     }
   }
 
