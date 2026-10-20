@@ -28,6 +28,8 @@ export interface Conversation {
   members?: string[];
   admins?: string[];
   photoURL?: string;
+  /** الرسائل المؤقتة: مدة بقاء الرسالة بالميلي ثانية (0 أو غير موجود = معطّلة) */
+  disappearAfter?: number;
 }
 
 export interface WrappedKey { c: string; i: string; }
@@ -76,6 +78,7 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
           members: data.members,
           admins: data.admins,
           photoURL: data.photoURL,
+          disappearAfter: typeof data.disappearAfter === 'number' ? data.disappearAfter : 0,
         } as Conversation;
       });
       const t = (c: Conversation) => c.lastMessageAt?.toMillis?.() ?? Date.now();
@@ -101,6 +104,26 @@ export const markConversationRead = async (convId: string, me: string): Promise<
 
 export const setConversationTheme = async (convId: string, theme: string): Promise<void> => {
   await updateDoc(doc(db, 'conversations', convId), { theme });
+};
+
+// ---------------------------------------------------------------
+// الرسائل المؤقتة (حذف تلقائي بعد 24 ساعة)
+// الإعداد يُحفظ في وثيقة المحادثة فيراه الطرفان. الرسالة المنتهية تختفي من
+// الواجهة عند الجميع، ويحذفها مرسلها نفسه من قاعدة البيانات (القواعد لا تسمح
+// بالحذف إلا لصاحب الرسالة).
+// ---------------------------------------------------------------
+export const DISAPPEAR_24H_MS = 24 * 60 * 60 * 1000;
+
+export const setDisappearAfter = async (convId: string, ms: number): Promise<void> => {
+  await updateDoc(doc(db, 'conversations', convId), { disappearAfter: Math.max(0, Math.floor(ms)) });
+};
+
+// هل انتهت مدة بقاء الرسالة؟ (الرسالة التي لم يصلها وقت الخادم بعد لا تُعتبر منتهية)
+export const isExpired = (m: Pick<RawMessage, 'createdAt'>, disappearAfter: number, now: number = Date.now()): boolean => {
+  if (!disappearAfter || disappearAfter <= 0) return false;
+  const created: number | undefined = m.createdAt?.toMillis?.();
+  if (!created) return false;
+  return now - created >= disappearAfter;
 };
 
 // ---------------------------------------------------------------
@@ -340,4 +363,47 @@ export const createGroup = async (me: string, groupName: string, memberUids: str
   });
 
   return newGroupRef.id;
+};
+
+// ---------------------------------------------------------------
+// الحظر (الوثيقة: blocks/{أنا}_{هو}، ولا يقرؤها إلا من قام بالحظر)
+// ---------------------------------------------------------------
+export const subscribeBlockedIds = (me: string, cb: (ids: Set<string>) => void) => {
+  const q = query(collection(db, 'blocks'), where('blockerId', '==', me), limit(500));
+  return onSnapshot(
+    q,
+    (snap) => cb(new Set(snap.docs.map((d) => (d.data() as { blockedId: string }).blockedId))),
+    (e) => console.error('blocks error:', e)
+  );
+};
+
+export const blockUser = async (me: string, other: string): Promise<void> => {
+  await setDoc(doc(db, 'blocks', `${me}_${other}`), {
+    blockerId: me,
+    blockedId: other,
+    createdAt: serverTimestamp(),
+  });
+};
+
+export const unblockUser = async (me: string, other: string): Promise<void> => {
+  await deleteDoc(doc(db, 'blocks', `${me}_${other}`));
+};
+
+// ---------------------------------------------------------------
+// الإبلاغ عن مستخدم (تصل البلاغات إلى لوحة الأدمن)
+// ---------------------------------------------------------------
+export type ReportKind = 'abuse' | 'spam';
+
+export const reportUser = async (me: string, targetUid: string, kind: ReportKind, reason: string): Promise<void> => {
+  const text = reason.trim().slice(0, 500);
+  if (!text) throw new Error('EMPTY_REASON');
+  await addDoc(collection(db, 'reports'), {
+    type: kind,
+    targetId: targetUid,
+    targetType: 'user',
+    reporterUid: me,
+    reason: text,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
 };
