@@ -192,4 +192,173 @@ class Matrix {
     const bit = (i: number) => ((bits >>> i) & 1) !== 0;
     const size = this.size;
 
-    for (let i
+    for (let i = 0; i <= 5; i++) this.setFunction(8, i, bit(i));
+    this.setFunction(8, 7, bit(6));
+    this.setFunction(8, 8, bit(7));
+    this.setFunction(7, 8, bit(8));
+    for (let i = 9; i < 15; i++) this.setFunction(14 - i, 8, bit(i));
+
+    for (let i = 0; i < 8; i++) this.setFunction(size - 1 - i, 8, bit(i));
+    for (let i = 8; i < 15; i++) this.setFunction(8, size - 15 + i, bit(i));
+    this.setFunction(8, size - 8, true);
+  }
+
+  private drawVersion(): void {
+    if (this.version < 7) return;
+    let rem = this.version;
+    for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
+    const bits = (this.version << 12) | rem;
+    for (let i = 0; i < 18; i++) {
+      const color = ((bits >>> i) & 1) !== 0;
+      const a = this.size - 11 + (i % 3);
+      const b = Math.floor(i / 3);
+      this.setFunction(a, b, color);
+      this.setFunction(b, a, color);
+    }
+  }
+
+  drawCodewords(data: readonly number[]): void {
+    let i = 0;
+    for (let right = this.size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (let vert = 0; vert < this.size; vert++) {
+        for (let j = 0; j < 2; j++) {
+          const x = right - j;
+          const upward = ((right + 1) & 2) === 0;
+          const y = upward ? this.size - 1 - vert : vert;
+          if (!this.isFunction[y][x] && i < data.length * 8) {
+            this.modules[y][x] = ((data[i >>> 3] >>> (7 - (i & 7))) & 1) !== 0;
+            i++;
+          }
+        }
+      }
+    }
+  }
+
+  applyMask(mask: number): void {
+    for (let y = 0; y < this.size; y++) {
+      for (let x = 0; x < this.size; x++) {
+        let invert: boolean;
+        switch (mask) {
+          case 0: invert = (x + y) % 2 === 0; break;
+          case 1: invert = y % 2 === 0; break;
+          case 2: invert = x % 3 === 0; break;
+          case 3: invert = (x + y) % 3 === 0; break;
+          case 4: invert = (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0; break;
+          case 5: invert = ((x * y) % 2) + ((x * y) % 3) === 0; break;
+          case 6: invert = (((x * y) % 2) + ((x * y) % 3)) % 2 === 0; break;
+          default: invert = (((x + y) % 2) + ((x * y) % 3)) % 2 === 0; break;
+        }
+        if (!this.isFunction[y][x] && invert) this.modules[y][x] = !this.modules[y][x];
+      }
+    }
+  }
+
+  penalty(): number {
+    const size = this.size;
+    const m = this.modules;
+    let result = 0;
+
+    const scanLine = (get: (k: number) => boolean): number => {
+      let score = 0;
+      let runLen = 1;
+      for (let k = 1; k < size; k++) {
+        if (get(k) === get(k - 1)) {
+          runLen++;
+          if (runLen === 5) score += 3;
+          else if (runLen > 5) score += 1;
+        } else {
+          runLen = 1;
+        }
+      }
+      return score;
+    };
+
+    for (let y = 0; y < size; y++) result += scanLine((k) => m[y][k]);
+    for (let x = 0; x < size; x++) result += scanLine((k) => m[k][x]);
+
+    // كتل 2×2 من نفس اللون
+    for (let y = 0; y < size - 1; y++) {
+      for (let x = 0; x < size - 1; x++) {
+        const c = m[y][x];
+        if (c === m[y][x + 1] && c === m[y + 1][x] && c === m[y + 1][x + 1]) result += 3;
+      }
+    }
+
+    // أنماط شبيهة بالباحث
+    const pat1 = [true, false, true, true, true, false, true, false, false, false, false];
+    const pat2 = [false, false, false, false, true, false, true, true, true, false, true];
+    const matches = (get: (k: number) => boolean, start: number, pat: boolean[]): boolean =>
+      pat.every((v, o) => get(start + o) === v);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x + 11 <= size; x++) {
+        if (matches((k) => m[y][k], x, pat1) || matches((k) => m[y][k], x, pat2)) result += 40;
+      }
+    }
+    for (let x = 0; x < size; x++) {
+      for (let y = 0; y + 11 <= size; y++) {
+        if (matches((k) => m[k][x], y, pat1) || matches((k) => m[k][x], y, pat2)) result += 40;
+      }
+    }
+
+    // توازن الأسود والأبيض
+    let dark = 0;
+    m.forEach((row) => row.forEach((v) => { if (v) dark++; }));
+    const total = size * size;
+    const k = Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1;
+    result += Math.max(0, k) * 10;
+    return result;
+  }
+}
+
+/** يولّد رمز QR للنص المعطى. يرمي Error('QR_TOO_LONG') إن لم يتسع النص. */
+export const generateQr = (text: string): QrCode => {
+  const bytes = toUtf8(text);
+  let version = 0;
+  for (let v = 1; v <= MAX_VERSION; v++) {
+    const lenBits = v <= 9 ? 8 : 16;
+    if (4 + lenBits + bytes.length * 8 <= dataCodewords(v) * 8) {
+      version = v;
+      break;
+    }
+  }
+  if (!version) throw new Error('QR_TOO_LONG');
+
+  const codewords = addEccAndInterleave(bitsToBytes(buildDataBits(bytes, version)), version);
+
+  let best: Matrix | null = null;
+  let bestMask = 0;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let mask = 0; mask < 8; mask++) {
+    const mx = new Matrix(version);
+    mx.drawFunctionPatterns();
+    mx.drawCodewords(codewords);
+    mx.applyMask(mask);
+    mx.drawFormat(mask);
+    const score = mx.penalty();
+    if (score < bestScore) {
+      best = mx;
+      bestMask = mask;
+      bestScore = score;
+    }
+  }
+  if (!best) throw new Error('QR_FAILED');
+  best.drawFormat(bestMask);
+  return { version, size: best.size, modules: best.modules };
+};
+
+/** مسار SVG واحد لكل الوحدات الداكنة (وحدة = 1×1). يُستعمل مع viewBox="0 0 size size". */
+export const qrToSvgPath = (qr: QrCode): string => {
+  const parts: string[] = [];
+  qr.modules.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      if (!row[x]) { x++; continue; }
+      let end = x;
+      while (end < row.length && row[end]) end++;
+      parts.push(`M${x} ${y}h${end - x}v1h-${end - x}z`);
+      x = end;
+    }
+  });
+  return parts.join('');
+};
