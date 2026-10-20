@@ -11,7 +11,8 @@ import {
   sendEmailVerification,
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { auth, googleProvider } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile, checkUsernameAvailable, updateUserProfile } from '../services/userService';
 import { accountGuard } from '../services/accountService';
 import { calcAge } from '../utils/age';
@@ -54,6 +55,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// المالك الأساسي للتطبيق يُعرَف باسم المستخدم المحجوز فقط (بدون أي إيميل في الكود أو القواعد)
+const OWNER_USERNAME = 'animeverse_official';
+
+// نتأكد أن حجز الاسم داخل Firestore يعود لنفس حساب الدخول الحالي (نفس منطق القواعد)
+const verifyOwner = async (fbUser: User, username: string | undefined): Promise<boolean> => {
+  if (!username || username.toLowerCase() !== OWNER_USERNAME) return false;
+  if (!fbUser.emailVerified) return false;
+  try {
+    const snap = await getDoc(doc(db, 'usernames', OWNER_USERNAME));
+    return snap.exists() && snap.data().uid === fbUser.uid;
+  } catch {
+    return false;
+  }
+};
+
 // نحفظ آخر بروفايل على الجهاز ليفتح التطبيق فوراً بدون انتظار Firestore
 const PROFILE_CACHE_KEY = 'av_profile_cache';
 
@@ -79,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isOwnerAccount, setIsOwnerAccount] = useState(false);
 
   useEffect(() => {
     const unsub = onIdTokenChanged(auth, async (fbUser) => {
@@ -86,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!fbUser) {
         setProfile(null);
+        setIsOwnerAccount(false);
         writeCachedProfile(null);
         setLoading(false);
         return;
@@ -94,6 +112,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 1) اعرض البروفايل المحفوظ فوراً
       const cached = readCachedProfile(fbUser.uid);
       if (cached) {
+        // مؤقتاً من النسخة المحفوظة حتى لا تُغلق لوحة الأدمن عند فتح التطبيق (التحقق الحقيقي يأتي بعده)
+        setIsOwnerAccount(cached.username === OWNER_USERNAME && fbUser.emailVerified);
         setProfile(cached);
         setLoading(false);
       }
@@ -127,6 +147,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error('Reactivation failed:', e);
           }
         }
+        // نتحقق من المالك قبل عرض البروفايل حتى لا يُحوَّل عن لوحة الأدمن للحظة
+        setIsOwnerAccount(await verifyOwner(fbUser, p.username));
         setProfile(p);
         writeCachedProfile(p);
         checkDevice(fbUser.uid).catch(() => undefined);
@@ -249,12 +271,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     await fbSignOut(auth);
     setProfile(null);
+    setIsOwnerAccount(false);
     writeCachedProfile(null);
   };
 
   const refreshProfile = async () => {
     if (!user) return;
     const p = await getUserProfile(user.uid);
+    setIsOwnerAccount(p ? await verifyOwner(user, p.username) : false);
     setProfile(p);
     writeCachedProfile(p);
   };
@@ -268,7 +292,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(auth.currentUser ? { ...auth.currentUser } : null);
   };
 
-  const isAdmin = profile?.role === 'admin';
+  // الأدمن = المالك (المعروف باسم المستخدم المحجوز) أو من منحه المالك دور admin
+  const isAdmin = isOwnerAccount || profile?.role === 'admin';
   const isModerator = profile?.role === 'moderator' || isAdmin;
 
   return (
