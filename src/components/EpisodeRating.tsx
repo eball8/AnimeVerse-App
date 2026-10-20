@@ -3,9 +3,11 @@ import { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where 
 import { Star } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 
 // تقييم حقيقي لكل حلقة (1-10)، كل مستخدم له تقييم واحد يمكنه تغييره
 const EpisodeRating: React.FC<{ episodeKey: string }> = ({ episodeKey }) => {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [avg, setAvg] = useState(0);
   const [count, setCount] = useState(0);
@@ -48,7 +50,7 @@ const EpisodeRating: React.FC<{ episodeKey: string }> = ({ episodeKey }) => {
       });
       await load();
     } catch (e: any) {
-      alert('تعذّر حفظ التقييم: ' + (e?.message || ''));
+      alert(t('wt.rateFail', { msg: e?.message || '' }));
     }
     setSaving(false);
   };
@@ -57,9 +59,9 @@ const EpisodeRating: React.FC<{ episodeKey: string }> = ({ episodeKey }) => {
     <section className="card p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-black text-white flex items-center gap-2">
-          <Star className="w-4 h-4 text-yellow-400" /> قيّم هذه الحلقة
+          <Star className="w-4 h-4 text-yellow-400" /> {t('wt.rateTitle')}
         </h3>
-        <span className="text-xs text-slate-400">{avg.toFixed(1)}/10 من {count} شخص</span>
+        <span className="text-xs text-slate-400">{t('wt.rateSummary', { avg: avg.toFixed(1), count })}</span>
       </div>
       <div className="flex items-center gap-3">
         <span className="text-xs font-bold text-slate-400">1</span>
@@ -73,7 +75,7 @@ const EpisodeRating: React.FC<{ episodeKey: string }> = ({ episodeKey }) => {
       <div className="flex items-center justify-between">
         <span className="text-sm font-bold text-primary-400">{value} / 10</span>
         <button onClick={submit} disabled={saving} className="btn-primary px-4 py-2 text-xs disabled:opacity-50">
-          {mine ? 'تحديث تقييمي' : 'إرسال التقييم'}
+          {mine ? t('wt.rateUpdate') : t('wt.rateSend')}
         </button>
       </div>
     </section>
