@@ -4,22 +4,16 @@ import { LayoutGrid, Clapperboard, Repeat2, AtSign, Play, Lock, Loader2, Heart }
 import { getUserPosts, getMentionedPosts } from '../services/postService';
 import type { Post } from '../services/postService';
 import { videoThumb } from '../utils/links';
+import { useI18n } from '../i18n/I18nContext';
 
 type TabKey = 'posts' | 'reels' | 'reposts' | 'mentions';
 
-const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
-  { key: 'posts', label: 'المنشورات', icon: LayoutGrid },
-  { key: 'reels', label: 'الريلز', icon: Clapperboard },
-  { key: 'reposts', label: 'إعادة النشر', icon: Repeat2 },
-  { key: 'mentions', label: 'الإشارات', icon: AtSign },
+const TABS: { key: TabKey; icon: React.ElementType }[] = [
+  { key: 'posts', icon: LayoutGrid },
+  { key: 'reels', icon: Clapperboard },
+  { key: 'reposts', icon: Repeat2 },
+  { key: 'mentions', icon: AtSign },
 ];
-
-const EMPTY: Record<TabKey, string> = {
-  posts: 'لا توجد منشورات بعد.',
-  reels: 'لا توجد ريلز بعد.',
-  reposts: 'لا توجد منشورات معاد نشرها.',
-  mentions: 'لا توجد منشورات تمت الإشارة فيها أو تعاونية.',
-};
 
 const ms = (p: Post) => p.createdAt?.toMillis?.() ?? 0;
 
@@ -76,6 +70,7 @@ const Tile: React.FC<{ post: Post; tall?: boolean; onOpen: () => void }> = ({ po
 
 const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canView = true }) => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [active, setActive] = useState<TabKey>('posts');
   const [mine, setMine] = useState<Post[]>([]);
   const [tagged, setTagged] = useState<Post[]>([]);
@@ -98,7 +93,7 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
       })
       .catch((e) => {
         console.error('profile posts failed:', e);
-        if (!cancelled) setError('تعذّر تحميل المحتوى.');
+        if (!cancelled) setError('load');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -133,7 +128,7 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
   return (
     <div className="card overflow-hidden">
       <div className="grid grid-cols-4 border-b border-white/10" role="tablist">
-        {TABS.map(({ key, label, icon: Icon }) => {
+        {TABS.map(({ key, icon: Icon }) => {
           const on = active === key;
           return (
             <button
@@ -146,7 +141,7 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-[10px] font-bold">{label}</span>
+              <span className="text-[10px] font-bold">{t(`ui.tab.${key}`)}</span>
             </button>
           );
         })}
@@ -155,16 +150,16 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
       {!canView ? (
         <div className="py-12 px-6 text-center space-y-2">
           <Lock className="w-8 h-8 mx-auto text-slate-600" />
-          <p className="text-xs text-slate-400">هذا حساب خاص. تابع الحساب لرؤية المحتوى.</p>
+          <p className="text-xs text-slate-400">{t('ui.privateAccount')}</p>
         </div>
       ) : loading ? (
         <div className="py-12 flex justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
         </div>
       ) : error ? (
-        <p className="py-10 text-center text-xs text-red-400">{error}</p>
+        <p className="py-10 text-center text-xs text-red-400">{t('ui.loadFail')}</p>
       ) : items.length === 0 ? (
-        <p className="py-12 text-center text-xs text-slate-500">{EMPTY[active]}</p>
+        <p className="py-12 text-center text-xs text-slate-500">{t(`ui.empty.${active}`)}</p>
       ) : (
         <div className="grid grid-cols-3 gap-0.5">
           {items.map((p) => (
