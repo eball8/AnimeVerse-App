@@ -47,7 +47,8 @@ const UserProfilePage: React.FC = () => {
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', uid));
-        if (!snap.exists()) {
+        // الحساب المعطّل يظهر كأنه غير موجود
+        if (!snap.exists() || (snap.data() as any).isDeactivated === true) {
           if (!cancelled) setP(null);
           return;
         }
