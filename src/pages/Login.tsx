@@ -26,7 +26,7 @@ const Login: React.FC = () => {
 
   const pickAccount = (acc: SavedAccount) => {
     if (acc.provider === 'google') {
-      handleGoogle();
+      handleGoogle(acc.email);
     } else {
       setEmail(acc.email);
       setPassword('');
@@ -69,11 +69,11 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoogle = async () => {
+  const handleGoogle = async (hintEmail?: string) => {
     setError('');
     setLoading(true);
     try {
-      await signInGoogle();
+      await signInGoogle(hintEmail);
       // ملاحظة: في الهاتف، سيتم فتح المتصفح الخارجي.
       // التطبيق سيتوقف هنا حتى يعود المستخدم من المتصفح، ثم سيتولى AuthContext إكمال الدخول.
       if (!window.location.href.includes('android')) {
@@ -200,7 +200,7 @@ const Login: React.FC = () => {
 
           <button
             type="button"
-            onClick={handleGoogle}
+            onClick={() => handleGoogle()}
             disabled={loading}
             className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition flex items-center justify-center gap-2 text-sm font-bold text-white disabled:opacity-50"
           >
