@@ -27,35 +27,6 @@ interface Props {
   onDelete: (p: Post) => void;
 }
 
-const TXT = {
-  ar: {
-    menu: 'خيارات المنشور',
-    edit: 'التعديل على المنشور',
-    editTitle: 'تعديل المنشور',
-    del: 'حذف المنشور',
-    shareVia: 'مشاركة عبر',
-    more: 'المزيد',
-    copied: 'تم نسخ الرابط',
-    save: 'حفظ التعديل',
-    empty: 'لا يمكن ترك المنشور فارغاً.',
-    saveFail: 'تعذّر حفظ التعديل.',
-    placeholder: 'اكتب شيئاً...',
-  },
-  en: {
-    menu: 'Post options',
-    edit: 'Edit post',
-    editTitle: 'Edit post',
-    del: 'Delete post',
-    shareVia: 'Share via',
-    more: 'More',
-    copied: 'Link copied',
-    save: 'Save changes',
-    empty: 'The post cannot be empty.',
-    saveFail: 'Could not save the changes.',
-    placeholder: 'Write something...',
-  },
-};
-
 const openExternal = async (href: string) => {
   try {
     if (Capacitor.isNativePlatform()) await Browser.open({ url: href });
@@ -102,7 +73,6 @@ const PostCard: React.FC<Props> = ({
   const navigate = useNavigate();
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const L = lang === 'ar' ? TXT.ar : TXT.en;
 
   const [flash, setFlash] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -150,7 +120,7 @@ const PostCard: React.FC<Props> = ({
     if (!post.id || saving) return;
     const next = draft.trim().slice(0, 2000);
     if (!next && !post.mediaUrl && !post.repostOfId) {
-      setErr(L.empty);
+      setErr(t('postCard.empty'));
       return;
     }
     setSaving(true);
@@ -161,7 +131,7 @@ const PostCard: React.FC<Props> = ({
       setEditing(false);
     } catch (e) {
       console.error(e);
-      setErr(L.saveFail);
+      setErr(t('postCard.saveFail'));
     } finally {
       setSaving(false);
     }
@@ -194,8 +164,8 @@ const PostCard: React.FC<Props> = ({
         {post.id && (
           <button
             onClick={() => setMenuOpen(true)}
-            aria-label={L.menu}
-            title={L.menu}
+            aria-label={t('postCard.menu')}
+            title={t('postCard.menu')}
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition"
           >
             <MoreHorizontal className="w-5 h-5" />
@@ -221,14 +191,14 @@ const PostCard: React.FC<Props> = ({
                 <button
                   onClick={() => navigate(`/reels/${post.id}`)}
                   className="absolute top-2 end-2 p-1.5 rounded-lg bg-black/60 text-white"
-                  aria-label="Reels"
+                  aria-label={t('postCard.openReels')}
                 >
                   <Clapperboard className="w-4 h-4" />
                 </button>
               )}
             </>
           ) : (
-            <img src={post.mediaUrl} alt="media" loading="lazy" className="w-full max-h-[400px] object-cover" />
+            <img src={post.mediaUrl} alt={t('postCard.media')} loading="lazy" className="w-full max-h-[400px] object-cover" />
           )}
         </div>
       )}
@@ -261,7 +231,7 @@ const PostCard: React.FC<Props> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-1">
-              <h3 className="text-sm font-black text-white">{L.menu}</h3>
+              <h3 className="text-sm font-black text-white">{t('postCard.menu')}</h3>
               <button onClick={() => setMenuOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-white/10">
                 <X className="w-5 h-5" />
               </button>
@@ -269,7 +239,7 @@ const PostCard: React.FC<Props> = ({
 
             {canEdit && (
               <button onClick={startEdit} className={menuRow}>
-                <Pencil className="w-5 h-5 text-primary-400" /> {L.edit}
+                <Pencil className="w-5 h-5 text-primary-400" /> {t('postCard.edit')}
               </button>
             )}
 
@@ -295,7 +265,7 @@ const PostCard: React.FC<Props> = ({
 
             {url && (
               <div className="pt-2">
-                <p className="text-[11px] text-slate-500 pb-2">{L.shareVia}</p>
+                <p className="text-[11px] text-slate-500 pb-2">{t('postCard.shareVia')}</p>
                 <div className="grid grid-cols-4 gap-2">
                   {TARGETS.map((tg) => (
                     <button
@@ -326,7 +296,7 @@ const PostCard: React.FC<Props> = ({
                 }}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/20 active:bg-red-500/20 transition mt-2"
               >
-                <Trash2 className="w-5 h-5" /> {L.del}
+                <Trash2 className="w-5 h-5" /> {t('postCard.delete')}
               </button>
             )}
           </div>
@@ -341,7 +311,7 @@ const PostCard: React.FC<Props> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-white">{L.editTitle}</h3>
+              <h3 className="text-sm font-black text-white">{t('postCard.editTitle')}</h3>
               <button
                 onClick={() => !saving && setEditing(false)}
                 className="p-1 rounded-lg text-slate-400 hover:bg-white/10"
@@ -354,7 +324,7 @@ const PostCard: React.FC<Props> = ({
               onChange={(e) => setDraft(e.target.value)}
               maxLength={2000}
               rows={6}
-              placeholder={L.placeholder}
+              placeholder={t('postCard.placeholder')}
               className="w-full p-3 rounded-2xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500 resize-none"
             />
             <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -374,7 +344,7 @@ const PostCard: React.FC<Props> = ({
                 disabled={saving || draft.trim() === (content || '').trim()}
                 className="flex-1 btn-primary py-3 rounded-2xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />} {L.save}
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />} {t('postCard.save')}
               </button>
             </div>
           </div>
