@@ -33,6 +33,7 @@ function validId(value: string | null): value is string {
  * https://animeverse.app/anime/ANIME_ID
  * https://animeverse.app/episode/EPISODE_ID
  * https://animeverse.app/profile/USER_ID
+ * https://animeverse.app/user/USER_ID (رابط مشاركة الملف الشخصي / رمز QR)
  * https://animeverse.app/story/STORY_ID
  *
  * كما يدعم المسارات النسبية داخل التطبيق.
@@ -80,6 +81,7 @@ export function parseDeepLink(
         return { type: 'episode', id };
 
       case 'profile':
+      case 'user':
         return { type: 'profile', id };
 
       case 'story':
@@ -112,6 +114,18 @@ export function createDeepLink(
   };
 
   return `https://animeverse.app/${paths[target.type]}/${encodeURIComponent(target.id)}`;
+}
+
+/**
+ * رابط مشاركة الملف الشخصي (يُستعمل في رمز QR وكل خيارات المشاركة):
+ * https://animeverse.app/user/{userId}
+ */
+export function userProfileLink(userId: string): string {
+  if (!validId(userId)) {
+    throw new Error('Invalid user ID');
+  }
+
+  return `https://animeverse.app/user/${encodeURIComponent(userId)}`;
 }
 
 const PENDING_ROUTE_KEY = 'av_pending_route';
