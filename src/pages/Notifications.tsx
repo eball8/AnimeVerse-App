@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -40,9 +39,39 @@ const icons: Record<NotificationType, typeof Bell> = {
   new_device: ShieldAlert,
 };
 
+// نصوص الإشعارات تُحفظ في Firestore بالعربية؛ نحوّلها إلى مفتاح ترجمة عند العرض
+// حتى تظهر بلغة التطبيق الحالية (يعمل مع الإشعارات القديمة والجديدة معاً).
+const EXACT_TEXT_KEYS: Record<string, string> = {
+  'أعجب بمنشورك': 'notif.liked',
+  'أعاد نشر منشورك': 'notif.reposted',
+  'أشار إليك في منشور': 'notif.mentioned',
+  'شاركك في منشور تعاوني': 'notif.collab',
+  'بدأ بمتابعتك': 'notif.followed',
+  'أرسل لك طلب متابعة': 'notif.requested',
+};
+const COMMENT_PREFIX = 'علّق على منشورك: ';
+const DEVICE_PREFIX = 'تم تسجيل الدخول من جهاز جديد: ';
+const UNKNOWN_DEVICE_AR = 'جهاز غير معروف';
+
 const Notifications: React.FC = () => {
   const { user } = useAuth();
   const { t, lang } = useI18n();
+
+  const localizeText = (n: AppNotification): string => {
+    const raw = (n.text || '').trim();
+    const key = EXACT_TEXT_KEYS[raw];
+    if (key) return t(key);
+    if (raw.startsWith(COMMENT_PREFIX)) {
+      return t('notif.commented', { text: raw.slice(COMMENT_PREFIX.length) });
+    }
+    if (raw.startsWith(DEVICE_PREFIX)) {
+      const device = raw.slice(DEVICE_PREFIX.length);
+      return t('notif.newDevice', {
+        device: device === UNKNOWN_DEVICE_AR ? t('notif.unknownDevice') : device,
+      });
+    }
+    return raw;
+  };
   const navigate = useNavigate();
 
   const [items, setItems] = useState<AppNotification[]>([]);
@@ -191,15 +220,19 @@ const Notifications: React.FC = () => {
               <div className="flex-1 min-w-0">
                 {isSecurity && (
                   <p className="text-xs font-bold text-amber-400 mb-1">
-                    تنبيه أمني
+                    {t('notif.securityAlert')}
                   </p>
                 )}
 
                 <p className="text-xs text-white break-words">
                   <b>
-                    {isSecurity ? 'أمان الحساب' : author.name}
+                    {isSecurity
+                      ? t('notif.accountSecurity')
+                      : author.name === 'مستخدم'
+                      ? t('notif.someone')
+                      : author.name}
                   </b>{' '}
-                  {notification.text}
+                  {localizeText(notification)}
                 </p>
 
                 <p className="text-[10px] text-slate-500 mt-0.5">
