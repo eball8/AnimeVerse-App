@@ -12,11 +12,36 @@ import {
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, googleProvider } from '../config/firebase';
-import { createUserProfile, getUserProfile } from '../services/userService';
-import type { UserProfile } from '../types';
+import { createUserProfile, getUserProfile, checkUsernameAvailable } from '../services/userService';
+import type { UserProfile, Gender } from '../types';
 import { Capacitor } from '@capacitor/core';
 import { saveAccount } from '../utils/savedAccounts';
 import { checkDevice } from '../services/deviceService';
+
+export interface SignUpData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  gender: Gender;
+  birthDate: string; // YYYY-MM-DD
+}
+
+// بيانات التسجيل المعلّقة: يستهلكها مستمع onIdTokenChanged عند إنشاء الملف
+// لتجنّب سباق كتابتين على مستند users/{uid}
+let pendingSignUpProfile: Partial<UserProfile> | null = null;
+// بوابة تُبقي المستمع ينتظر حتى ينتهي فحص اسم المستخدم (true = متاح)
+let signUpGate: Promise<boolean> | null = null;
+let openSignUpGate: (ok: boolean) => void = () => undefined;
+
+const calcAge = (birthDate: string): number => {
+  const [y, m, d] = birthDate.split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return age;
+};
 
 interface AuthContextType {
   user: User | null;
@@ -25,7 +50,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isModerator: boolean;
   signInEmail: (email: string, password: string) => Promise<void>;
-  signUpEmail: (email: string, password: string, displayName: string) => Promise<void>;
+  signUpEmail: (data: SignUpData) => Promise<void>;
   signInGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -83,10 +108,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         let p = await getUserProfile(fbUser.uid);
         if (!p) {
+          if (signUpGate) {
+            const ok = await signUpGate;
+            signUpGate = null;
+            if (!ok) return; // تم التراجع عن الحساب
+          }
+          const pending = pendingSignUpProfile;
+          pendingSignUpProfile = null;
           p = await createUserProfile(fbUser.uid, {
             email: fbUser.email || undefined,
             displayName: fbUser.displayName || 'مستخدم AnimeVerse',
             photoURL: fbUser.photoURL || undefined,
+            ...(pending || {}),
           });
         }
         setProfile(p);
@@ -112,8 +145,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const signUpEmail = async (email: string, password: string, displayName: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const signUpEmail = async (d: SignUpData) => {
+    const username = d.username.trim().toLowerCase();
+    const firstName = d.firstName.trim();
+    const lastName = d.lastName.trim();
+    const displayName = `${firstName} ${lastName}`.trim();
+
+    // تجهيز بيانات الملف قبل إنشاء الحساب حتى يكتبها المستمع مرة واحدة
+    pendingSignUpProfile = {
+      firstName,
+      lastName,
+      displayName,
+      username,
+      gender: d.gender,
+      birthDate: d.birthDate,
+      age: calcAge(d.birthDate),
+    };
+
+    signUpGate = new Promise<boolean>((resolve) => { openSignUpGate = resolve; });
+
+    let cred;
+    try {
+      cred = await createUserWithEmailAndPassword(auth, d.email, d.password);
+    } catch (e) {
+      pendingSignUpProfile = null;
+      openSignUpGate(false);
+      signUpGate = null;
+      throw e;
+    }
+
+    // قواعد Firestore تشترط تسجيل الدخول للقراءة، لذلك نتحقق من اسم المستخدم هنا
+    // وإن كان محجوزاً نتراجع عن إنشاء الحساب بالكامل
+    try {
+      const free = await checkUsernameAvailable(username, cred.user.uid);
+      if (!free) {
+        pendingSignUpProfile = null;
+        openSignUpGate(false);
+        await cred.user.delete().catch(console.error);
+        await fbSignOut(auth).catch(() => undefined);
+        const err: any = new Error('USERNAME_TAKEN');
+        err.code = 'app/username-taken';
+        throw err;
+      }
+    } catch (e: any) {
+      if (e?.code === 'app/username-taken') throw e;
+      console.error('Username check failed:', e);
+    }
+    openSignUpGate(true);
+
     sendEmailVerification(cred.user).catch(console.error);
     fbUpdateProfile(cred.user, { displayName }).catch(console.error);
   };
