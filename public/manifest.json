@@ -1,14 +1,14 @@
 {
   "name": "AnimeVerse",
   "short_name": "AnimeVerse",
-  "description": "منصة الأنمي العربية الشاملة",
+  "description": "AnimeVerse — the all-in-one anime platform",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f0f14",
   "theme_color": "#0f0f14",
-  "lang": "ar",
-  "dir": "rtl",
+  "lang": "en",
+  "dir": "auto",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
