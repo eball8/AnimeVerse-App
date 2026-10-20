@@ -7,22 +7,23 @@ import { useAuth } from '../context/AuthContext';
 import { checkUsernameAvailable, updateUserProfile } from '../services/userService';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
 import { invalidateUser } from '../services/userCache';
-import { isValidUsername, sanitizeUsernameInput, USERNAME_HINT, USERNAME_ERROR } from '../utils/username';
+import { isValidUsername, sanitizeUsernameInput } from '../utils/username';
+import { useI18n } from '../i18n/I18nContext';
 import type { Gender } from '../types';
 
 const field =
   'w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500';
 
 // أنماط الأفاتار (DiceBear)
-const AVATAR_STYLES: { id: string; label: string }[] = [
-  { id: 'adventurer', label: 'مغامر' },
-  { id: 'avataaars', label: 'كرتوني' },
-  { id: 'lorelei', label: 'لورلاي' },
-  { id: 'micah', label: 'ميكاه' },
-  { id: 'big-ears', label: 'أذان كبيرة' },
-  { id: 'fun-emoji', label: 'إيموجي' },
-  { id: 'bottts', label: 'روبوت' },
-  { id: 'pixel-art', label: 'بكسل' },
+const AVATAR_STYLES: { id: string }[] = [
+  { id: 'adventurer' },
+  { id: 'avataaars' },
+  { id: 'lorelei' },
+  { id: 'micah' },
+  { id: 'big-ears' },
+  { id: 'fun-emoji' },
+  { id: 'bottts' },
+  { id: 'pixel-art' },
 ];
 
 const avatarUrl = (style: string, seed: string) =>
@@ -30,14 +31,15 @@ const avatarUrl = (style: string, seed: string) =>
 
 const randomSeed = () => Math.random().toString(36).slice(2, 10);
 
-const GENDERS: { value: Gender; label: string }[] = [
-  { value: 'male', label: 'ذكر' },
-  { value: 'female', label: 'أنثى' },
-  { value: 'none', label: 'أفضّل عدم الإفصاح' },
+const GENDERS: { value: Gender; key: string }[] = [
+  { value: 'male', key: 'auth.genderMale' },
+  { value: 'female', key: 'auth.genderFemale' },
+  { value: 'none', key: 'auth.genderNone' },
 ];
 
 // نافذة بناء الأفاتار
 const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => void }> = ({ onPick, onClose }) => {
+  const { t } = useI18n();
   const [style, setStyle] = useState(AVATAR_STYLES[0].id);
   const [seeds, setSeeds] = useState<string[]>(() => Array.from({ length: 8 }, randomSeed));
   const [chosen, setChosen] = useState<string | null>(null);
@@ -55,9 +57,9 @@ const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => vo
       >
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <h3 className="text-white font-bold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary-400" /> بناء الأفاتار
+            <Sparkles className="w-4 h-4 text-primary-400" /> {t('ep.buildAvatar')}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white" aria-label="إغلاق">
+          <button onClick={onClose} className="text-slate-400 hover:text-white" aria-label={t('ep.close')}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -75,7 +77,7 @@ const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => vo
                     : 'bg-white/5 border-white/10 text-slate-300'
                 }`}
               >
-                {s.label}
+                {t('ep.style.' + s.id)}
               </button>
             ))}
           </div>
@@ -109,13 +111,13 @@ const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => vo
             onClick={shuffle}
             className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 text-sm font-bold flex items-center justify-center gap-2"
           >
-            <Shuffle className="w-4 h-4" /> تجديد الخيارات
+            <Shuffle className="w-4 h-4" /> {t('ep.shuffle')}
           </button>
         </div>
 
         <div className="p-4 border-t border-white/10 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300">
-            إلغاء
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -123,7 +125,7 @@ const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => vo
             onClick={() => chosen && onPick(chosen)}
             className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50"
           >
-            استخدام
+            {t('ep.use')}
           </button>
         </div>
       </div>
@@ -133,6 +135,7 @@ const AvatarBuilder: React.FC<{ onPick: (url: string) => void; onClose: () => vo
 
 const EditProfile: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { user, profile, refreshProfile } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
@@ -163,8 +166,8 @@ const EditProfile: React.FC = () => {
   const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!f.type.startsWith('image/')) return setError('اختر صورة فقط.');
-    if (f.size > 5 * 1024 * 1024) return setError('حجم الصورة كبير (الحد 5 ميجابايت).');
+    if (!f.type.startsWith('image/')) return setError(t('ep.errImage'));
+    if (f.size > 5 * 1024 * 1024) return setError(t('ep.errImageSize'));
     setError('');
     setFile(f);
     setBuiltAvatar(null);
@@ -184,17 +187,17 @@ const EditProfile: React.FC = () => {
     const name = displayName.trim();
     const uname = username.trim().toLowerCase();
     const pr = pronouns.trim();
-    if (name.length < 1 || name.length > 50) return setError('الاسم يجب أن يكون بين 1 و50 حرفاً.');
+    if (name.length < 1 || name.length > 50) return setError(t('ep.errName'));
     // الاسم القديم غير المطابق للقواعد الجديدة يبقى كما هو إن لم يغيّره المستخدم
-    if (uname !== profile.username && !isValidUsername(uname)) return setError(USERNAME_ERROR);
-    if (pr.length > 30) return setError('الضمائر لا تتجاوز 30 حرفاً.');
-    if (bio.length > 150) return setError('النبذة لا تتجاوز 150 حرفاً.');
+    if (uname !== profile.username && !isValidUsername(uname)) return setError(t('ep.usernameError'));
+    if (pr.length > 30) return setError(t('ep.errPronouns'));
+    if (bio.length > 150) return setError(t('ep.errBio'));
 
     setSaving(true);
     try {
       if (uname !== profile.username) {
         const ok = await checkUsernameAvailable(uname, user.uid);
-        if (!ok) { setError('اسم المستخدم مستخدم بالفعل.'); return; }
+        if (!ok) { setError(t('ep.errTaken')); return; }
       }
       let photoURL = profile.photoURL;
       if (builtAvatar) photoURL = builtAvatar;
@@ -217,7 +220,7 @@ const EditProfile: React.FC = () => {
       navigate('/profile');
     } catch (err: any) {
       console.error(err);
-      setError(err?.code === 'permission-denied' ? 'غير مسموح بحفظ هذه البيانات.' : err?.message || 'حدث خطأ، حاول مرة أخرى.');
+      setError(err?.code === 'permission-denied' ? t('ep.errPerm') : err?.message || t('common.error'));
     } finally {
       setSaving(false);
     }
@@ -228,10 +231,10 @@ const EditProfile: React.FC = () => {
   return (
     <div className="px-4 py-6 space-y-4">
       <div className="flex items-center gap-2">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300" aria-label="رجوع">
+        <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300" aria-label={t('common.back')}>
           <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
         </button>
-        <h2 className="text-xl font-black text-white">تعديل الملف الشخصي</h2>
+        <h2 className="text-xl font-black text-white">{t('profile.edit')}</h2>
       </div>
 
       <form onSubmit={save} className="card p-5 space-y-4">
@@ -243,7 +246,7 @@ const EditProfile: React.FC = () => {
           </label>
           <div className="flex justify-center gap-2">
             <label className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-slate-200 cursor-pointer flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5" /> تغيير الصورة
+              <Camera className="w-3.5 h-3.5" /> {t('ep.changePhoto')}
               <input type="file" accept="image/*" hidden onChange={pickFile} />
             </label>
             <button
@@ -251,17 +254,17 @@ const EditProfile: React.FC = () => {
               onClick={() => setShowBuilder(true)}
               className="px-3 py-1.5 rounded-full bg-primary-500/15 border border-primary-500/30 text-xs font-bold text-primary-300 flex items-center gap-1.5"
             >
-              <Sparkles className="w-3.5 h-3.5" /> بناء أفاتار
+              <Sparkles className="w-3.5 h-3.5" /> {t('ep.buildBtn')}
             </button>
           </div>
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-300 mb-1">الاسم</label>
+          <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('auth.name')}</label>
           <input className={field} maxLength={50} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </div>
         <div>
-          <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم المستخدم</label>
+          <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('auth.username')}</label>
           <input
             className={field}
             dir="ltr"
@@ -271,26 +274,26 @@ const EditProfile: React.FC = () => {
             value={username}
             onChange={(e) => setUsername(sanitizeUsernameInput(e.target.value))}
           />
-          <p className="text-[11px] text-slate-500 mt-1.5">{USERNAME_HINT}</p>
+          <p className="text-[11px] text-slate-500 mt-1.5">{t('ep.usernameHint')}</p>
         </div>
         <div>
-          <label className="block text-[11px] font-bold text-slate-300 mb-1">الضمائر (اختياري)</label>
+          <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('ep.pronouns')}</label>
           <input
             className={field}
             maxLength={30}
-            placeholder="مثال: هو / he/him"
+            placeholder={t('ep.pronounsPh')}
             value={pronouns}
             onChange={(e) => setPronouns(e.target.value)}
           />
         </div>
         <div>
-          <label className="block text-[11px] font-bold text-slate-300 mb-1">النبذة ({bio.length}/150)</label>
+          <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('ep.bio', { n: bio.length })}</label>
           <textarea className={field} rows={3} maxLength={150} value={bio} onChange={(e) => setBio(e.target.value)} />
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-300 mb-2">الجنس</label>
-          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="الجنس">
+          <label className="block text-[11px] font-bold text-slate-300 mb-2">{t('auth.gender')}</label>
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('auth.gender')}>
             {GENDERS.map((g) => {
               const on = gender === g.value;
               return (
@@ -306,7 +309,7 @@ const EditProfile: React.FC = () => {
                       : 'bg-dark-950 border-white/10 text-slate-300 hover:bg-white/5'
                   }`}
                 >
-                  {g.label}
+                  {t(g.key)}
                 </button>
               );
             })}
@@ -316,7 +319,7 @@ const EditProfile: React.FC = () => {
         {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
 
         <button disabled={saving} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ'}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : t('ep.save')}
         </button>
       </form>
 
