@@ -31,7 +31,16 @@ const VerifyEmail: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{
+        // هوامش آمنة: تمنع التداخل مع شريط الحالة العلوي وشريط التنقل السفلي
+        paddingTop: 'max(2rem, calc(env(safe-area-inset-top) + 1.25rem))',
+        paddingBottom: 'max(2rem, calc(env(safe-area-inset-bottom) + 1.25rem))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
+    >
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-primary-500/20 to-accent-500/20 border border-primary-500/30 flex items-center justify-center mb-4">
