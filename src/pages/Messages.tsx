@@ -12,7 +12,7 @@ import { subscribeStories, hasSeenAll } from '../services/storyService';
 import type { StoryGroup } from '../services/storyService';
 import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
 import type { Note } from '../services/noteService';
-import { usePresence } from '../services/presenceService';
+import { usePresence, usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
 import { useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 
@@ -199,7 +199,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
                 <div className={`w-[68px] h-[68px] rounded-full p-[2.5px] ${ring(!seen)}`}>
                   <Avatar src={g.authorPhotoURL} seed={g.authorId} name={g.authorName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
                 </div>
-                {online[g.authorId] && <span className="absolute bottom-0.5 end-0.5 w-4 h-4 bg-green-500 border-2 border-dark-950 rounded-full" />}
+                {online[g.authorId] && <span className={`absolute bottom-0.5 end-0.5 w-4 h-4 ${PRESENCE_DOT_CLASS}`} />}
               </div>
               <span className={`text-[11px] font-semibold truncate w-full text-center ${seen ? 'text-slate-500' : 'text-slate-200'}`}>{g.authorName}</span>
             </button>
@@ -216,7 +216,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
                 <div className="w-[68px] h-[68px] rounded-full p-[2.5px] bg-white/15">
                   <Avatar src={b?.photoURL} seed={uid} name={b?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
                 </div>
-                {online[uid] && <span className="absolute bottom-0.5 end-0.5 w-4 h-4 bg-green-500 border-2 border-dark-950 rounded-full" />}
+                {online[uid] && <span className={`absolute bottom-0.5 end-0.5 w-4 h-4 ${PRESENCE_DOT_CLASS}`} />}
               </div>
               <span className="text-[11px] font-semibold truncate w-full text-center text-slate-300">{b?.displayName || '...'}</span>
             </button>
@@ -241,7 +241,7 @@ const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me,
   const [items, setItems] = useState<Conversation[] | null>(null);
   const directUids = (items || []).filter((c) => c.type !== 'group').map((c) => c.otherUid);
   const briefs = useUserBriefs(directUids);
-  const online = usePresence(directUids, showActivity);
+  const presence = usePresenceInfo(directUids, showActivity);
 
   useEffect(() => subscribeConversations(me, setItems), [me]);
 
@@ -263,6 +263,8 @@ const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me,
         const name = isGroup ? (c.name || 'مجموعة') : (b?.displayName || '...');
         const targetUid = isGroup ? c.id : c.otherUid;
         const unread = isUnread(c, me);
+        const info = isGroup ? undefined : presence[c.otherUid];
+        const status = formatPresence(info, lang);
 
         return (
           <button key={c.id} onClick={() => navigate(`/messages/${targetUid}`)} className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start hover:bg-white/10 transition ${unread ? 'bg-primary-500/10 border-primary-500/30' : 'bg-white/5 border-white/10'}`}>
@@ -272,11 +274,15 @@ const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me,
               ) : (
                 <Avatar src={b?.photoURL} seed={c.otherUid} name={name} className="w-14 h-14 rounded-full object-cover bg-dark-900" />
               )}
-              {!isGroup && online[c.otherUid] && <span className="absolute bottom-0 end-0 w-3.5 h-3.5 bg-green-500 border-2 border-dark-950 rounded-full" />}
+              {!isGroup && info?.online && <span className={`absolute bottom-0 end-0 w-3.5 h-3.5 ${PRESENCE_DOT_CLASS}`} />}
             </div>
             <div className="flex-1 min-w-0">
               <p className={`text-sm truncate ${unread ? 'font-black text-white' : 'font-bold text-white'}`}>{name}</p>
-              <p className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>
+              {status ? (
+                <p className={`text-[11px] mt-0.5 truncate ${info?.online ? 'text-primary-400 font-bold' : 'text-slate-400'}`}>{status}</p>
+              ) : (
+                <p className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>
+              )}
             </div>
             <div className="flex flex-col items-end gap-1.5 shrink-0">
               <span className="text-[10px] text-slate-500">{timeAgo(c.lastMessageAt, lang)}</span>
