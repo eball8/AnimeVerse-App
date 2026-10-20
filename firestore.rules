@@ -62,28 +62,38 @@ service cloud.firestore {
         && validText(request.resource.data.displayName, 1, 50)
         && validText(request.resource.data.username, 3, 30);
 
-      allow update: if isOwner(uid)
-        && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny([
-            'role',
-            'isVerified',
-            'isBanned',
-            'followersCount',
-            'followingCount',
-            'postsCount',
-            'createdAt'
-          ])
-        && (!('email' in request.resource.data)
-            || ('email' in resource.data))
-        && validText(request.resource.data.displayName, 1, 50)
-        && (!('bio' in request.resource.data)
-            || validText(request.resource.data.bio, 0, 150))
-        && (!('accountType' in request.resource.data)
-            || request.resource.data.accountType in ['public', 'private'])
-        && (!('pronouns' in request.resource.data)
-            || validText(request.resource.data.pronouns, 0, 30))
-        && (!('gender' in request.resource.data)
-            || request.resource.data.gender in ['male', 'female', 'none']);
+      allow update: if (
+          isOwner(uid)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny([
+              'role',
+              'isVerified',
+              'isBanned',
+              'followersCount',
+              'followingCount',
+              'postsCount',
+              'createdAt'
+            ])
+          && (!('email' in request.resource.data)
+              || ('email' in resource.data))
+          && validText(request.resource.data.displayName, 1, 50)
+          && (!('bio' in request.resource.data)
+              || validText(request.resource.data.bio, 0, 150))
+          && (!('accountType' in request.resource.data)
+              || request.resource.data.accountType in ['public', 'private'])
+          && (!('pronouns' in request.resource.data)
+              || validText(request.resource.data.pronouns, 0, 30))
+          && (!('gender' in request.resource.data)
+              || request.resource.data.gender in ['male', 'female', 'none'])
+        )
+        // عدّاد المنشورات: يزيد/ينقص عند النشر والحذف (صاحب الحساب أو الأدمن)
+        || (
+          (isOwner(uid) || isAdmin())
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['postsCount'])
+          && request.resource.data.postsCount is int
+          && request.resource.data.postsCount >= 0
+        );
 
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -343,6 +353,38 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
+    // ---------- 6-ب. نشاط الأصدقاء (ريلز أعجب بها الأصدقاء) ----------
+    // audience = قائمة الأصدقاء (متابعة متبادلة) الذين يحق لهم رؤية الإعجاب.
+    // عند إيقاف "إظهار الإعجابات للأصدقاء" لا تُنشأ هذه الوثائق وتُحذف القديمة.
+    match /friendActivity/{actId} {
+      allow read: if signedIn()
+        && (
+          request.auth.uid in resource.data.audience
+          || resource.data.userId == request.auth.uid
+        );
+
+      allow create, update: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'postId',
+          'audience',
+          'createdAt'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.postId is string
+        && actId == request.resource.data.postId + '_' + request.auth.uid
+        && request.resource.data.audience is list
+        && request.resource.data.audience.size() <= 500
+        && request.resource.data.createdAt == request.time;
+
+      allow delete: if signedIn()
+        && (
+          resource == null
+          || resource.data.userId == request.auth.uid
+        );
+    }
+
     // ---------- 7. المتابعات ----------
     match /follows/{followId} {
       allow read: if signedIn();
@@ -512,6 +554,14 @@ service cloud.firestore {
           )
           ||
           (
+            // الرسائل المؤقتة: مدة بالميلي ثانية (0 = معطّلة)
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disappearAfter'])
+            && request.resource.data.disappearAfter is int
+            && request.resource.data.disappearAfter >= 0
+            && request.resource.data.disappearAfter <= 31536000000
+          )
+          ||
+          (
             resource.data.type == 'group'
             && request.auth.uid in resource.data.admins
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'admins'])
@@ -543,6 +593,29 @@ service cloud.firestore {
 
         allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
       }
+    }
+
+    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد) ----------
+    match /chatPrefs/{prefId} {
+      allow read: if signedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow create, update: if isOwner(request.resource.data.userId)
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'convId',
+          'muted',
+          'restricted',
+          'updatedAt'
+        ])
+        && validText(request.resource.data.convId, 1, 200)
+        && prefId == request.resource.data.userId + '_' + request.resource.data.convId
+        && request.resource.data.muted is bool
+        && request.resource.data.restricted is bool
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
     }
 
     // ---------- 10-ب. الملاحظات ----------
