@@ -11,9 +11,11 @@ import {
 } from '../services/followService';
 import type { FollowState } from '../services/followService';
 import { notify } from '../services/notificationService';
-import { copyText, profileLink, shareLink } from '../utils/links';
+import { copyText, profileLink } from '../utils/links';
+import { usePostsCount } from '../hooks/usePostsCount';
 import Avatar from '../components/Avatar';
 import ProfileTabs from '../components/ProfileTabs';
+import ProfileShareSheet from '../components/ProfileShareSheet';
 import { recordProfileView } from '../services/profileInsightsService';
 
 const UserProfilePage: React.FC = () => {
@@ -28,6 +30,9 @@ const UserProfilePage: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  // عدّاد المنشورات اللحظي: يتغير فوراً عند نشر منشور أو حذفه
+  const posts = usePostsCount(uid, false);
 
   useEffect(() => {
     if (!uid) {
@@ -161,10 +166,7 @@ const UserProfilePage: React.FC = () => {
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
           </button>
           <button
-            onClick={async () => {
-              const r = await shareLink(link, p.displayName);
-              if (r === 'copied') flash();
-            }}
+            onClick={() => setShareOpen(true)}
             className="p-2 rounded-xl hover:bg-white/10 text-slate-400"
             aria-label={t('common.share')}
           >
@@ -187,7 +189,9 @@ const UserProfilePage: React.FC = () => {
 
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
-            <div className="text-lg font-black text-white">{counts.posts}</div>
+            <div className="text-lg font-black text-white tabular-nums" aria-live="polite">
+              {posts.loading ? '—' : posts.postsCount}
+            </div>
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.posts')}</div>
           </div>
           <div>
@@ -236,6 +240,16 @@ const UserProfilePage: React.FC = () => {
       </div>
 
       <ProfileTabs uid={p.uid} canView={!isPrivate || state === 'following'} />
+
+      {shareOpen && (
+        <ProfileShareSheet
+          userId={p.uid}
+          displayName={p.displayName}
+          username={p.username}
+          photoURL={p.photoURL}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 };
