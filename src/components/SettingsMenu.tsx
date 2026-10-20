@@ -102,7 +102,7 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
   };
 
   return (
-    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="القائمة">
+    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label={t('ui.menu')}>
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
 
       <aside className="absolute top-0 bottom-0 start-0 w-[86%] max-w-sm bg-dark-950 border-e border-white/10 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -123,7 +123,7 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          <Section title="الحساب والملف الشخصي">
+          <Section title={t('ui.accountProfile')}>
             <Row icon={Pencil} label={t('profile.edit')} onClick={() => go('/edit-profile')} />
             <Row icon={Bookmark} label={t('profile.library')} onClick={() => go('/library')} />
             <Row
@@ -132,15 +132,15 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
               onClick={handleCopy}
               right={<span />}
             />
-            <Row icon={Share2} label="مشاركة الملف الشخصي" onClick={handleShare} right={<span />} />
+            <Row icon={Share2} label={t('ui.shareProfile')} onClick={handleShare} right={<span />} />
             {isAdmin && <Row icon={Shield} label={t('profile.admin')} onClick={() => go('/admin')} />}
           </Section>
 
-          <Section title="الخصوصية">
+          <Section title={t('ui.privacy')}>
             <Row
               icon={Lock}
               label={t('profile.private')}
-              sub="يتابعك فقط من توافق عليه"
+              sub={t('ui.privateSub')}
               onClick={togglePrivacy}
               disabled={saving}
               right={
@@ -158,17 +158,17 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
             />
             <Row
               icon={ShieldCheck}
-              label="الأمان والأجهزة والتشفير"
-              sub="كلمة السر · الأجهزة النشطة · التشفير التام"
+              label={t('ui.securityLabel')}
+              sub={t('ui.securitySub')}
               onClick={() => go('/settings')}
             />
           </Section>
 
-          <Section title="التطبيق">
+          <Section title={t('ui.app')}>
             <Row
               icon={SettingsIcon}
-              label="كل الإعدادات"
-              sub="اللغة · المظهر · المشغل · الدعم"
+              label={t('ui.allSettings')}
+              sub={t('ui.allSettingsSub')}
               onClick={() => go('/settings')}
             />
           </Section>
@@ -179,7 +179,7 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
             onClick={handleSwitch}
             className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition"
           >
-            <Users className="w-4 h-4 text-primary-400" /> تبديل الحساب
+            <Users className="w-4 h-4 text-primary-400" /> {t('ui.switchAccount')}
           </button>
           <button
             onClick={handleLogout}
