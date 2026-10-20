@@ -1,13 +1,28 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, UserCheck, AtSign, Users, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { checkEmail } from '../utils/emailValidation';
+import DatePickerSheet from '../components/DatePickerSheet';
+import type { Gender } from '../types';
+
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: 'male', label: 'ذكر' },
+  { value: 'female', label: 'أنثى' },
+  { value: 'none', label: 'أفضل عدم الذكر' },
+];
+
+const inputCls =
+  'w-full pr-10 pl-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50';
 
 const SignUp: React.FC = () => {
   const navigate = useNavigate();
   const { signUpEmail, signInGoogle } = useAuth();
-  const [displayName, setDisplayName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
+  const [gender, setGender] = useState<Gender>('none');
+  const [birthDate, setBirthDate] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -21,8 +36,21 @@ const SignUp: React.FC = () => {
       setError('كلمة السر يجب أن تكون 6 أحرف على الأقل.');
       return;
     }
-    if (displayName.trim().length < 2) {
-      setError('الاسم قصير جداً.');
+    if (firstName.trim().length < 2) {
+      setError('الاسم الأول قصير جداً.');
+      return;
+    }
+    if (lastName.trim().length < 2) {
+      setError('اسم العائلة قصير جداً.');
+      return;
+    }
+    const uname = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,30}$/.test(uname)) {
+      setError('اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ فقط (3-30).');
+      return;
+    }
+    if (!birthDate) {
+      setError('اختر تاريخ ميلادك.');
       return;
     }
     const emailCheck = checkEmail(email);
@@ -32,12 +60,22 @@ const SignUp: React.FC = () => {
     }
     setLoading(true);
     try {
-      await signUpEmail(email.trim(), password, displayName.trim());
+      await signUpEmail({
+        email: email.trim(),
+        password,
+        firstName,
+        lastName,
+        username: uname,
+        gender,
+        birthDate,
+      });
       // ✅ بعد التسجيل → صفحة التأكيد
       navigate('/verify-email');
     } catch (err: unknown) {
       const e = err as { code?: string };
-      if (e.code === 'auth/email-already-in-use') {
+      if (e.code === 'app/username-taken') {
+        setError('اسم المستخدم مستخدم بالفعل، اختر اسماً آخر.');
+      } else if (e.code === 'auth/email-already-in-use') {
         setError('هذا البريد مستخدم مسبقاً. جرّب تسجيل الدخول.');
       } else if (e.code === 'auth/invalid-email') {
         setError('البريد غير صالح.');
@@ -75,20 +113,94 @@ const SignUp: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">الاسم الأول</label>
+              <div className="relative">
+                <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  maxLength={25}
+                  autoComplete="given-name"
+                  placeholder="محمد"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">اسم العائلة</label>
+              <div className="relative">
+                <UserCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  maxLength={25}
+                  autoComplete="family-name"
+                  placeholder="العلي"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">الاسم</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">اسم المستخدم</label>
             <div className="relative">
-              <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <AtSign className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                 required
-                maxLength={50}
-                placeholder="اسمك الكامل"
-                className="w-full pr-10 pl-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
+                minLength={3}
+                maxLength={30}
+                dir="ltr"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="username"
+                placeholder="username"
+                className={inputCls}
               />
             </div>
+            <p className="text-[11px] text-slate-500 mt-1.5">أحرف إنجليزية صغيرة وأرقام و _ فقط (3-30)</p>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
+              <Users className="w-4 h-4 text-slate-500" />
+              الجنس
+            </label>
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="الجنس">
+              {GENDERS.map((g) => {
+                const on = gender === g.value;
+                return (
+                  <button
+                    key={g.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setGender(g.value)}
+                    className={`py-2.5 px-1 rounded-xl text-xs font-bold border transition ${
+                      on
+                        ? 'bg-primary-500/20 border-primary-500 text-primary-300'
+                        : 'bg-dark-950 border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-2">تاريخ الميلاد</label>
+            <DatePickerSheet value={birthDate} onChange={setBirthDate} minAge={13} />
           </div>
 
           <div>
