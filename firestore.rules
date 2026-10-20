@@ -136,6 +136,26 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // ---------- 1-ب. حجز أسماء المستخدمين (الإصلاح) ----------
+    // معرّف الوثيقة = اسم المستخدم نفسه، وتحمل uid صاحبه
+    match /usernames/{uname} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && !isBanned()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && uname.size() >= 3
+        && uname.size() <= 30
+        && uname.matches('^[a-z0-9_]+(\\.[a-z0-9_]+)*$');
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
     // ---------- 2. البيانات الخاصة ----------
     match /userPrivate/{uid} {
       allow read: if isOwner(uid) || isAdmin();
