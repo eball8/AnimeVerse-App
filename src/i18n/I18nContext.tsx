@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { LANGUAGES, translations } from './translations';
 import { extraAr, extraEn } from './extraTranslations';
+import { uiTranslations } from './uiTranslations';
 import type { Lang } from './translations';
 
 export type LangPref = 'system' | Lang;
@@ -72,11 +73,14 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const extra: Record<string, string> = lang === 'ar' ? extraAr : lang === 'en' ? extraEn : {};
       let s =
         translations[lang][key] ??
+        uiTranslations[lang]?.[key] ??
         extra[key] ??
         translations.en[key] ??
+        uiTranslations.en[key] ??
         extraEn[key] ??
         translations.ar[key] ??
         extraAr[key] ??
+        uiTranslations.ar[key] ??
         key;
       if (vars) {
         Object.keys(vars).forEach((k) => {
