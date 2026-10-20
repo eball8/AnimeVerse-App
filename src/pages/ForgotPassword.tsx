@@ -8,6 +8,14 @@ import { checkEmail } from '../utils/emailValidation';
 
 const COOLDOWN_SECONDS = 60;
 
+// هوامش آمنة: تمنع التداخل مع شريط الحالة العلوي وشريط التنقل السفلي
+const safeAreaStyle: React.CSSProperties = {
+  paddingTop: 'max(2rem, calc(env(safe-area-inset-top) + 1.25rem))',
+  paddingBottom: 'max(2rem, calc(env(safe-area-inset-bottom) + 1.25rem))',
+  paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+  paddingRight: 'max(1rem, env(safe-area-inset-right))',
+};
+
 const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
   const { signInEmail } = useAuth();
@@ -95,7 +103,7 @@ const ForgotPassword: React.FC = () => {
 
   if (sent) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-4" style={safeAreaStyle}>
         <div className="w-full max-w-md space-y-6">
           <div className="text-center">
             <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-primary-500/20 to-accent-500/20 border border-primary-500/30 flex items-center justify-center mb-4">
@@ -188,7 +196,7 @@ const ForgotPassword: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4" style={safeAreaStyle}>
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <h1 className="text-2xl font-black text-white mb-2">نسيت كلمة السر؟</h1>
