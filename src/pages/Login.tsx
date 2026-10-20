@@ -5,9 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { auth } from '../config/firebase';
 import { getSavedAccounts, removeSavedAccount } from '../utils/savedAccounts';
 import type { SavedAccount } from '../utils/savedAccounts';
+import { useI18n } from '../i18n/I18nContext';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { user, loading: authLoading, signInEmail, signInGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -60,13 +62,13 @@ const Login: React.FC = () => {
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') {
-        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+        setError(t('auth.errInvalid'));
       } else if (e.code === 'auth/user-not-found') {
-        setError('لا يوجد حساب بهذا البريد الإلكتروني.');
+        setError(t('auth.errNotFound'));
       } else if (e.code === 'auth/too-many-requests') {
-        setError('محاولات كثيرة. يرجى المحاولة لاحقاً.');
+        setError(t('auth.errTooMany'));
       } else {
-        setError('حدث خطأ أثناء تسجيل الدخول. تحقق من اتصالك بالإنترنت.');
+        setError(t('auth.errLogin'));
       }
     } finally {
       setLoading(false);
@@ -84,7 +86,7 @@ const Login: React.FC = () => {
         navigate('/');
       }
     } catch (e: any) {
-      if (!e?.cancelled) setError('فشل تسجيل الدخول بواسطة Google. حاول مرة أخرى.');
+      if (!e?.cancelled) setError(t('auth.errGoogle'));
       setLoading(false);
     }
   };
@@ -105,7 +107,7 @@ const Login: React.FC = () => {
           <h1 className="text-3xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent mb-2">
             AnimeVerse
           </h1>
-          <p className="text-sm text-slate-400">سجّل دخولك للمتابعة</p>
+          <p className="text-sm text-slate-400">{t('auth.signinSubtitle')}</p>
         </div>
 
         {showPicker && (
@@ -125,7 +127,7 @@ const Login: React.FC = () => {
                   </span>
                   {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <ChevronLeft className="w-4 h-4 text-slate-500" />}
                 </button>
-                <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label="إزالة">
+                <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label={t('auth.remove')}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -136,13 +138,13 @@ const Login: React.FC = () => {
               onClick={() => { setError(''); setShowForm(true); }}
               className="w-full py-3.5 rounded-full bg-white/10 hover:bg-white/15 transition flex items-center justify-center gap-2 text-sm font-bold text-white"
             >
-              <UserRound className="w-4 h-4" /> استخدام حساب آخر
+              <UserRound className="w-4 h-4" /> {t('auth.useOther')}
             </button>
             <Link
               to="/signup"
               className="w-full py-3.5 rounded-full border border-primary-500/60 hover:bg-primary-500/10 transition flex items-center justify-center gap-2 text-sm font-bold text-primary-400"
             >
-              <UserPlus className="w-4 h-4" /> إنشاء حساب جديد
+              <UserPlus className="w-4 h-4" /> {t('auth.newAccount')}
             </Link>
           </div>
         )}
@@ -150,7 +152,7 @@ const Login: React.FC = () => {
         {!showPicker && (
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.email')}</label>
             <div className="relative">
               <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -168,7 +170,7 @@ const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">كلمة المرور</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.password')}</label>
             <div className="relative">
               <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -200,12 +202,12 @@ const Login: React.FC = () => {
             disabled={loading}
             className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تسجيل الدخول'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('auth.signIn')}
           </button>
 
           <div className="text-center">
             <Link to="/forgot-password" className="text-xs text-slate-400 hover:text-primary-400 font-bold">
-              نسيت كلمة المرور؟
+              {t('auth.forgot')}
             </Link>
           </div>
 
@@ -214,7 +216,7 @@ const Login: React.FC = () => {
               <div className="w-full border-t border-white/10" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="px-3 bg-dark-900 text-slate-500">أو</span>
+              <span className="px-3 bg-dark-900 text-slate-500">{t('auth.or')}</span>
             </div>
           </div>
 
@@ -230,19 +232,19 @@ const Login: React.FC = () => {
               <path fill="#4CAF50" d="M24 43c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 34.1 26.8 35 24 35c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.2 38.4 16 43 24 43z"/>
               <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.2 5.2C41 35.5 45 30.3 45 24c0-1.2-.1-2.3-.4-3.5z"/>
             </svg>
-            الدخول بحساب Google
+            {t('auth.googleSignIn')}
           </button>
 
           <p className="text-center text-xs text-slate-400 mt-4">
-            ما عندك حساب؟{' '}
+            {t('auth.noAccount')}{' '}
             <Link to="/signup" className="text-primary-400 font-bold hover:underline">
-              أنشئ حساب جديد
+              {t('auth.createAccountLink')}
             </Link>
           </p>
 
           {saved.length > 0 && (
             <button type="button" onClick={() => setShowForm(false)} className="w-full text-center text-xs text-slate-400 hover:text-white font-bold">
-              الرجوع إلى الحسابات المحفوظة
+              {t('auth.backToSaved')}
             </button>
           )}
         </form>
