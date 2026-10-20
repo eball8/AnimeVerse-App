@@ -8,10 +8,12 @@ import { useI18n } from '../i18n/I18nContext';
 import {
   getFollowCounts, subscribeFollowRequests, acceptRequest, rejectRequest,
 } from '../services/followService';
-import { copyText, profileLink, shareLink } from '../utils/links';
+import { copyText, profileLink } from '../utils/links';
+import { usePostsCount } from '../hooks/usePostsCount';
 import Avatar from '../components/Avatar';
 import InsightsCard from '../components/InsightsCard';
 import ProfileTabs from '../components/ProfileTabs';
+import ProfileShareSheet from '../components/ProfileShareSheet';
 import type { UserProfile } from '../types';
 
 const Profile: React.FC = () => {
@@ -21,6 +23,9 @@ const Profile: React.FC = () => {
   const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
   const [requests, setRequests] = useState<UserProfile[]>([]);
   const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  // عدّاد المنشورات اللحظي (onSnapshot على وثيقة المستخدم)
+  const posts = usePostsCount(user?.uid, true);
 
   useEffect(() => {
     if (!user) return;
@@ -84,10 +89,9 @@ const Profile: React.FC = () => {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleShare = async () => {
+  const handleShare = () => {
     if (!profile) return;
-    const r = await shareLink(link, t('profile.shareText', { name: profile.displayName }));
-    if (r === 'copied') flash();
+    setShareOpen(true);
   };
 
   const handleCopy = async () => {
@@ -139,7 +143,9 @@ const Profile: React.FC = () => {
         {/* العدّادات */}
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
-            <div className="text-lg font-black text-white">{counts.posts}</div>
+            <div className="text-lg font-black text-white tabular-nums" aria-live="polite">
+              {posts.loading ? '—' : posts.postsCount}
+            </div>
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.posts')}</div>
           </div>
           <div>
@@ -217,6 +223,16 @@ const Profile: React.FC = () => {
 
       {/* التبويبات الأربعة: المنشورات / الريلز / إعادة النشر / الإشارات */}
       <ProfileTabs uid={user.uid} />
+
+      {shareOpen && profile && (
+        <ProfileShareSheet
+          userId={user.uid}
+          displayName={profile.displayName}
+          username={profile.username}
+          photoURL={profile.photoURL}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 };
