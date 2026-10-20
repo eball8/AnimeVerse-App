@@ -13,6 +13,7 @@ import {
   fetchGalleryPage, galleryMediaToFile, formatDuration,
 } from '../services/galleryService';
 import type { GalleryMedia } from '../services/galleryService';
+import { useI18n } from '../i18n/I18nContext';
 
 type Mode = 'post' | 'story';
 type Filter = 'all' | 'images' | 'videos';
@@ -20,14 +21,15 @@ type Access = 'checking' | 'granted' | 'denied';
 
 const MAX_BYTES = 50 * 1024 * 1024;
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'الكل' },
-  { key: 'images', label: 'صور' },
-  { key: 'videos', label: 'فيديو' },
+const FILTERS: { key: Filter; labelKey: string }[] = [
+  { key: 'all', labelKey: 'cp.fAll' },
+  { key: 'images', labelKey: 'cp.fImages' },
+  { key: 'videos', labelKey: 'cp.fVideos' },
 ];
 
 const CreatePost: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [params, setParams] = useSearchParams();
   const { user, profile } = useAuth();
 
@@ -115,7 +117,7 @@ const CreatePost: React.FC = () => {
         if (mine !== reqRef.current) return;
         setHasMore(false);
         if (String(e?.message || e).includes('NO_PERMISSION')) setAccess('denied');
-        else setError('تعذّر تحميل المعرض.');
+        else setError(t('cp.errGallery'));
       } finally {
         if (mine === reqRef.current) {
           loadingRef.current = false;
@@ -160,11 +162,11 @@ const CreatePost: React.FC = () => {
 
   const applyFile = (selected: File): boolean => {
     if (selected.size > MAX_BYTES) {
-      setError('حجم الملف كبير جداً (الحد الأقصى 50 ميجابايت).');
+      setError(t('cp.errTooBig'));
       return false;
     }
     if (!selected.type.startsWith('image/') && !selected.type.startsWith('video/')) {
-      setError('الملف المختار ليس صورة أو فيديو.');
+      setError(t('cp.errNotMedia'));
       return false;
     }
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
@@ -208,7 +210,7 @@ const CreatePost: React.FC = () => {
       else setSelectedId(null);
     } catch (e: any) {
       console.error(e);
-      setError(e?.message || 'تعذّر فتح الملف المختار.');
+      setError(e?.message || t('cp.errOpenFile'));
       setSelectedId(null);
     } finally {
       setPicking(false);
@@ -239,7 +241,7 @@ const CreatePost: React.FC = () => {
 
   const handlePublish = async () => {
     if (!canPublish || uploading) {
-      setError(mode === 'story' ? 'اختر صورة أو فيديو للقصة أولاً.' : 'أضف نصاً أو صورة/فيديو قبل النشر.');
+      setError(mode === 'story' ? t('cp.errStoryNeed') : t('cp.errPostNeed'));
       return;
     }
     setUploading(true);
@@ -271,7 +273,7 @@ const CreatePost: React.FC = () => {
       navigate('/community', { replace: true });
     } catch (err: any) {
       console.error(err);
-      setError(err?.message || 'حدث خطأ أثناء النشر.');
+      setError(err?.message || t('cp.errPublish'));
       setUploading(false);
     }
   };
@@ -298,7 +300,7 @@ const CreatePost: React.FC = () => {
         onClick={clearMedia}
         disabled={uploading}
         className="absolute top-2.5 start-2.5 z-10 w-8 h-8 rounded-full bg-black/60 backdrop-blur text-white flex items-center justify-center active:scale-90 transition"
-        aria-label="إزالة"
+        aria-label={t('cp.remove')}
       >
         <X className="w-4 h-4" />
       </button>
@@ -314,11 +316,11 @@ const CreatePost: React.FC = () => {
               onClick={() => navigate(-1)}
               disabled={uploading}
               className="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 active:bg-white/10"
-              aria-label="إغلاق"
+              aria-label={t('cp.close')}
             >
               <X className="w-6 h-6" />
             </button>
-            <h1 className="text-base font-black text-white">{mode === 'story' ? 'قصة جديدة' : 'منشور جديد'}</h1>
+            <h1 className="text-base font-black text-white">{mode === 'story' ? t('cp.newStory') : t('cp.newPost')}</h1>
           </div>
 
           <button
@@ -326,7 +328,7 @@ const CreatePost: React.FC = () => {
             disabled={uploading || picking || !canPublish}
             className="h-9 min-w-[76px] px-5 rounded-full bg-gradient-to-tr from-primary-500 to-accent-500 text-white text-sm font-black shadow-lg shadow-primary-500/30 disabled:opacity-40 disabled:shadow-none active:scale-95 transition flex items-center justify-center"
           >
-            {mode === 'story' ? 'مشاركة' : 'نشر'}
+            {mode === 'story' ? t('cp.shareStory') : t('cp.publish')}
           </button>
         </div>
       </header>
@@ -346,7 +348,7 @@ const CreatePost: React.FC = () => {
                 }`}
               >
                 {m === 'post' ? <ImageIcon className="w-4 h-4" /> : <Film className="w-4 h-4" />}
-                {m === 'post' ? 'منشور' : 'قصة'}
+                {m === 'post' ? t('cp.tabPost') : t('cp.tabStory')}
               </button>
             ))}
           </div>
@@ -362,7 +364,7 @@ const CreatePost: React.FC = () => {
                 maxLength={2000}
                 rows={3}
                 disabled={uploading}
-                placeholder="ماذا تفكر؟ أو اكتب تعليقك على الأنمي..."
+                placeholder={t('cp.placeholderPost')}
                 className="flex-1 bg-transparent text-white text-[15px] leading-relaxed placeholder:text-slate-500 outline-none resize-none pt-2"
               />
             </div>
@@ -380,8 +382,8 @@ const CreatePost: React.FC = () => {
                   <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-primary-500/30 to-accent-500/30 flex items-center justify-center">
                     <Film className="w-8 h-8 text-primary-300" />
                   </div>
-                  <p className="text-sm font-bold text-slate-300">اختر صورة أو فيديو لقصتك</p>
-                  <p className="text-[11px] text-slate-500">تظهر لمدة 24 ساعة ثم تختفي</p>
+                  <p className="text-sm font-bold text-slate-300">{t('cp.storyPick')}</p>
+                  <p className="text-[11px] text-slate-500">{t('cp.story24')}</p>
                 </div>
               )}
               {preview && (
@@ -391,7 +393,7 @@ const CreatePost: React.FC = () => {
                     onChange={(e) => setContent(e.target.value)}
                     maxLength={200}
                     disabled={uploading}
-                    placeholder="أضف تعليقاً على قصتك..."
+                    placeholder={t('cp.storyCaption')}
                     className="pointer-events-auto w-full bg-white/10 backdrop-blur rounded-full px-4 h-10 text-sm text-white placeholder:text-white/50 outline-none border border-white/15"
                   />
                 </div>
@@ -411,7 +413,7 @@ const CreatePost: React.FC = () => {
 
         <div className="mt-5">
           <div className="px-4 flex items-center justify-between mb-2.5">
-            <h2 className="text-sm font-black text-white">{native ? 'المعرض' : 'إضافة وسائط'}</h2>
+            <h2 className="text-sm font-black text-white">{native ? t('cp.gallery') : t('cp.addMedia')}</h2>
             {native && access === 'granted' && (
               <div className="flex gap-1.5">
                 {FILTERS.map((f) => (
@@ -424,7 +426,7 @@ const CreatePost: React.FC = () => {
                         : 'bg-white/5 text-slate-300 border-white/10'
                     }`}
                   >
-                    {f.label}
+                    {t(f.labelKey)}
                   </button>
                 ))}
               </div>
@@ -439,7 +441,7 @@ const CreatePost: React.FC = () => {
                 className="h-28 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center justify-center gap-2 active:bg-white/10 transition"
               >
                 <ImageIcon className="w-7 h-7 text-emerald-400" />
-                <span className="text-xs font-bold text-slate-200">صورة / فيديو</span>
+                <span className="text-xs font-bold text-slate-200">{t('cp.photoVideo')}</span>
               </button>
               <button
                 onClick={() => cameraInputRef.current?.click()}
@@ -447,7 +449,7 @@ const CreatePost: React.FC = () => {
                 className="h-28 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center justify-center gap-2 active:bg-white/10 transition"
               >
                 <Camera className="w-7 h-7 text-blue-400" />
-                <span className="text-xs font-bold text-slate-200">الكاميرا</span>
+                <span className="text-xs font-bold text-slate-200">{t('cp.camera')}</span>
               </button>
             </div>
           )}
@@ -464,41 +466,41 @@ const CreatePost: React.FC = () => {
                 <ImagePlus className="w-10 h-10 text-white" />
               </div>
               <div className="space-y-1.5">
-                <h3 className="text-base font-black text-white">اسمح بالوصول إلى صورك وفيديوهاتك</h3>
+                <h3 className="text-base font-black text-white">{t('cp.allowTitle')}</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  لنعرض لك معرضك هنا وتنشر منشوراتك وقصصك بسهولة، نحتاج إذن الوصول إلى الصور والفيديو والكاميرا.
+                  {t('cp.allowDesc')}
                 </p>
               </div>
               <div className="flex justify-center gap-6 text-[11px] text-slate-300 font-semibold">
                 <span className="flex flex-col items-center gap-1.5">
-                  <ImageIcon className="w-5 h-5 text-emerald-400" /> الصور
+                  <ImageIcon className="w-5 h-5 text-emerald-400" /> {t('cp.photos')}
                 </span>
                 <span className="flex flex-col items-center gap-1.5">
-                  <Video className="w-5 h-5 text-blue-400" /> الفيديو
+                  <Video className="w-5 h-5 text-blue-400" /> {t('cp.videos')}
                 </span>
                 <span className="flex flex-col items-center gap-1.5">
-                  <Camera className="w-5 h-5 text-amber-400" /> الكاميرا
+                  <Camera className="w-5 h-5 text-amber-400" /> {t('cp.camera')}
                 </span>
               </div>
               <button
                 onClick={askForAccess}
                 className="w-full h-11 rounded-2xl bg-gradient-to-tr from-primary-500 to-accent-500 text-white text-sm font-black active:scale-[0.98] transition flex items-center justify-center gap-2"
               >
-                <ShieldCheck className="w-5 h-5" /> السماح بالوصول
+                <ShieldCheck className="w-5 h-5" /> {t('cp.allow')}
               </button>
               {askedOnce && (
                 <button
                   onClick={openAppSettings}
                   className="w-full h-10 rounded-2xl bg-white/5 border border-white/10 text-slate-200 text-xs font-bold flex items-center justify-center gap-2"
                 >
-                  <Settings className="w-4 h-4" /> فتح إعدادات التطبيق
+                  <Settings className="w-4 h-4" /> {t('cp.openSettings')}
                 </button>
               )}
               <button
                 onClick={() => cameraInputRef.current?.click()}
                 className="text-[11px] text-slate-500 underline underline-offset-4"
               >
-                أو التقط صورة مباشرة
+                {t('cp.takePhoto')}
               </button>
             </div>
           )}
@@ -512,7 +514,7 @@ const CreatePost: React.FC = () => {
                   className="relative aspect-square bg-gradient-to-br from-primary-600/40 to-accent-600/40 flex flex-col items-center justify-center gap-1 active:opacity-80"
                 >
                   <Camera className="w-7 h-7 text-white" />
-                  <span className="text-[10px] font-bold text-white/90">الكاميرا</span>
+                  <span className="text-[10px] font-bold text-white/90">{t('cp.camera')}</span>
                 </button>
 
                 {medias.map((m) => {
@@ -554,7 +556,7 @@ const CreatePost: React.FC = () => {
               </div>
 
               {!loadingMore && medias.length === 0 && (
-                <p className="text-center text-xs text-slate-500 py-10">لا توجد وسائط في هذا القسم.</p>
+                <p className="text-center text-xs text-slate-500 py-10">{t('cp.emptyFilter')}</p>
               )}
             </>
           )}
@@ -573,7 +575,7 @@ const CreatePost: React.FC = () => {
               <Loader2 className="w-7 h-7 text-white animate-spin" />
             </div>
             <p className="text-sm font-black text-white">
-              {mode === 'story' ? 'جاري نشر قصتك...' : 'جاري نشر منشورك...'}
+              {mode === 'story' ? t('cp.uploadingStory') : t('cp.uploadingPost')}
             </p>
             {file && (
               <div className="space-y-1.5">
