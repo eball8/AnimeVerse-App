@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { tr } from '../i18n/staticT';
 
 export interface GalleryMedia {
   id: string;
@@ -70,7 +71,7 @@ export const galleryMediaToFile = async (media: GalleryMedia): Promise<File> => 
   const copied = await Gallery.copyToCache({ uri: media.uri });
   const src = Capacitor.convertFileSrc('file://' + copied.path);
   const res = await fetch(src);
-  if (!res.ok) throw new Error('تعذّر قراءة الملف المختار.');
+  if (!res.ok) throw new Error(tr('misc.galleryRead'));
   const blob = await res.blob();
   const mime = copied.mime || blob.type || (media.type === 'video' ? 'video/mp4' : 'image/jpeg');
   const name = copied.path.split('/').pop() || (media.type === 'video' ? 'video.mp4' : 'image.jpg');
