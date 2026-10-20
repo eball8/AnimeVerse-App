@@ -31,7 +31,7 @@ const AuthAction: React.FC = () => {
           setStatus('error');
           setErrorMessage('رابط إعادة التعيين منتهي الصلاحية أو غير صالح.');
         });
-    } else if (mode === 'verifyEmail') {
+    } else if (mode === 'verifyEmail' || mode === 'verifyAndChangeEmail' || mode === 'recoverEmail') {
       import('firebase/auth').then(({ applyActionCode }) => {
         applyActionCode(auth, oobCode)
           .then(() => setStatus('success'))
@@ -89,7 +89,13 @@ const AuthAction: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black text-white">تم بنجاح! ✅</h1>
           <p className="text-sm text-slate-400">
-            {mode === 'resetPassword' ? 'تم تحديث كلمة المرور الخاصة بك.' : 'تم تأكيد الحساب.'}
+            {mode === 'resetPassword'
+              ? 'تم تحديث كلمة المرور الخاصة بك.'
+              : mode === 'verifyAndChangeEmail'
+              ? 'تم تأكيد بريدك الجديد. سجّل الدخول به من جديد.'
+              : mode === 'recoverEmail'
+              ? 'تمت استعادة بريدك السابق. سجّل الدخول به من جديد.'
+              : 'تم تأكيد الحساب.'}
           </p>
           <Link to="/login" className="inline-block px-8 py-3 btn-primary">
             العودة لتسجيل الدخول
