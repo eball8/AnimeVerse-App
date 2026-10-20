@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, Users, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { useI18n } from '../i18n/I18nContext';
 import { getProfileInsights } from '../services/profileInsightsService';
 import type { ProfileInsights } from '../services/profileInsightsService';
 
@@ -44,6 +45,7 @@ const Stat: React.FC<{ icon: React.ElementType; label: string; value: number; gr
 );
 
 const InsightsCard: React.FC<{ uid: string }> = ({ uid }) => {
+  const { t } = useI18n();
   const [data, setData] = useState<ProfileInsights | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -68,17 +70,17 @@ const InsightsCard: React.FC<{ uid: string }> = ({ uid }) => {
   return (
     <div className="card p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-black text-white">إحصائيات الحساب</h3>
-        <span className="text-[10px] text-slate-500">آخر 7 أيام</span>
+        <h3 className="text-sm font-black text-white">{t('ui.insights.title')}</h3>
+        <span className="text-[10px] text-slate-500">{t('ui.insights.last7')}</span>
       </div>
       <div className={`flex gap-3 ${!data && !failed ? 'animate-pulse' : ''}`}>
-        <Stat icon={Users} label="إجمالي الوصول" value={d.reach} growth={d.reachGrowth} />
-        <Stat icon={Eye} label="مشاهدات الحساب" value={d.views} growth={d.viewsGrowth} />
+        <Stat icon={Users} label={t('ui.insights.reach')} value={d.reach} growth={d.reachGrowth} />
+        <Stat icon={Eye} label={t('ui.insights.views')} value={d.views} growth={d.viewsGrowth} />
       </div>
       <p className="text-[10px] text-slate-500">
         {failed
-          ? 'تعذّر تحميل الإحصائيات الآن.'
-          : 'النسبة مقارنةً بالأسبوع السابق. الوصول = عدد الحسابات المختلفة التي زارت ملفك.'}
+          ? t('ui.insights.failed')
+          : t('ui.insights.note')}
       </p>
     </div>
   );
