@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeStories, hasSeenAll } from '../services/storyService';
 import type { StoryGroup } from '../services/storyService';
 import StoryViewer from './StoryViewer';
+import { useI18n } from '../i18n/I18nContext';
 
 const avatarOf = (url: string | undefined, uid: string) =>
   url || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`;
@@ -12,6 +13,7 @@ const avatarOf = (url: string | undefined, uid: string) =>
 const StoriesBar: React.FC = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [groups, setGroups] = useState<StoryGroup[]>([]);
   const [viewer, setViewer] = useState<number | null>(null);
   const [, setTick] = useState(0);
@@ -57,7 +59,7 @@ const StoriesBar: React.FC = () => {
               <Plus className="w-3.5 h-3.5 text-white" strokeWidth={3} />
             </span>
           </div>
-          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">قصتك</span>
+          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">{t('ui.yourStory')}</span>
         </button>
 
         {others.map((g) => {
