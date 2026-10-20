@@ -11,10 +11,13 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    // المالك الأساسي: صاحب حجز اسم المستخدم animeverse_official
+    // (لا يوجد أي إيميل داخل القواعد)
     function isAdmin() {
       return signedIn()
         && request.auth.token.email_verified == true
-        && request.auth.token.email == 'eball8361@gmail.com';
+        && get(/databases/$(database)/documents/usernames/animeverse_official)
+             .data.get('uid', '') == request.auth.uid;
     }
 
     function isBanned() {
@@ -152,7 +155,9 @@ service cloud.firestore {
 
       allow update: if false;
 
+      // اسم المالك محمي: لا يمكن حذفه أو تحريره حتى لا يستولي عليه أحد
       allow delete: if signedIn()
+        && uname != 'animeverse_official'
         && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
