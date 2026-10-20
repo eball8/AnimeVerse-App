@@ -20,6 +20,7 @@ import { timeAgo } from '../utils/timeAgo';
 // نافذة إنشاء مجموعة
 // ==========================================
 const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (groupId: string) => void }> = ({ me, onClose, onCreated }) => {
+  const { t } = useI18n();
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
@@ -42,7 +43,7 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
       onCreated(groupId);
     } catch (e) {
       console.error(e);
-      setErr('تعذّر إنشاء المجموعة.');
+      setErr(t('msgUi.createFail'));
       setBusy(false);
     }
   };
@@ -55,14 +56,14 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
     <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
         <div className="p-4 border-b border-white/10 flex justify-between items-center">
-          <h3 className="text-white font-bold">{step === 1 ? 'اختر الأعضاء' : 'اسم المجموعة'}</h3>
+          <h3 className="text-white font-bold">{step === 1 ? t('msgUi.pickMembers') : t('msgUi.groupName')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-4">
           {step === 1 ? (
             <div className="max-h-64 overflow-y-auto space-y-2">
-              {direct.length === 0 && <p className="text-xs text-slate-400 text-center py-4">ابدأ محادثة فردية مع شخص أولاً لتتمكن من إضافته.</p>}
+              {direct.length === 0 && <p className="text-xs text-slate-400 text-center py-4">{t('msgUi.startDirectFirst')}</p>}
               {direct.map((c) => {
                 const b = briefs[c.otherUid];
                 return (
@@ -75,17 +76,17 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
               })}
             </div>
           ) : (
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder="اسم المجموعة..." className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white outline-none focus:border-primary-500" />
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder={t('msgUi.groupNamePh')} className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white outline-none focus:border-primary-500" />
           )}
           {err && <p className="text-xs text-red-400 mt-3">{err}</p>}
         </div>
 
         <div className="p-4 border-t border-white/10 flex justify-end gap-2">
-          {step === 2 && <button onClick={() => setStep(1)} className="px-4 py-2 text-slate-300">رجوع</button>}
+          {step === 2 && <button onClick={() => setStep(1)} className="px-4 py-2 text-slate-300">{t('chatUi.back')}</button>}
           {step === 1 ? (
-            <button onClick={() => setStep(2)} disabled={selectedUsers.length === 0} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">التالي</button>
+            <button onClick={() => setStep(2)} disabled={selectedUsers.length === 0} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{t('msgUi.next')}</button>
           ) : (
-            <button onClick={handleCreate} disabled={!name.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : 'إنشاء'}</button>
+            <button onClick={handleCreate} disabled={!name.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : t('msgUi.create')}</button>
           )}
         </div>
       </div>
@@ -97,6 +98,7 @@ const CreateGroupModal: React.FC<{ me: string; onClose: () => void; onCreated: (
 // نافذة الملاحظة (تظهر فوق صورة البروفايل 24 ساعة)
 // ==========================================
 const NoteModal: React.FC<{ uid: string; current?: string; onClose: () => void }> = ({ uid, current, onClose }) => {
+  const { t } = useI18n();
   const [text, setText] = useState(current || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -105,29 +107,29 @@ const NoteModal: React.FC<{ uid: string; current?: string; onClose: () => void }
     if (!text.trim() || busy) return;
     setBusy(true); setErr('');
     try { await setNote(uid, text); onClose(); }
-    catch (e) { console.error(e); setErr('تعذّر حفظ الملاحظة. تأكد من نشر قواعد Firestore الجديدة.'); setBusy(false); }
+    catch (e) { console.error(e); setErr(t('msgUi.noteSaveFail')); setBusy(false); }
   };
   const remove = async () => {
     setBusy(true);
     try { await deleteNote(uid); onClose(); }
-    catch (e) { console.error(e); setErr('تعذّر حذف الملاحظة.'); setBusy(false); }
+    catch (e) { console.error(e); setErr(t('msgUi.noteDeleteFail')); setBusy(false); }
   };
 
   return (
     <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
         <div className="p-4 border-b border-white/10 flex justify-between items-center">
-          <h3 className="text-white font-bold">ملاحظتك</h3>
+          <h3 className="text-white font-bold">{t('msgUi.yourNote')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-4 space-y-2">
-          <input autoFocus value={text} onChange={(e) => setText(e.target.value.slice(0, NOTE_MAX))} placeholder="شاركهم ما يدور في بالك..." className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
-          <p className="text-[11px] text-slate-500 flex justify-between"><span>تظهر فوق صورتك لمدة 24 ساعة.</span><span>{text.length}/{NOTE_MAX}</span></p>
+          <input autoFocus value={text} onChange={(e) => setText(e.target.value.slice(0, NOTE_MAX))} placeholder={t('msgUi.notePh')} className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+          <p className="text-[11px] text-slate-500 flex justify-between"><span>{t('msgUi.noteHint')}</span><span>{text.length}/{NOTE_MAX}</span></p>
           {err && <p className="text-xs text-red-400">{err}</p>}
         </div>
         <div className="p-4 border-t border-white/10 flex items-center justify-between gap-2">
-          {current ? <button onClick={remove} disabled={busy} className="px-3 py-2 text-red-400 text-sm flex items-center gap-1"><Trash2 className="w-4 h-4" /> حذف</button> : <span />}
-          <button onClick={save} disabled={!text.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : 'مشاركة'}</button>
+          {current ? <button onClick={remove} disabled={busy} className="px-3 py-2 text-red-400 text-sm flex items-center gap-1"><Trash2 className="w-4 h-4" /> {t('chatUi.delete')}</button> : <span />}
+          <button onClick={save} disabled={!text.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : t('msgUi.share')}</button>
         </div>
       </div>
     </div>
@@ -148,6 +150,7 @@ const NoteBubble: React.FC<{ text: string; onClick?: () => void }> = ({ text, on
 );
 
 const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, showActivity }) => {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [groups, setGroups] = useState<StoryGroup[]>([]);
@@ -176,7 +179,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
         <div className="shrink-0 w-[68px] flex flex-col items-center gap-1.5">
           <div className="relative">
             {myNote ? <NoteBubble text={myNote} onClick={() => setNoteOpen(true)} /> : (
-              <button type="button" onClick={() => setNoteOpen(true)} className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-xl bg-dark-800 border border-dashed border-white/20 text-[10px] text-slate-400 z-10 whitespace-nowrap">ملاحظة...</button>
+              <button type="button" onClick={() => setNoteOpen(true)} className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-xl bg-dark-800 border border-dashed border-white/20 text-[10px] text-slate-400 z-10 whitespace-nowrap">{t('msgUi.noteBubble')}</button>
             )}
             <button type="button" onClick={() => (mine ? setViewer(0) : navigate('/create-post?mode=story'))} className={`block w-[68px] h-[68px] rounded-full p-[2.5px] ${ring(!!mine && !hasSeenAll(mine))}`}>
               <Avatar src={profile?.photoURL} seed={me} name={profile?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
@@ -185,7 +188,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
               <Plus className="w-3.5 h-3.5 text-white" strokeWidth={3} />
             </button>
           </div>
-          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">قصتك</span>
+          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">{t('msgUi.yourStory')}</span>
         </div>
 
         {/* أصحاب القصص */}
@@ -260,7 +263,7 @@ const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me,
       {items.map((c) => {
         const isGroup = c.type === 'group';
         const b = !isGroup ? briefs[c.otherUid] : null;
-        const name = isGroup ? (c.name || 'مجموعة') : (b?.displayName || '...');
+        const name = isGroup ? (c.name || t('chatUi.group')) : (b?.displayName || '...');
         const targetUid = isGroup ? c.id : c.otherUid;
         const unread = isUnread(c, me);
         const info = isGroup ? undefined : presence[c.otherUid];
@@ -311,7 +314,7 @@ const Messages: React.FC = () => {
     <div className="px-4 py-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-base font-black text-white">{t('chat.title')}</h2>
-        <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title="إنشاء مجموعة" aria-label="إنشاء مجموعة"><Users className="w-5 h-5" /></button>
+        <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title={t('msgUi.createGroup')} aria-label={t('msgUi.createGroup')}><Users className="w-5 h-5" /></button>
       </div>
 
       {user && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
