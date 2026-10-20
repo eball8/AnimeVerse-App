@@ -3,6 +3,7 @@ import {
   X, User, Search, Bell, BellOff, Timer, Palette, Image as ImageIcon, EyeOff, Flag, Ban, Loader2,
 } from 'lucide-react';
 import type { ReportKind } from '../services/chatService';
+import { useI18n } from '../i18n/I18nContext';
 
 // ---------------------------------------------------------------
 // عناصر مشتركة
@@ -59,7 +60,9 @@ export interface ChatOptionsSheetProps {
   onToggleBlock: () => void;
 }
 
-const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => (
+const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
+  const { t } = useI18n();
+  return (
   <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={p.onClose}>
     <div
       className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto"
@@ -67,48 +70,48 @@ const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => (
     >
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <h3 className="text-white font-black truncate">{p.name}</h3>
-        <button type="button" onClick={p.onClose} className="text-slate-400 p-1" aria-label="إغلاق">
+        <button type="button" onClick={p.onClose} className="text-slate-400 p-1" aria-label={t('chatUi.close')}>
           <X className="w-5 h-5" />
         </button>
       </div>
 
       <div className="divide-y divide-white/5 border-t border-white/10">
         {!p.isGroup && (
-          <Row icon={User} label="الوصول للملف الشخصي" sub="افتح صفحة هذا المستخدم" onClick={p.onProfile} />
+          <Row icon={User} label={t('opt.profile')} sub={t('opt.profileSub')} onClick={p.onProfile} />
         )}
-        <Row icon={Search} label="البحث في المحادثة" sub="ابحث في نصوص الرسائل" onClick={p.onSearch} />
+        <Row icon={Search} label={t('opt.search')} sub={t('opt.searchSub')} onClick={p.onSearch} />
         <Row
           icon={p.muted ? BellOff : Bell}
-          label="كتم الإشعارات"
-          sub={p.muted ? 'مكتومة: لا تصلك علامات رسائل جديدة' : 'استقبال الإشعارات كالمعتاد'}
+          label={t('opt.mute')}
+          sub={p.muted ? t('opt.muteOn') : t('opt.muteOff')}
           onClick={p.onToggleMute}
           right={<Switch on={p.muted} />}
         />
         <Row
           icon={Timer}
-          label="الرسائل المؤقتة"
-          sub={p.disappearing ? 'مفعّلة: تُحذف الرسائل بعد 24 ساعة' : 'حذف الرسائل تلقائياً بعد 24 ساعة'}
+          label={t('opt.disappear')}
+          sub={p.disappearing ? t('opt.disappearOn') : t('opt.disappearOff')}
           onClick={p.onToggleDisappear}
           right={<Switch on={p.disappearing} />}
         />
-        <Row icon={Palette} label="تغيير الثيم" sub="ثيم وخلفية هذه المحادثة" onClick={p.onTheme} />
-        <Row icon={ImageIcon} label="الوسائط المشتركة" sub="الصور والفيديوهات في هذه المحادثة" onClick={p.onMedia} />
+        <Row icon={Palette} label={t('opt.theme')} sub={t('opt.themeSub')} onClick={p.onTheme} />
+        <Row icon={ImageIcon} label={t('opt.media')} sub={t('opt.mediaSub')} onClick={p.onMedia} />
       </div>
 
       {!p.isGroup && (
         <div className="divide-y divide-white/5 border-t border-white/10 mt-2">
           <Row
             icon={EyeOff}
-            label="تقييد المستخدم"
-            sub={p.restricted ? 'مقيّد: رسائله تصل بصمت دون علامات' : 'تصلك رسائله بصمت دون أن يعرف'}
+            label={t('opt.restrict')}
+            sub={p.restricted ? t('opt.restrictOn') : t('opt.restrictOff')}
             onClick={p.onToggleRestrict}
             right={<Switch on={p.restricted} />}
           />
-          <Row icon={Flag} label="الإبلاغ" sub="أبلغ الإدارة عن إساءة أو سبام" onClick={p.onReport} danger />
+          <Row icon={Flag} label={t('opt.report')} sub={t('opt.reportSub')} onClick={p.onReport} danger />
           <Row
             icon={Ban}
-            label={p.blocked ? 'إلغاء الحظر' : 'حظر المستخدم'}
-            sub={p.blocked ? 'سيستطيع مراسلتك من جديد' : 'لن يستطيع بدء محادثة جديدة معك'}
+            label={p.blocked ? t('opt.unblock') : t('opt.block')}
+            sub={p.blocked ? t('opt.unblockSub') : t('opt.blockSub')}
             onClick={p.onToggleBlock}
             danger={!p.blocked}
           />
@@ -116,19 +119,21 @@ const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => (
       )}
     </div>
   </div>
-);
+  );
+};
 
 export default ChatOptionsSheet;
 
 // ---------------------------------------------------------------
 // نافذة الإبلاغ
 // ---------------------------------------------------------------
-const REPORT_REASONS: { id: string; label: string; kind: ReportKind }[] = [
-  { id: 'abuse', label: 'إساءة أو تحرّش', kind: 'abuse' },
-  { id: 'spam', label: 'رسائل مزعجة (سبام)', kind: 'spam' },
-  { id: 'impersonation', label: 'انتحال شخصية', kind: 'abuse' },
-  { id: 'inappropriate', label: 'محتوى غير لائق', kind: 'abuse' },
-  { id: 'other', label: 'سبب آخر', kind: 'abuse' },
+// storeLabel: النص الذي يصل لوحة الإدارة (ثابت بالعربية ليبقى موحّداً مهما كانت لغة المُبلِّغ)
+const REPORT_REASONS: { id: string; storeLabel: string; kind: ReportKind }[] = [
+  { id: 'abuse', storeLabel: 'إساءة أو تحرّش', kind: 'abuse' },
+  { id: 'spam', storeLabel: 'رسائل مزعجة (سبام)', kind: 'spam' },
+  { id: 'impersonation', storeLabel: 'انتحال شخصية', kind: 'abuse' },
+  { id: 'inappropriate', storeLabel: 'محتوى غير لائق', kind: 'abuse' },
+  { id: 'other', storeLabel: 'سبب آخر', kind: 'abuse' },
 ];
 
 export const ReportSheet: React.FC<{
@@ -137,6 +142,7 @@ export const ReportSheet: React.FC<{
   onSubmit: (kind: ReportKind, reason: string) => void;
   onClose: () => void;
 }> = ({ name, busy, onSubmit, onClose }) => {
+  const { t } = useI18n();
   const [reasonId, setReasonId] = useState<string>('');
   const [details, setDetails] = useState('');
   const picked = REPORT_REASONS.find((r) => r.id === reasonId);
@@ -144,7 +150,7 @@ export const ReportSheet: React.FC<{
   const submit = () => {
     if (!picked || busy) return;
     const extra = details.trim();
-    onSubmit(picked.kind, extra ? `${picked.label} — ${extra}` : picked.label);
+    onSubmit(picked.kind, extra ? `${picked.storeLabel} — ${extra}` : picked.storeLabel);
   };
 
   return (
@@ -155,13 +161,13 @@ export const ReportSheet: React.FC<{
       >
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-white font-black flex items-center gap-2">
-            <Flag className="w-5 h-5 text-red-400" /> الإبلاغ عن {name}
+            <Flag className="w-5 h-5 text-red-400" /> {t('rep.title', { name })}
           </h3>
-          <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label="إغلاق">
+          <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label={t('chatUi.close')}>
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-[11px] text-slate-500 mb-3">اختر السبب. يصل البلاغ إلى الإدارة فقط ولا يعرف المستخدم أنك أبلغت عنه.</p>
+        <p className="text-[11px] text-slate-500 mb-3">{t('rep.hint')}</p>
 
         <div className="space-y-2">
           {REPORT_REASONS.map((r) => (
@@ -173,7 +179,7 @@ export const ReportSheet: React.FC<{
                 reasonId === r.id ? 'bg-primary-500/15 border-primary-500/50 text-white' : 'bg-white/5 border-white/10 text-white'
               }`}
             >
-              <span>{r.label}</span>
+              <span>{t(`rep.${r.id}`)}</span>
               <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${reasonId === r.id ? 'bg-primary-500 border-primary-500' : 'border-slate-500'}`} />
             </button>
           ))}
@@ -183,7 +189,7 @@ export const ReportSheet: React.FC<{
           value={details}
           onChange={(e) => setDetails(e.target.value.slice(0, 200))}
           rows={3}
-          placeholder="تفاصيل إضافية (اختياري)..."
+          placeholder={t('rep.details')}
           className="w-full mt-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white outline-none focus:border-primary-500"
         />
         <p className="text-[11px] text-slate-500 text-end mt-1">{details.length}/200</p>
@@ -194,7 +200,7 @@ export const ReportSheet: React.FC<{
           disabled={!picked || busy}
           className="w-full mt-3 py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]"
         >
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />} إرسال البلاغ
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />} {t('rep.send')}
         </button>
       </div>
     </div>
