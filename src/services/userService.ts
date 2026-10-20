@@ -67,7 +67,7 @@ export const createUserProfile = async (
 
   const profile: Omit<UserProfile, 'uid'> = {
     username,
-    displayName: data.displayName || 'مستخدم AnimeVerse',
+    displayName: data.displayName || tr('misc.defaultUser'),
     firstName: data.firstName,
     lastName: data.lastName,
     photoURL: data.photoURL,
