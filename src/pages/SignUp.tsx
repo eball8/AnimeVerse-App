@@ -5,11 +5,12 @@ import { useAuth } from '../context/AuthContext';
 import { checkEmail } from '../utils/emailValidation';
 import DatePickerSheet from '../components/DatePickerSheet';
 import type { Gender } from '../types';
+import { useI18n } from '../i18n/I18nContext';
 
-const GENDERS: { value: Gender; label: string }[] = [
-  { value: 'male', label: 'ذكر' },
-  { value: 'female', label: 'أنثى' },
-  { value: 'none', label: 'أفضل عدم الذكر' },
+const GENDERS: { value: Gender; key: string }[] = [
+  { value: 'male', key: 'auth.genderMale' },
+  { value: 'female', key: 'auth.genderFemale' },
+  { value: 'none', key: 'auth.genderNone' },
 ];
 
 const inputCls =
@@ -17,6 +18,7 @@ const inputCls =
 
 const SignUp: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { signUpEmail, signInGoogle } = useAuth();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -33,29 +35,29 @@ const SignUp: React.FC = () => {
     e.preventDefault();
     setError('');
     if (password.length < 6) {
-      setError('كلمة السر يجب أن تكون 6 أحرف على الأقل.');
+      setError(t('auth.errPassShort'));
       return;
     }
     if (firstName.trim().length < 2) {
-      setError('الاسم الأول قصير جداً.');
+      setError(t('auth.errFirstShort'));
       return;
     }
     if (lastName.trim().length < 2) {
-      setError('اسم العائلة قصير جداً.');
+      setError(t('auth.errLastShort'));
       return;
     }
     const uname = username.trim().toLowerCase();
     if (!/^[a-z0-9_]{3,30}$/.test(uname)) {
-      setError('اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ فقط (3-30).');
+      setError(t('auth.errUsername'));
       return;
     }
     if (!birthDate) {
-      setError('اختر تاريخ ميلادك.');
+      setError(t('auth.errBirth'));
       return;
     }
     const emailCheck = checkEmail(email);
     if (!emailCheck.ok) {
-      setError(emailCheck.message);
+      setError(emailCheck.key ? t(emailCheck.key, emailCheck.vars) : emailCheck.message);
       return;
     }
     setLoading(true);
@@ -74,15 +76,15 @@ const SignUp: React.FC = () => {
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'app/username-taken') {
-        setError('اسم المستخدم مستخدم بالفعل، اختر اسماً آخر.');
+        setError(t('auth.errUsernameTaken'));
       } else if (e.code === 'auth/email-already-in-use') {
-        setError('هذا البريد مستخدم مسبقاً. جرّب تسجيل الدخول.');
+        setError(t('auth.errEmailUsed'));
       } else if (e.code === 'auth/invalid-email') {
-        setError('البريد غير صالح.');
+        setError(t('auth.errEmailInvalid'));
       } else if (e.code === 'auth/weak-password') {
-        setError('كلمة السر ضعيفة.');
+        setError(t('auth.errWeak'));
       } else {
-        setError('حدث خطأ، حاول مرة أخرى.');
+        setError(t('common.error'));
       }
     } finally {
       setLoading(false);
@@ -96,7 +98,7 @@ const SignUp: React.FC = () => {
       await signInGoogle();
       navigate('/');
     } catch (e: any) {
-      if (!e?.cancelled) setError('فشل تسجيل الدخول بـ Google.');
+      if (!e?.cancelled) setError(t('auth.errGoogleSignup'));
     } finally {
       setLoading(false);
     }
@@ -118,13 +120,13 @@ const SignUp: React.FC = () => {
           <h1 className="text-3xl font-black bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400 bg-clip-text text-transparent mb-2">
             AnimeVerse
           </h1>
-          <p className="text-sm text-slate-400">أنشئ حسابك الجديد</p>
+          <p className="text-sm text-slate-400">{t('auth.signupSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-2">الاسم الأول</label>
+              <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.firstName')}</label>
               <div className="relative">
                 <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -134,13 +136,13 @@ const SignUp: React.FC = () => {
                   required
                   maxLength={25}
                   autoComplete="given-name"
-                  placeholder="محمد"
+                  placeholder={t('auth.firstNamePh')}
                   className={inputCls}
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-2">اسم العائلة</label>
+              <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.lastName')}</label>
               <div className="relative">
                 <UserCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -150,7 +152,7 @@ const SignUp: React.FC = () => {
                   required
                   maxLength={25}
                   autoComplete="family-name"
-                  placeholder="العلي"
+                  placeholder={t('auth.lastNamePh')}
                   className={inputCls}
                 />
               </div>
@@ -158,7 +160,7 @@ const SignUp: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">اسم المستخدم</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.username')}</label>
             <div className="relative">
               <AtSign className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -176,15 +178,15 @@ const SignUp: React.FC = () => {
                 className={inputCls}
               />
             </div>
-            <p className="text-[11px] text-slate-500 mt-1.5">أحرف إنجليزية صغيرة وأرقام و _ فقط (3-30)</p>
+            <p className="text-[11px] text-slate-500 mt-1.5">{t('auth.usernameHint')}</p>
           </div>
 
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
               <Users className="w-4 h-4 text-slate-500" />
-              الجنس
+              {t('auth.gender')}
             </label>
-            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="الجنس">
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('auth.gender')}>
               {GENDERS.map((g) => {
                 const on = gender === g.value;
                 return (
@@ -200,7 +202,7 @@ const SignUp: React.FC = () => {
                         : 'bg-dark-950 border-white/10 text-slate-300 hover:bg-white/5'
                     }`}
                   >
-                    {g.label}
+                    {t(g.key)}
                   </button>
                 );
               })}
@@ -208,12 +210,12 @@ const SignUp: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">تاريخ الميلاد</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.birthDate')}</label>
             <DatePickerSheet value={birthDate} onChange={setBirthDate} minAge={13} />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.email')}</label>
             <div className="relative">
               <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -229,7 +231,7 @@ const SignUp: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">كلمة السر</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.passwordSignup')}</label>
             <div className="relative">
               <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
@@ -239,7 +241,7 @@ const SignUp: React.FC = () => {
                 required
                 minLength={6}
                 dir="ltr"
-                placeholder="6 أحرف على الأقل"
+                placeholder={t('auth.passwordHint')}
                 className="w-full pr-10 pl-10 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
               />
               <button
@@ -259,7 +261,7 @@ const SignUp: React.FC = () => {
             disabled={loading}
             className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'إنشاء الحساب'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('auth.createAccount')}
           </button>
 
           <div className="relative my-4">
@@ -267,7 +269,7 @@ const SignUp: React.FC = () => {
               <div className="w-full border-t border-white/10" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="px-3 bg-dark-900 text-slate-500">أو</span>
+              <span className="px-3 bg-dark-900 text-slate-500">{t('auth.or')}</span>
             </div>
           </div>
 
@@ -283,13 +285,13 @@ const SignUp: React.FC = () => {
               <path fill="#4CAF50" d="M24 43c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 34.1 26.8 35 24 35c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.2 38.4 16 43 24 43z"/>
               <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.2 5.2C41 35.5 45 30.3 45 24c0-1.2-.1-2.3-.4-3.5z"/>
             </svg>
-            التسجيل بحساب Google
+            {t('auth.googleSignUp')}
           </button>
 
           <p className="text-center text-xs text-slate-400 mt-4">
-            عندك حساب؟{' '}
+            {t('auth.haveAccount')}{' '}
             <Link to="/login" className="text-primary-400 font-bold hover:underline">
-              تسجيل الدخول
+              {t('auth.loginLink')}
             </Link>
           </p>
         </form>
