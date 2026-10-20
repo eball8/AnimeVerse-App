@@ -11,7 +11,7 @@ import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useUserBriefs } from '../services/userCache';
-import { usePresence } from '../services/presenceService';
+import { usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import type { VoiceResult } from '../hooks/useVoiceRecorder';
 import { decryptBlob, encryptBlob, getLocalKey } from '../services/cryptoService';
@@ -37,7 +37,7 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).p
 // ---------------------------------------------------------------
 interface ChatTheme { id: string; label: string; bg: string; mine: string; }
 const THEMES: ChatTheme[] = [
-  { id: 'default', label: 'الافتراضي', bg: '#0c0c14', mine: 'linear-gradient(135deg,#8b5cf6,#ec4899)' },
+  { id: 'default', label: 'الافتراضي', bg: 'var(--av-chat-bg)', mine: 'linear-gradient(135deg,#8b5cf6,#ec4899)' },
   { id: 'dark', label: 'أسود', bg: '#000000', mine: 'linear-gradient(135deg,#334155,#475569)' },
   { id: 'romantic', label: 'رومانسي', bg: 'linear-gradient(160deg,#4a0d2e,#1a0510)', mine: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
   { id: 'friends', label: 'أصدقاء', bg: 'linear-gradient(160deg,#0b2a5b,#06122b)', mine: 'linear-gradient(135deg,#3b82f6,#06b6d4)' },
@@ -164,7 +164,7 @@ const VoiceBubble: React.FC<{ payload: VoicePayload }> = ({ payload }) => {
       </button>
       <div className="flex-1 h-6 flex items-center cursor-pointer" onClick={seek}>
         <div className="w-full h-1.5 rounded-full bg-white/25 overflow-hidden">
-          <div className="h-full bg-white rounded-full" style={{ width: `${progress}%` }} />
+          <div className="h-full rounded-full" style={{ width: `${progress}%`, background: 'rgb(var(--av-fg-rgb))' }} />
         </div>
       </div>
       <span className="text-[11px] opacity-80 tabular-nums">
@@ -368,8 +368,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const memberUids = isGroup ? (conv?.members || []) : [other];
   const briefs = useUserBriefs(memberUids);
   const myShow = (profile as any)?.showActivity !== false;
-  const online = usePresence(isGroup ? [] : [other], myShow);
-  const isOnline = !isGroup && !!online[other];
+  const presence = usePresenceInfo(isGroup ? [] : [other], myShow);
+  const otherPresence = isGroup ? undefined : presence[other];
+  const isOnline = !!otherPresence?.online;
+  const presenceText = formatPresence(otherPresence, lang);
 
   const nameOf = (uid: string) => (uid === me ? 'أنت' : briefs[uid]?.displayName || 'عضو');
 
@@ -566,11 +568,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   return (
     <>
       <div
-        className="fixed inset-x-0 z-30 mx-auto max-w-2xl flex flex-col"
+        className={`fixed inset-x-0 z-30 mx-auto max-w-2xl flex flex-col ${theme.id !== 'default' ? 'keep-dark' : ''}`}
         style={{ top: 'var(--app-header-h, calc(env(safe-area-inset-top) + 3.75rem))', bottom: 0, background: theme.bg }}
       >
         {/* الشريط العلوي */}
-        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0 bg-black/30 backdrop-blur">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0 chat-bar backdrop-blur">
           <button onClick={() => navigate('/messages')} className="p-2 rounded-xl hover:bg-white/10 text-slate-200"><BackIcon className="w-5 h-5" /></button>
           <button onClick={() => !isGroup && navigate(`/user/${other}`)} className="flex items-center gap-3 min-w-0 flex-1">
             <div className="relative shrink-0">
@@ -579,12 +581,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
               ) : (
                 <Avatar src={briefs[other]?.photoURL} seed={other} name={name} className="w-10 h-10 rounded-full object-cover bg-dark-900" />
               )}
-              {isOnline && <span className="absolute bottom-0 end-0 w-3 h-3 bg-green-500 border-2 border-dark-950 rounded-full" />}
+              {isOnline && <span className={`absolute bottom-0 end-0 w-3 h-3 ${PRESENCE_DOT_CLASS}`} />}
             </div>
             <div className="min-w-0 text-start">
               <p className="text-sm font-black text-white truncate">{name}</p>
-              {isOnline
-                ? <p className="text-[10px] text-green-400">متصل الآن</p>
+              {presenceText
+                ? <p className={`text-[11px] truncate ${isOnline ? 'text-primary-400 font-bold' : 'text-slate-300'}`}>{presenceText}</p>
                 : <p className="text-[10px] text-emerald-400 flex items-center gap-1"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>}
             </div>
           </button>
@@ -613,11 +615,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     onPointerLeave={clearPress}
                     onContextMenu={(e) => e.preventDefault()}
                     style={{ ...(mine ? { background: theme.mine } : {}), WebkitTouchCallout: 'none' } as React.CSSProperties}
-                    className={`rounded-2xl text-sm break-words select-none text-white ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? '' : 'bg-white/10'}`}
+                    className={`rounded-2xl text-sm break-words select-none text-white ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'keep-dark' : 'bg-white/10'}`}
                   >
                     {p?.f ? <p className="text-[10px] opacity-70 mb-1 flex items-center gap-1"><Share2 className="w-3 h-3" /> معاد توجيهها</p> : null}
                     {repliedMsg && (
-                      <div className="text-[11px] bg-black/25 p-2 rounded-lg mb-2 border-s-2 border-white/60">
+                      <div className="chat-quote text-[11px] p-2 rounded-lg mb-2 border-s-2">
                         <p className="font-bold opacity-80 mb-0.5">{nameOf(repliedMsg.senderId)}</p>
                         <p className="opacity-70 truncate">{previewOf(plain[repliedMsg.id])}</p>
                       </div>
@@ -638,7 +640,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                         <button
                           key={emoji}
                           onClick={() => react(m, emoji)}
-                          className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 border ${users.includes(me) ? 'bg-primary-500/30 border-primary-400/60' : 'bg-black/30 border-white/10'}`}
+                          className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 border ${users.includes(me) ? 'bg-primary-500/30 border-primary-400/60' : 'chat-chip border-white/10'}`}
                         >
                           <span>{emoji}</span>{users.length > 1 && <span className="text-[10px] text-slate-200">{users.length}</span>}
                         </button>
@@ -653,7 +655,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         </div>
 
         {/* شريط الإدخال */}
-        <div className="shrink-0 border-t border-white/10 bg-black/40 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm">
+        <div className="shrink-0 border-t border-white/10 chat-bar-strong px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm">
           {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mb-2">{error}</p>}
           {notice && <p className="text-xs text-emerald-300 bg-emerald-500/10 p-2 rounded-lg mb-2">{notice}</p>}
           {replyTo && (
