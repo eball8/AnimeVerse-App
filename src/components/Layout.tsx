@@ -168,7 +168,7 @@ const Layout: React.FC = () => {
                   <Search className="w-5 h-5" />
                 </NavLink>
                 {isProfileHome && (
-                  <button onClick={() => setMenuOpen(true)} className={iconBtn} aria-label="القائمة">
+                  <button onClick={() => setMenuOpen(true)} className={iconBtn} aria-label={t('ui.menu')}>
                     <Menu className="w-6 h-6 text-white" />
                   </button>
                 )}
