@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, ArrowLeft, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw,
-  CornerUpLeft, Share2, Users, Plus, MoreVertical, Check, Copy, Maximize2, Palette
+  CornerUpLeft, Share2, Users, Plus, MoreVertical, Check, Copy, Maximize2, Palette,
+  Search, ChevronUp, ChevronDown, Timer, Ban
 } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
+import ChatOptionsSheet, { ReportSheet } from '../components/ChatOptionsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useUserBriefs } from '../services/userCache';
 import { usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
@@ -20,9 +22,12 @@ import { uploadEncryptedBlob } from '../services/cloudinaryService';
 import { compressImage, formatBytes } from '../utils/media';
 import {
   convIdOf, decryptMessage, decryptGroupMessage, getPublicKeyInfo, removeMessage, sendDirect, sendGroup,
-  subscribeMessages, subscribeConversations, toggleReaction, setConversationTheme, markConversationRead, isUnread
+  subscribeMessages, subscribeConversations, toggleReaction, setConversationTheme, markConversationRead, isUnread,
+  isExpired, setDisappearAfter, DISAPPEAR_24H_MS, blockUser, unblockUser, subscribeBlockedIds, reportUser
 } from '../services/chatService';
-import type { ChatPayload, PublicKeyInfo, RawMessage, Conversation } from '../services/chatService';
+import type { ChatPayload, PublicKeyInfo, RawMessage, Conversation, ReportKind } from '../services/chatService';
+import { setChatPref, subscribeChatPrefs } from '../services/chatPrefsService';
+import type { ChatPrefMap } from '../services/chatPrefsService';
 
 type VoicePayload = Extract<ChatPayload, { k: 'v' }>;
 type MediaPayload = Extract<ChatPayload, { k: 'm' }>;
@@ -302,9 +307,9 @@ const ForwardModal: React.FC<{ convs: Conversation[]; onClose: () => void; onPic
 };
 
 // ---------------------------------------------------------------
-// خيارات المحادثة (الثيمات والتدرجات)
+// ثيم وخلفية المحادثة (تُفتح من قائمة الخيارات)
 // ---------------------------------------------------------------
-const OptionsSheet: React.FC<{ current: string; onPick: (id: string) => void; onClose: () => void }> = ({ current, onPick, onClose }) => (
+const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onClose: () => void }> = ({ current, onPick, onClose }) => (
   <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={onClose}>
     <div className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-4">
@@ -323,6 +328,61 @@ const OptionsSheet: React.FC<{ current: string; onPick: (id: string) => void; on
         ))}
       </div>
       <p className="text-[11px] text-slate-500 mt-4">الثيم يُطبّق على هذه المحادثة فقط ويراه جميع المشاركين فيها.</p>
+    </div>
+  </div>
+);
+
+// ---------------------------------------------------------------
+// الوسائط المشتركة (صور وفيديوهات المحادثة)
+// ---------------------------------------------------------------
+const MediaThumb: React.FC<{ payload: MediaPayload; onOpen: (src: string, type: 'image' | 'video') => void }> = ({ payload, onOpen }) => {
+  const isVideo = payload.mime.startsWith('video/');
+  const { src, loading, failed, load } = useDecryptedMedia(payload, !isVideo);
+
+  const open = async () => {
+    const type: 'image' | 'video' = isVideo ? 'video' : 'image';
+    if (src) { onOpen(src, type); return; }
+    await load();
+    const ready = mediaCache.get(payload.url);
+    if (ready) onOpen(ready, type);
+  };
+
+  return (
+    <button type="button" onClick={open} className="relative aspect-square overflow-hidden rounded-lg bg-white/5 active:scale-95 transition">
+      {!isVideo && src && <img src={src} alt="" draggable={false} className="w-full h-full object-cover" />}
+      {isVideo && src && <video src={`${src}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover" />}
+      <span className="absolute inset-0 flex items-center justify-center">
+        {loading ? <Loader2 className="w-5 h-5 animate-spin text-white/80" />
+          : failed ? <RefreshCw className="w-5 h-5 text-white/80" />
+          : isVideo ? <span className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center"><Play className="w-4 h-4 text-white fill-white" /></span>
+          : !src ? <Loader2 className="w-5 h-5 animate-spin text-white/50" /> : null}
+      </span>
+    </button>
+  );
+};
+
+const SharedMediaSheet: React.FC<{
+  items: MediaPayload[];
+  onOpen: (src: string, type: 'image' | 'video') => void;
+  onClose: () => void;
+}> = ({ items, onOpen, onClose }) => (
+  <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={onClose}>
+    <div
+      className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-white font-black">الوسائط المشتركة ({items.length})</h3>
+        <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label="إغلاق"><X className="w-5 h-5" /></button>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-10">لا توجد صور أو فيديوهات في هذه المحادثة بعد.</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {items.map((p) => <MediaThumb key={p.url} payload={p} onOpen={onOpen} />)}
+        </div>
+      )}
+      <p className="text-[11px] text-slate-500 mt-4">تظهر وسائط آخر الرسائل المحمّلة في المحادثة، وتُفك تشفيرها على جهازك فقط.</p>
     </div>
   </div>
 );
@@ -352,6 +412,15 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
   const [forwardMsg, setForwardMsg] = useState<RawMessage | null>(null);
   const [showOptions, setShowOptions] = useState(false);
+  const [sheet, setSheet] = useState<null | 'theme' | 'media' | 'report'>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchIdx, setSearchIdx] = useState(0);
+  const [prefs, setPrefs] = useState<ChatPrefMap>({});
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(() => new Set());
+  const [reporting, setReporting] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const purgedRef = useRef<Set<string>>(new Set());
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -374,6 +443,62 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const presenceText = formatPresence(otherPresence, lang);
 
   const nameOf = (uid: string) => (uid === me ? 'أنت' : briefs[uid]?.displayName || 'عضو');
+
+  // ---- كتم / تقييد / حظر / الرسائل المؤقتة ----
+  useEffect(() => subscribeChatPrefs(me, setPrefs), [me]);
+  useEffect(() => subscribeBlockedIds(me, setBlockedIds), [me]);
+  const pref = prefs[convId];
+  const iBlocked = isGroup === false && blockedIds.has(other);
+  const disappearAfter = conv?.disappearAfter || 0;
+
+  // ساعة داخلية تعيد تقييم انتهاء الرسائل كل 30 ثانية (فقط عند تفعيل الرسائل المؤقتة)
+  useEffect(() => {
+    if (!disappearAfter) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(id);
+  }, [disappearAfter]);
+
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => !isExpired(m, disappearAfter, now)),
+    [messages, disappearAfter, now]
+  );
+
+  // كل مستخدم يحذف رسائله المنتهية من قاعدة البيانات (القواعد تسمح بحذف الرسالة لصاحبها فقط)
+  useEffect(() => {
+    if (!disappearAfter) return;
+    const mine = messages.filter((m) => m.senderId === me && isExpired(m, disappearAfter, now) && !purgedRef.current.has(m.id));
+    if (!mine.length) return;
+    mine.forEach((m) => purgedRef.current.add(m.id));
+    Promise.allSettled(mine.map((m) => removeMessage(convId, m.id))).catch(console.error);
+  }, [messages, disappearAfter, now, convId, me]);
+
+  // ---- البحث داخل المحادثة ----
+  const q = searchQ.trim().toLowerCase();
+  const matchIds = useMemo(() => {
+    if (!searchOpen || !q) return [] as string[];
+    return visibleMessages
+      .filter((m) => { const p = plain[m.id]; return !!p && p.k === 't' && p.v.toLowerCase().includes(q); })
+      .map((m) => m.id);
+  }, [searchOpen, q, visibleMessages, plain]);
+  const matchSet = useMemo(() => new Set(matchIds), [matchIds]);
+  const safeIdx = matchIds.length ? Math.min(searchIdx, matchIds.length - 1) : 0;
+  const currentMatch: string | undefined = matchIds[safeIdx];
+
+  useEffect(() => { setSearchIdx(Math.max(0, matchIds.length - 1)); }, [q, matchIds.length]);
+  useEffect(() => {
+    if (!currentMatch) return;
+    document.getElementById(`msg-${currentMatch}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [currentMatch]);
+
+  // ---- الوسائط المشتركة (الأحدث أولاً) ----
+  const mediaItems = useMemo(
+    () => visibleMessages
+      .map((m) => plain[m.id])
+      .filter((p): p is MediaPayload => !!p && p.k === 'm')
+      .reverse(),
+    [visibleMessages, plain]
+  );
 
   // ---- مفاتيح التشفير ----
   useEffect(() => {
@@ -416,7 +541,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     return () => { off = true; };
   }, [isGroup, messages, local, theirs, me]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [visibleMessages.length]);
 
   // ---- علامة "مقروء" (تُطفئ النقطة الحمراء) ----
   useEffect(() => {
@@ -451,6 +576,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
   // ---- الإرسال ----
   const doSend = async (payload: ChatPayload): Promise<boolean> => {
+    if (iBlocked) { setError('لقد حظرت هذا المستخدم. ألغِ الحظر لتتمكن من مراسلته.'); return false; }
     setBusy(true); setError('');
     try {
       if (isGroup) await sendGroup(me, other, conv?.members || [], payload, replyTo?.id);
@@ -565,6 +691,108 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const name = isGroup ? (conv?.name || 'مجموعة') : (briefs[other]?.displayName || '...');
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
+  // ---- إجراءات قائمة الخيارات ----
+  const needConv = (): boolean => {
+    if (conv) return true;
+    setError('ابدأ المحادثة بإرسال رسالة أولاً ثم استخدم هذا الخيار.');
+    return false;
+  };
+
+  const closeSearch = () => { setSearchOpen(false); setSearchQ(''); setSearchIdx(0); };
+
+  const toggleMute = () => {
+    setShowOptions(false);
+    const next = !pref?.muted;
+    setChatPref(me, convId, { muted: next }, pref)
+      .then(() => flash(next ? 'تم كتم الإشعارات' : 'تم إلغاء الكتم'))
+      .catch((e) => { console.error(e); setError('تعذّر تغيير إعداد الكتم. تأكد من نشر قواعد Firestore الجديدة.'); });
+  };
+
+  const toggleRestrict = async () => {
+    setShowOptions(false);
+    const next = !pref?.restricted;
+    try {
+      if (next) {
+        const ok = await confirm({
+          title: `تقييد ${name}؟`,
+          message: 'ستصلك رسائله بصمت: دون إشعارات أو علامة رسائل جديدة، ولن يعرف أنك قيّدته.',
+          confirmLabel: 'تقييد',
+          danger: true,
+        });
+        if (!ok) return;
+        await setChatPref(me, convId, { restricted: true, muted: true }, pref);
+        flash('تم تقييد المستخدم');
+      } else {
+        await setChatPref(me, convId, { restricted: false }, pref);
+        flash('تم إلغاء التقييد');
+      }
+    } catch (e) {
+      console.error(e);
+      setError('تعذّر تغيير التقييد. تأكد من نشر قواعد Firestore الجديدة.');
+    }
+  };
+
+  const toggleDisappear = async () => {
+    setShowOptions(false);
+    if (!needConv()) return;
+    try {
+      if (disappearAfter > 0) {
+        await setDisappearAfter(convId, 0);
+        flash('تم إيقاف الرسائل المؤقتة');
+        return;
+      }
+      const ok = await confirm({
+        title: 'تفعيل الرسائل المؤقتة؟',
+        message: 'ستُحذف الرسائل تلقائياً بعد 24 ساعة من إرسالها، ويشمل ذلك الرسائل الأقدم من 24 ساعة الموجودة الآن. يراها ويتأثر بها جميع المشاركين.',
+        confirmLabel: 'تفعيل',
+      });
+      if (!ok) return;
+      await setDisappearAfter(convId, DISAPPEAR_24H_MS);
+      flash('تم تفعيل الرسائل المؤقتة (24 ساعة)');
+    } catch (e) {
+      console.error(e);
+      setError('تعذّر تغيير الرسائل المؤقتة. تأكد من نشر قواعد Firestore الجديدة.');
+    }
+  };
+
+  const toggleBlock = async () => {
+    setShowOptions(false);
+    try {
+      if (iBlocked) {
+        await unblockUser(me, other);
+        flash('تم إلغاء الحظر');
+        return;
+      }
+      const ok = await confirm({
+        title: `حظر ${name}؟`,
+        message: 'لن يستطيع بدء محادثة جديدة معك، ولن تستطيع أنت مراسلته حتى تلغي الحظر.',
+        confirmLabel: 'حظر',
+        danger: true,
+      });
+      if (!ok) return;
+      await blockUser(me, other);
+      flash('تم حظر المستخدم');
+    } catch (e) {
+      console.error(e);
+      setError('تعذّر تنفيذ الحظر. تأكد من نشر قواعد Firestore الجديدة.');
+    }
+  };
+
+  const submitReport = async (kind: ReportKind, reason: string) => {
+    setReporting(true);
+    try {
+      await reportUser(me, other, kind, reason);
+      setSheet(null);
+      flash('تم إرسال البلاغ، شكراً لك ✓');
+    } catch (e: any) {
+      console.error(e);
+      setSheet(null);
+      setError(e?.code === 'permission-denied' ? 'تعذّر إرسال البلاغ. تأكد من نشر قواعد Firestore الجديدة.' : 'تعذّر إرسال البلاغ.');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   return (
     <>
       <div
@@ -590,12 +818,37 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                 : <p className="text-[10px] text-emerald-400 flex items-center gap-1"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>}
             </div>
           </button>
-          <button onClick={() => setShowOptions(true)} className="p-2 rounded-xl hover:bg-white/10 text-slate-200"><MoreVertical className="w-5 h-5" /></button>
+          <button onClick={() => setShowOptions(true)} className="p-2 rounded-xl hover:bg-white/10 text-slate-200" aria-label="خيارات المحادثة"><MoreVertical className="w-5 h-5" /></button>
         </div>
+
+        {/* البحث في المحادثة */}
+        {searchOpen && (
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0 chat-bar">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              autoFocus
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              placeholder="ابحث في الرسائل..."
+              className="flex-1 min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
+            />
+            {q && <span className="text-[11px] text-slate-300 tabular-nums shrink-0">{matchIds.length ? `${safeIdx + 1}/${matchIds.length}` : 'لا نتائج'}</span>}
+            <button onClick={() => setSearchIdx(Math.max(0, safeIdx - 1))} disabled={!matchIds.length || safeIdx <= 0} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label="الأقدم"><ChevronUp className="w-4 h-4" /></button>
+            <button onClick={() => setSearchIdx(Math.min(matchIds.length - 1, safeIdx + 1))} disabled={!matchIds.length || safeIdx >= matchIds.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200 disabled:opacity-30" aria-label="الأحدث"><ChevronDown className="w-4 h-4" /></button>
+            <button onClick={closeSearch} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-200" aria-label="إغلاق البحث"><X className="w-4 h-4" /></button>
+          </div>
+        )}
+
+        {/* شريط الرسائل المؤقتة */}
+        {disappearAfter > 0 && (
+          <div className="px-4 py-1.5 text-[11px] text-center text-primary-300 chat-bar shrink-0 flex items-center justify-center gap-1.5 border-b border-white/5">
+            <Timer className="w-3 h-3" /> الرسائل المؤقتة مفعّلة: تُحذف بعد 24 ساعة
+          </div>
+        )}
 
         {/* الرسائل */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-2">
-          {messages.map((m) => {
+          {visibleMessages.map((m) => {
             const mine = m.senderId === me;
             const p = plain[m.id];
             const isMedia = !!p && p.k === 'm';
@@ -604,7 +857,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             const reactions = (Object.entries(m.reactions || {}) as [string, string[]][]).filter(([, u]) => Array.isArray(u) && u.length > 0);
 
             return (
-              <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+              <div key={m.id} id={`msg-${m.id}`} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
                 {!mine && isGroup && (<span className="text-[10px] text-slate-300 mb-1 px-1">{nameOf(m.senderId)}</span>)}
                 <div className="relative max-w-[80%]">
                   <div
@@ -615,7 +868,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     onPointerLeave={clearPress}
                     onContextMenu={(e) => e.preventDefault()}
                     style={{ ...(mine ? { background: theme.mine } : {}), WebkitTouchCallout: 'none' } as React.CSSProperties}
-                    className={`rounded-2xl text-sm break-words select-none text-white ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'keep-dark' : 'bg-white/10'}`}
+                    className={`rounded-2xl text-sm break-words select-none text-white ${isMedia ? 'p-1.5' : 'px-3 py-2'} ${mine ? 'keep-dark' : 'bg-white/10'} ${m.id === currentMatch ? 'ring-2 ring-amber-400' : matchSet.has(m.id) ? 'ring-1 ring-white/50' : ''}`}
                   >
                     {p?.f ? <p className="text-[10px] opacity-70 mb-1 flex items-center gap-1"><Share2 className="w-3 h-3" /> معاد توجيهها</p> : null}
                     {repliedMsg && (
@@ -673,7 +926,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
           <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden onChange={onPickFiles} />
 
-          {recording ? (
+          {iBlocked ? (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10">
+              <p className="text-xs text-slate-300 flex items-center gap-2"><Ban className="w-4 h-4 text-red-400 shrink-0" /> لقد حظرت هذا المستخدم</p>
+              <button onClick={toggleBlock} className="px-3 py-1.5 rounded-lg bg-primary-500/20 text-primary-300 text-xs font-bold shrink-0">إلغاء الحظر</button>
+            </div>
+          ) : recording ? (
             <div className="flex items-center gap-3">
               <button onClick={cancel} className="p-3 rounded-full bg-white/5 border border-white/10 text-red-400 active:scale-90 transition"><Trash2 className="w-4 h-4" /></button>
               <div className="flex-1 flex items-center gap-2 px-4 py-3 rounded-2xl bg-dark-900 border border-red-500/30">
@@ -740,11 +998,44 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       )}
 
       {showOptions && (
-        <OptionsSheet
-          current={theme.id}
-          onPick={(id) => { setShowOptions(false); setConversationTheme(convId, id).catch((e) => { console.error(e); setError('تعذّر تغيير الثيم. تأكد من نشر قواعد Firestore الجديدة.'); }); }}
+        <ChatOptionsSheet
+          isGroup={!!isGroup}
+          name={name}
+          muted={!!pref?.muted}
+          restricted={!!pref?.restricted}
+          blocked={iBlocked}
+          disappearing={disappearAfter > 0}
           onClose={() => setShowOptions(false)}
+          onProfile={() => { setShowOptions(false); navigate(`/user/${other}`); }}
+          onSearch={() => { setShowOptions(false); setSearchOpen(true); }}
+          onToggleMute={toggleMute}
+          onToggleDisappear={toggleDisappear}
+          onTheme={() => { setShowOptions(false); if (needConv()) setSheet('theme'); }}
+          onMedia={() => { setShowOptions(false); setSheet('media'); }}
+          onToggleRestrict={toggleRestrict}
+          onReport={() => { setShowOptions(false); setSheet('report'); }}
+          onToggleBlock={toggleBlock}
         />
+      )}
+
+      {sheet === 'theme' && (
+        <ThemeSheet
+          current={theme.id}
+          onPick={(id) => { setSheet(null); setConversationTheme(convId, id).catch((e) => { console.error(e); setError('تعذّر تغيير الثيم. تأكد من نشر قواعد Firestore الجديدة.'); }); }}
+          onClose={() => setSheet(null)}
+        />
+      )}
+
+      {sheet === 'media' && (
+        <SharedMediaSheet
+          items={mediaItems}
+          onOpen={(src, type) => { setSheet(null); setViewer({ src, type }); }}
+          onClose={() => setSheet(null)}
+        />
+      )}
+
+      {sheet === 'report' && (
+        <ReportSheet name={name} busy={reporting} onSubmit={submitReport} onClose={() => setSheet(null)} />
       )}
     </>
   );
