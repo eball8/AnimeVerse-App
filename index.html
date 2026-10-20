@@ -5,10 +5,30 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0f0f14" />
-    <meta name="description" content="AnimeVerse — منصة الأنمي العربية الشاملة" />
+    <meta name="description" content="AnimeVerse — the all-in-one anime platform" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>AnimeVerse</title>
+    <script>
+      // ضبط لغة واتجاه الصفحة قبل تحميل React حتى لا يظهر اتجاه عربي لحظة فتح التطبيق بلغة أخرى
+      (function () {
+        try {
+          var supported = ['ar', 'en', 'fr', 'es'];
+          var v = localStorage.getItem('animeverse_lang');
+          var code = supported.indexOf(v) >= 0 ? v : null;
+          if (!code) {
+            var list = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+            for (var i = 0; i < list.length && !code; i++) {
+              var c = String(list[i] || '').toLowerCase().split('-')[0];
+              if (supported.indexOf(c) >= 0) code = c;
+            }
+          }
+          code = code || 'en';
+          document.documentElement.lang = code;
+          document.documentElement.dir = code === 'ar' ? 'rtl' : 'ltr';
+        } catch (e) {}
+      })();
+    </script>
     <script>
       // تطبيق المظهر المحفوظ قبل تحميل React لمنع وميض الألوان عند فتح التطبيق
       (function () {
