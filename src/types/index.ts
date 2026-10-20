@@ -21,6 +21,8 @@ export interface UserProfile {
   accountType: AccountType;
   isVerified: boolean;
   isBanned: boolean;
+  isDeactivated?: boolean;
+  deactivatedAt?: Timestamp;
   followersCount: number;
   followingCount: number;
   postsCount: number;
