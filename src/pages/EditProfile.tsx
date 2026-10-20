@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { checkUsernameAvailable, updateUserProfile } from '../services/userService';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
 import { invalidateUser } from '../services/userCache';
+import { isValidUsername, sanitizeUsernameInput, USERNAME_HINT, USERNAME_ERROR } from '../utils/username';
 import type { Gender } from '../types';
 
 const field =
@@ -184,7 +185,8 @@ const EditProfile: React.FC = () => {
     const uname = username.trim().toLowerCase();
     const pr = pronouns.trim();
     if (name.length < 1 || name.length > 50) return setError('الاسم يجب أن يكون بين 1 و50 حرفاً.');
-    if (!/^[a-z0-9_]{3,30}$/.test(uname)) return setError('اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ فقط (3-30).');
+    // الاسم القديم غير المطابق للقواعد الجديدة يبقى كما هو إن لم يغيّره المستخدم
+    if (uname !== profile.username && !isValidUsername(uname)) return setError(USERNAME_ERROR);
     if (pr.length > 30) return setError('الضمائر لا تتجاوز 30 حرفاً.');
     if (bio.length > 150) return setError('النبذة لا تتجاوز 150 حرفاً.');
 
@@ -260,7 +262,16 @@ const EditProfile: React.FC = () => {
         </div>
         <div>
           <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم المستخدم</label>
-          <input className={field} dir="ltr" maxLength={30} value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input
+            className={field}
+            dir="ltr"
+            maxLength={30}
+            autoCapitalize="none"
+            autoCorrect="off"
+            value={username}
+            onChange={(e) => setUsername(sanitizeUsernameInput(e.target.value))}
+          />
+          <p className="text-[11px] text-slate-500 mt-1.5">{USERNAME_HINT}</p>
         </div>
         <div>
           <label className="block text-[11px] font-bold text-slate-300 mb-1">الضمائر (اختياري)</label>
