@@ -9,6 +9,25 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>AnimeVerse</title>
+    <script>
+      // تطبيق المظهر المحفوظ قبل تحميل React لمنع وميض الألوان عند فتح التطبيق
+      (function () {
+        try {
+          var t = localStorage.getItem('animeverse_theme');
+          if (t !== 'light' && t !== 'dark' && t !== 'system') t = 'dark';
+          var r = t;
+          if (t === 'system') {
+            r = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          var d = document.documentElement;
+          d.classList.add(r);
+          d.setAttribute('data-theme', r);
+          d.style.colorScheme = r;
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', r === 'light' ? '#f5f3fa' : '#0f0f14');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
