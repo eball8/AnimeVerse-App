@@ -79,7 +79,13 @@ jobs:
         run: |
           mkdir -p android/app/src/main/java/com/animeverse/app
           cp android-config/native/GalleryPlugin.java android/app/src/main/java/com/animeverse/app/GalleryPlugin.java
+          cp android-config/native/GoogleHintPlugin.java android/app/src/main/java/com/animeverse/app/GoogleHintPlugin.java
           cp android-config/native/MainActivity.java android/app/src/main/java/com/animeverse/app/MainActivity.java
+
+      - name: Add Google Play Services Auth dependency
+        run: |
+          sed -i "/^dependencies {/a\    implementation 'com.google.android.gms:play-services-auth:21.2.0'" android/app/build.gradle
+          grep -n "play-services-auth" android/app/build.gradle
 
       - name: Build APK with Gradle
         env:
