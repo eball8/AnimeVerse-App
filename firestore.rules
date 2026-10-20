@@ -34,6 +34,31 @@ service cloud.firestore {
       );
     }
 
+    // حظر صارم ثنائي الاتجاه: أي من الطرفين حظر الآخر
+    function isBlockedEitherWay(a, b) {
+      return exists(/databases/$(database)/documents/blocks/$(a + '_' + b))
+        || exists(/databases/$(database)/documents/blocks/$(b + '_' + a));
+    }
+
+    function convData(convId) {
+      return get(
+        /databases/$(database)/documents/conversations/$(convId)
+      ).data;
+    }
+
+    function isGroupConv(convId) {
+      return convData(convId).get('type', 'direct') == 'group';
+    }
+
+    // المحادثات المباشرة فقط: يُرفض الإرسال فوراً عند وجود حظر بين الطرفين
+    function notHardBlocked(convId) {
+      return isGroupConv(convId)
+        || !isBlockedEitherWay(
+          request.auth.uid,
+          otherOf(convData(convId).members)
+        );
+    }
+
     function convMembers(convId) {
       return get(
         /databases/$(database)/documents/conversations/$(convId)
@@ -576,6 +601,7 @@ service cloud.firestore {
         allow create: if signedIn()
           && !isBanned()
           && request.auth.uid in convMembers(convId)
+          && notHardBlocked(convId)
           && request.resource.data.keys().hasOnly(['senderId','ciphertext','iv','senderKeyId','recipientKeyId','createdAt','replyTo','reactions','wraps'])
           && (!('wraps' in request.resource.data) || request.resource.data.wraps is map)
           && request.resource.data.senderId == request.auth.uid
