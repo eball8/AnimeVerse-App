@@ -27,6 +27,11 @@ export interface UserProfile {
   updatedAt: Timestamp;
   lastUsernameChange?: Timestamp;
   lastDisplayNameChange?: Timestamp;
+  // إعدادات الخصوصية والنشاط
+  showActivity?: boolean;
+  showLikedReels?: boolean;
+  messagePrivacy?: 'everyone' | 'following' | 'nobody';
+  lastActive?: Timestamp;
 }
 
 export interface Anime {
