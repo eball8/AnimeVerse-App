@@ -4,7 +4,7 @@ import {
   ArrowRight, User, Lock, Shield, Smartphone, PlayCircle,
   Palette, Trash2, MessageSquare, Info, LogOut, ChevronLeft,
   CheckCircle2, AlertCircle, Loader2, Globe, Check, Mail, KeyRound,
-  ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink,
+  ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink, UserX, PauseCircle,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -27,6 +27,9 @@ import {
 import type { DeviceItem, PlayerPref } from '../services/settingsService';
 import { clearMyFriendActivity } from '../services/postService';
 import Avatar from '../components/Avatar';
+import DatePickerSheet from '../components/DatePickerSheet';
+import { calcAge } from '../utils/age';
+import { deactivateAccount, deleteAccount } from '../services/accountService';
 
 // ---------- عناصر مشتركة ----------
 const inputCls =
@@ -130,13 +133,29 @@ const TrustBanner: React.FC<{ loaded: boolean; trusted: boolean; failed: boolean
 // ---------- البيانات الشخصية ----------
 const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
-  const { user, profile, resendVerification } = useAuth();
+  const { user, profile, resendVerification, refreshProfile } = useAuth();
   const { lang } = useI18n();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!user) return null;
   const created = (profile?.createdAt as any)?.toDate?.() as Date | undefined;
+  const age = profile?.birthDate ? calcAge(profile.birthDate) : profile?.age;
+
+  const saveBirth = async (iso: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await updateUserProfile(user.uid, { birthDate: iso, age: calcAge(iso) });
+      await refreshProfile();
+      setMsg({ kind: 'ok', text: 'تم حفظ تاريخ الميلاد.' });
+    } catch (e) {
+      console.error(e);
+      setMsg({ kind: 'err', text: 'تعذّر حفظ تاريخ الميلاد.' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const resend = async () => {
     setBusy(true);
@@ -178,6 +197,19 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           }
         />
         <InfoRow label="تاريخ إنشاء الحساب" value={created ? created.toLocaleDateString(lang) : undefined} />
+      </div>
+
+      <div className="card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black text-white">تاريخ الميلاد</h3>
+          {typeof age === 'number' && <span className="text-xs text-slate-400">العمر: {age} سنة</span>}
+        </div>
+        <DatePickerSheet
+          value={profile?.birthDate || ''}
+          onChange={saveBirth}
+          minAge={13}
+          placeholder="أضف تاريخ ميلادك"
+        />
       </div>
 
       {!user.emailVerified && user.email && (
@@ -972,6 +1004,145 @@ const AboutSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 };
 
+// ---------- إدارة الحساب: تعطيل مؤقت / حذف نهائي ----------
+const DELETE_WORD = 'حذف';
+
+const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { trusted, current, loaded, failed } = useDevices(user!.uid);
+  const [mode, setMode] = useState<'none' | 'deactivate' | 'delete'>('none');
+  const [password, setPassword] = useState('');
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState('');
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  if (!user) return null;
+  const hasPassword = hasProvider(user, 'password');
+  const canEdit = loaded && trusted;
+
+  const reset = () => {
+    setMode('none');
+    setPassword('');
+    setTyped('');
+    setMsg(null);
+  };
+
+  const doDeactivate = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await deactivateAccount(user.uid);
+      navigate('/login', { replace: true });
+    } catch (e) {
+      console.error(e);
+      setMsg({ kind: 'err', text: 'تعذّر تعطيل الحساب، حاول مرة أخرى.' });
+      setBusy(false);
+    }
+  };
+
+  const doDelete = async () => {
+    if (typed.trim() !== DELETE_WORD) return setMsg({ kind: 'err', text: `اكتب كلمة "${DELETE_WORD}" للتأكيد.` });
+    if (hasPassword && !password) return setMsg({ kind: 'err', text: 'اكتب كلمة السر لتأكيد هويتك.' });
+    setBusy(true);
+    setMsg(null);
+    try {
+      await deleteAccount(user, hasPassword ? password : undefined, setStep);
+      navigate('/login', { replace: true });
+    } catch (e) {
+      console.error(e);
+      setMsg({ kind: 'err', text: authErrorText(e) });
+      setBusy(false);
+      setStep('');
+    }
+  };
+
+  return (
+    <SubPage title="تعطيل الحساب أو حذفه" onBack={onBack}>
+      <TrustBanner loaded={loaded} trusted={trusted} failed={failed} daysLeft={current?.daysLeft} />
+
+      <div className="card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <PauseCircle className="w-5 h-5 text-amber-400" />
+          <h3 className="text-sm font-black text-white">تعطيل الحساب مؤقتاً</h3>
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          يختفي ملفك الشخصي من البحث ومن زوار صفحتك، وتبقى بياناتك محفوظة كما هي. يعاد تفعيل حسابك تلقائياً
+          عند تسجيل الدخول في أي وقت.
+        </p>
+        {mode === 'deactivate' ? (
+          <div className="space-y-2">
+            <button onClick={doDeactivate} disabled={!canEdit || busy} className={btnCls}>
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد التعطيل وتسجيل الخروج
+            </button>
+            <button onClick={reset} disabled={busy} className={btnCls}>إلغاء</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { reset(); setMode('deactivate'); }}
+            disabled={!canEdit || busy}
+            className={btnCls}
+          >
+            <PauseCircle className="w-4 h-4" /> تعطيل حسابي
+          </button>
+        )}
+      </div>
+
+      <div className="card p-4 space-y-3 border-red-500/30">
+        <div className="flex items-center gap-2">
+          <UserX className="w-5 h-5 text-red-400" />
+          <h3 className="text-sm font-black text-white">حذف الحساب نهائياً</h3>
+        </div>
+        <p className="text-xs text-red-300 leading-relaxed">
+          لا يمكن التراجع. تُحذف منشوراتك وتعليقاتك وقصصك وإعجاباتك ومتابعاتك ورسائلك المرسلة ومفاتيح التشفير
+          واسم المستخدم وحساب الدخول نفسه. إن أردت العودة لاحقاً فعطّل الحساب بدل حذفه.
+        </p>
+        {mode === 'delete' ? (
+          <div className="space-y-2">
+            {hasPassword && (
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="كلمة السر الحالية"
+                className={inputCls}
+                disabled={busy}
+              />
+            )}
+            {!hasPassword && (
+              <p className="text-[11px] text-slate-400">سيُطلب منك تأكيد الهوية بحساب جوجل.</p>
+            )}
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={`اكتب "${DELETE_WORD}" للتأكيد`}
+              className={inputCls}
+              disabled={busy}
+            />
+            <button onClick={doDelete} disabled={!canEdit || busy} className={dangerBtnCls}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {busy && step ? step : 'حذف حسابي نهائياً'}
+            </button>
+            <button onClick={reset} disabled={busy} className={btnCls}>إلغاء</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { reset(); setMode('delete'); }}
+            disabled={!canEdit || busy}
+            className={dangerBtnCls}
+          >
+            <Trash2 className="w-4 h-4" /> حذف حسابي
+          </button>
+        )}
+      </div>
+
+      {msg && <Notice kind={msg.kind} text={msg.text} />}
+    </SubPage>
+  );
+};
+
 // ---------- الصفحة الرئيسية ----------
 const Settings: React.FC = () => {
   const navigate = useNavigate();
@@ -1015,6 +1186,8 @@ const Settings: React.FC = () => {
         return <SecuritySection onBack={back} />;
       case 'devices':
         return <DevicesSection onBack={back} />;
+      case 'manage':
+        return <ManageAccountSection onBack={back} />;
       case 'privacy':
         return <PrivacySection onBack={back} />;
       case 'e2ee':
@@ -1066,6 +1239,7 @@ const Settings: React.FC = () => {
                 <Row icon={User} label={t('settings.personal')} onClick={() => setActiveSection('account')} />
                 <Row icon={Shield} label={t('settings.security')} onClick={() => setActiveSection('security')} />
                 <Row icon={Smartphone} label={t('settings.devices')} onClick={() => setActiveSection('devices')} />
+                <Row icon={UserX} label="تعطيل الحساب أو حذفه" onClick={() => setActiveSection('manage')} />
               </div>
             </div>
 
