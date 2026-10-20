@@ -1,21 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
-
-const MONTHS = [
-  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-];
-// الأسبوع يبدأ بالسبت (الواجهة RTL فيظهر السبت على اليمين)
-const WEEKDAYS = ['س', 'ح', 'ن', 'ث', 'ر', 'خ', 'ج'];
+import { useI18n } from '../i18n/I18nContext';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const toISODate = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
-export const formatArabicDate = (iso: string) => {
+// أرقام إنجليزية دائماً (حتى بالعربية) + أسماء الأشهر والأيام تتبع لغة التطبيق تلقائياً
+const localeOf = (lang: string) => (lang === 'ar' ? 'ar-u-nu-latn' : lang);
+
+// بداية الأسبوع: السبت للعربية، الاثنين للفرنسية والإسبانية، الأحد للباقي
+const weekStartOf = (lang: string) => (lang === 'ar' ? 6 : lang === 'fr' || lang === 'es' ? 1 : 0);
+
+export const formatDate = (iso: string, lang: string) => {
   const [y, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]} ${y}`;
+  try {
+    return new Intl.DateTimeFormat(localeOf(lang), { day: 'numeric', month: 'long', year: 'numeric' }).format(
+      new Date(y, m - 1, d)
+    );
+  } catch {
+    return iso;
+  }
 };
+
+// للتوافق مع الكود القديم
+export const formatArabicDate = (iso: string) => formatDate(iso, 'ar');
 
 const parseISO = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -36,9 +45,26 @@ const DatePickerSheet: React.FC<Props> = ({
   onChange,
   minAge = 13,
   maxAge = 100,
-  placeholder = 'اختر تاريخ ميلادك',
-  label = 'تاريخ الميلاد',
+  placeholder,
+  label,
 }) => {
+  const { t, lang, dir } = useI18n();
+  const rtl = dir === 'rtl';
+  const ph = placeholder || t('date.pick');
+  const lb = label || t('date.birth');
+
+  const months = useMemo(() => {
+    const f = new Intl.DateTimeFormat(localeOf(lang), { month: 'long' });
+    return Array.from({ length: 12 }, (_, i) => f.format(new Date(2023, i, 1)));
+  }, [lang]);
+  const weekStart = weekStartOf(lang);
+  const weekdays = useMemo(() => {
+    const f = new Intl.DateTimeFormat(localeOf(lang), { weekday: 'narrow' });
+    // 1 يناير 2023 كان يوم أحد
+    return Array.from({ length: 7 }, (_, i) => f.format(new Date(2023, 0, 1 + ((weekStart + i) % 7))));
+  }, [lang, weekStart]);
+  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextIcon = rtl ? ChevronLeft : ChevronRight;
   const today = new Date();
   const maxYear = today.getFullYear() - minAge;
   const minYear = today.getFullYear() - maxAge;
@@ -68,10 +94,10 @@ const DatePickerSheet: React.FC<Props> = ({
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1).getDay(); // 0=الأحد
-    const offset = (first + 1) % 7; // السبت = 0
+    const offset = (first - weekStart + 7) % 7;
     const total = new Date(year, month + 1, 0).getDate();
     return [...Array(offset).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)] as (number | null)[];
-  }, [year, month]);
+  }, [year, month, weekStart]);
 
   const isDisabled = (d: number) => new Date(year, month, d) > latest || year < minYear;
 
@@ -98,7 +124,7 @@ const DatePickerSheet: React.FC<Props> = ({
   };
 
   const sheet = open && (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center" role="dialog" aria-modal="true" aria-label={label}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center" role="dialog" aria-modal="true" aria-label={lb}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={() => setOpen(false)} />
       <div className="relative w-full max-w-md bg-dark-900 border-t border-x border-white/10 rounded-t-[2rem] p-5 pb-6 animate-slide-up shadow-[0_-20px_60px_-10px_rgba(217,70,239,0.25)]">
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/15" />
@@ -108,7 +134,7 @@ const DatePickerSheet: React.FC<Props> = ({
             type="button"
             onClick={() => setOpen(false)}
             className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white"
-            aria-label="إغلاق"
+            aria-label={t('date.close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -117,7 +143,7 @@ const DatePickerSheet: React.FC<Props> = ({
             onClick={() => setView(view === 'days' ? 'years' : 'days')}
             className="px-4 py-2 rounded-2xl bg-white/5 border border-white/10 text-sm font-black text-white hover:bg-white/10 transition"
           >
-            {MONTHS[month]} {year}
+            {months[month]} {year}
           </button>
           <div className="w-9" />
         </div>
@@ -148,25 +174,25 @@ const DatePickerSheet: React.FC<Props> = ({
                 disabled={!canPrev}
                 onClick={() => step(-1)}
                 className="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:bg-white/10 disabled:opacity-25"
-                aria-label="الشهر السابق"
+                aria-label={t('date.prev')}
               >
-                <ChevronRight className="w-5 h-5" />
+                <PrevIcon className="w-5 h-5" />
               </button>
-              <span className="text-xs text-slate-500">اضغط على الشهر لاختيار السنة بسرعة</span>
+              <span className="text-xs text-slate-500">{t('date.hint')}</span>
               <button
                 type="button"
                 disabled={!canNext}
                 onClick={() => step(1)}
                 className="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:bg-white/10 disabled:opacity-25"
-                aria-label="الشهر التالي"
+                aria-label={t('date.next')}
               >
-                <ChevronLeft className="w-5 h-5" />
+                <NextIcon className="w-5 h-5" />
               </button>
             </div>
 
             <div className="grid grid-cols-7 mb-1">
-              {WEEKDAYS.map((w) => (
-                <div key={w} className="text-center text-[11px] font-bold text-slate-500 py-1.5">{w}</div>
+              {weekdays.map((w, i) => (
+                <div key={i} className="text-center text-[11px] font-bold text-slate-500 py-1.5">{w}</div>
               ))}
             </div>
 
@@ -205,10 +231,10 @@ const DatePickerSheet: React.FC<Props> = ({
             disabled={!picked}
             className="flex-1 btn-primary py-3 disabled:opacity-40"
           >
-            {picked ? `تأكيد ${formatArabicDate(picked)}` : 'اختر يوماً'}
+            {picked ? t('date.confirm', { date: formatDate(picked, lang) }) : t('date.pickDay')}
           </button>
         </div>
-        <p className="text-center text-[11px] text-slate-500 mt-3">يجب أن يكون عمرك {minAge} سنة على الأقل</p>
+        <p className="text-center text-[11px] text-slate-500 mt-3">{t('date.minAge', { age: minAge })}</p>
       </div>
     </div>
   );
@@ -218,11 +244,11 @@ const DatePickerSheet: React.FC<Props> = ({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative w-full pr-10 pl-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-right outline-none focus:border-primary-500/50 hover:border-white/20 transition"
+        className="relative w-full ps-10 pe-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-start outline-none focus:border-primary-500/50 hover:border-white/20 transition"
       >
-        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+        <Calendar className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
         <span className={value ? 'text-white' : 'text-slate-500'}>
-          {value ? formatArabicDate(value) : placeholder}
+          {value ? formatDate(value, lang) : ph}
         </span>
       </button>
       {sheet && createPortal(sheet, document.body)}
