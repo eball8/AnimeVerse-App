@@ -2,12 +2,17 @@ import {
   EmailAuthProvider,
   GoogleAuthProvider,
   linkWithCredential,
+  linkWithPopup,
   reauthenticateWithCredential,
   reauthenticateWithPopup,
+  reload,
+  sendEmailVerification,
+  unlink,
   updatePassword,
+  verifyBeforeUpdateEmail,
 } from 'firebase/auth';
-import type { User } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
+import type { AuthCredential, User } from 'firebase/auth';
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, db, googleProvider } from '../config/firebase';
@@ -79,30 +84,116 @@ export const removeDevice = async (uid: string, deviceId: string): Promise<void>
 };
 
 // ---------------- طرق تسجيل الدخول ----------------
-export const hasProvider = (user: User, providerId: 'google.com' | 'password'): boolean =>
+type ProviderId = 'google.com' | 'password';
+
+export const hasProvider = (user: User, providerId: ProviderId): boolean =>
   user.providerData.some((p) => p.providerId === providerId);
+
+// البريد المرتبط بطريقة معيّنة (بريد جوجل أو بريد كلمة السر)
+export const getProviderEmail = (user: User, providerId: ProviderId): string | null =>
+  user.providerData.find((p) => p.providerId === providerId)?.email ?? null;
+
+const appError = (code: string): Error => {
+  const e: any = new Error(code);
+  e.code = code;
+  return e;
+};
+
+const currentUserOrThrow = (): User => {
+  const user = auth.currentUser;
+  if (!user) throw appError('app/no-user');
+  return user;
+};
+
+// الأجهزة غير الموثوقة ممنوعة من أي تعديل على طرق الدخول (يُفحص هنا وليس في الواجهة فقط)
+const assertTrusted = async (uid: string): Promise<void> => {
+  let devices: DeviceItem[];
+  try {
+    devices = await loadDevices(uid);
+  } catch {
+    throw appError('app/trust-check-failed');
+  }
+  if (!isCurrentTrusted(devices)) throw appError('app/untrusted-device');
+};
+
+// استخراج البريد من idToken الخاص بجوجل (للمقارنة قبل الربط)
+const emailFromIdToken = (token: string): string | null => {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(part)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const mail = String(JSON.parse(json).email || '').toLowerCase();
+    return mail || null;
+  } catch {
+    return null;
+  }
+};
+
+// اختيار حساب جوجل على أندرويد بدون تسجيل دخول Firebase
+const pickNativeGoogle = async (): Promise<{ cred: AuthCredential; email: string | null }> => {
+  const result = await FirebaseAuthentication.signInWithGoogle({
+    skipNativeAuth: true,
+    useCredentialManager: false,
+  } as any);
+  const idToken = result.credential?.idToken;
+  if (!idToken) throw new Error('NO_ID_TOKEN');
+  return { cred: GoogleAuthProvider.credential(idToken), email: emailFromIdToken(idToken) };
+};
+
+// إعادة التحقق بجوجل، وتُرجع بيانات الاعتماد لاستخدامها في التراجع عند الفشل
+const reauthGoogleCred = async (user: User): Promise<AuthCredential | null> => {
+  if (Capacitor.isNativePlatform()) {
+    const { cred } = await pickNativeGoogle();
+    await reauthenticateWithCredential(user, cred);
+    return cred;
+  }
+  const res = await reauthenticateWithPopup(user, googleProvider);
+  return GoogleAuthProvider.credentialFromResult(res);
+};
 
 export const reauthGoogle = async (): Promise<void> => {
   const user = auth.currentUser;
   if (!user) throw new Error('no-user');
-  if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithGoogle({
-      skipNativeAuth: true,
-      useCredentialManager: false,
-    } as any);
-    const idToken = result.credential?.idToken;
-    if (!idToken) throw new Error('NO_ID_TOKEN');
-    await reauthenticateWithCredential(user, GoogleAuthProvider.credential(idToken));
-  } else {
-    await reauthenticateWithPopup(user, googleProvider);
-  }
+  await reauthGoogleCred(user);
 };
 
-// إضافة البريد وكلمة السر لحساب مسجّل بجوجل
-export const addEmailPassword = async (email: string, password: string): Promise<void> => {
+const reauthPassword = async (user: User, password: string): Promise<void> => {
+  const mail = getProviderEmail(user, 'password') || user.email;
+  if (!mail) throw appError('app/need-email-method');
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(mail, password));
+};
+
+// يحفظ البريد الحالي في userPrivate (حسب قواعد Firestore) إن اختلف عن المحفوظ
+export const syncPrivateEmail = async (): Promise<void> => {
   const user = auth.currentUser;
-  if (!user) throw new Error('no-user');
-  const cred = EmailAuthProvider.credential(email, password);
+  if (!user) return;
+  try {
+    await reload(user);
+  } catch {
+    // لا يؤثر
+  }
+  const email = (user.email || getProviderEmail(user, 'password') || getProviderEmail(user, 'google.com') || '')
+    .trim()
+    .toLowerCase();
+  if (!email) return;
+  const ref = doc(db, 'userPrivate', user.uid);
+  const snap = await getDoc(ref).catch(() => null);
+  if (snap?.exists() && String(snap.data().email || '').toLowerCase() === email) return;
+  await setDoc(ref, { email, updatedAt: serverTimestamp() });
+};
+
+// ---- البريد وكلمة السر ----
+
+// إضافة البريد وكلمة السر (لحساب مسجّل بجوجل). البريد يكتبه المستخدم حتى لو كان نفس بريد جوجل.
+export const addEmailPassword = async (email: string, password: string): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (hasProvider(user, 'password')) throw { code: 'auth/provider-already-linked' };
+  const cred = EmailAuthProvider.credential(email.trim().toLowerCase(), password);
   try {
     await linkWithCredential(user, cred);
   } catch (e: any) {
@@ -110,20 +201,113 @@ export const addEmailPassword = async (email: string, password: string): Promise
     await reauthGoogle();
     await linkWithCredential(user, cred);
   }
+  if (!user.emailVerified) sendEmailVerification(user).catch(() => undefined);
+  await syncPrivateEmail().catch(() => undefined);
+};
+
+// تعديل البريد: يتطلب كلمة السر الحالية، ويُرسَل رابط تأكيد للبريد الجديد ولا يتغير قبل فتحه
+export const changeEmail = async (currentPassword: string, newEmail: string): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (!hasProvider(user, 'password')) throw appError('app/need-email-method');
+  const next = newEmail.trim().toLowerCase();
+  const current = (getProviderEmail(user, 'password') || user.email || '').toLowerCase();
+  if (next === current) throw appError('app/same-email');
+  await reauthPassword(user, currentPassword);
+  await verifyBeforeUpdateEmail(user, next);
+};
+
+// حذف طريقة البريد وكلمة السر: ممنوع إن لم يكن جوجل مضافاً
+export const removeEmailMethod = async (): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (!hasProvider(user, 'password')) throw { code: 'auth/no-such-provider' };
+  if (!hasProvider(user, 'google.com')) throw appError('app/last-method');
+  await reauthGoogle();
+  await unlink(user, 'password');
+  await syncPrivateEmail().catch(() => undefined);
+};
+
+// ---- جوجل ----
+
+// ربط حساب جوجل (لحساب مسجّل بالبريد فقط)
+export const addGoogleAccount = async (password: string): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (hasProvider(user, 'google.com')) throw { code: 'auth/provider-already-linked' };
+  if (!hasProvider(user, 'password')) throw appError('app/need-email-method');
+  await reauthPassword(user, password);
+  if (Capacitor.isNativePlatform()) {
+    const { cred } = await pickNativeGoogle();
+    await linkWithCredential(user, cred);
+  } else {
+    await linkWithPopup(user, googleProvider);
+  }
+  await syncPrivateEmail().catch(() => undefined);
+};
+
+// حذف جوجل: ممنوع إن لم يكن البريد وكلمة السر مضافين
+export const removeGoogleAccount = async (password: string): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (!hasProvider(user, 'google.com')) throw { code: 'auth/no-such-provider' };
+  if (!hasProvider(user, 'password')) throw appError('app/last-method');
+  await reauthPassword(user, password);
+  await unlink(user, 'google.com');
+  await syncPrivateEmail().catch(() => undefined);
+};
+
+// تغيير حساب جوجل: تأكيد الحساب الحالي ثم اختيار الجديد، مع التراجع التلقائي إن فشل الربط
+export const changeGoogleAccount = async (): Promise<void> => {
+  const user = currentUserOrThrow();
+  await assertTrusted(user.uid);
+  if (!hasProvider(user, 'google.com')) throw { code: 'auth/no-such-provider' };
+  if (!hasProvider(user, 'password')) throw appError('app/need-email-method');
+
+  const oldEmail = (getProviderEmail(user, 'google.com') || '').toLowerCase();
+  const oldCred = await reauthGoogleCred(user);
+
+  let newCred: AuthCredential | null = null;
+  if (Capacitor.isNativePlatform()) {
+    const picked = await pickNativeGoogle();
+    if (picked.email && oldEmail && picked.email === oldEmail) throw appError('app/same-google');
+    newCred = picked.cred;
+  }
+
+  await unlink(user, 'google.com');
+  try {
+    if (newCred) await linkWithCredential(user, newCred);
+    else await linkWithPopup(user, googleProvider);
+  } catch (e) {
+    // نعيد ربط الحساب القديم حتى لا يفقد المستخدم طريقة الدخول بجوجل
+    if (oldCred) await linkWithCredential(user, oldCred).catch(() => undefined);
+    throw e;
+  }
+  await syncPrivateEmail().catch(() => undefined);
 };
 
 export const changePassword = async (current: string, next: string): Promise<void> => {
   const user = auth.currentUser;
   if (!user || !user.email) throw new Error('no-user');
+  await assertTrusted(user.uid);
   await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, current));
   await updatePassword(user, next);
 };
 
 export const authErrorText = (e: any): string => {
   const code = String(e?.code ?? e?.message ?? '');
+  if (/untrusted-device/.test(code)) return 'هذا الجهاز غير موثوق بعد، لا يمكن تعديل طرق تسجيل الدخول منه.';
+  if (/trust-check-failed/.test(code)) return 'تعذّر التحقق من حالة هذا الجهاز. تحقق من الاتصال وأعد المحاولة.';
+  if (/last-method/.test(code)) return 'لا يمكن حذف هذه الطريقة لأنها الوحيدة المتبقية. أضف طريقة أخرى أولاً.';
+  if (/same-email/.test(code)) return 'هذا هو بريدك الحالي بالفعل.';
+  if (/same-google/.test(code)) return 'اخترت نفس حساب جوجل الحالي. اختر حساباً مختلفاً.';
+  if (/need-email-method/.test(code)) return 'أضف البريد وكلمة السر أولاً.';
+  if (/no-such-provider/.test(code)) return 'هذه الطريقة غير مضافة أصلاً.';
+  if (/invalid-email/.test(code)) return 'البريد الإلكتروني غير صحيح.';
   if (/wrong-password|invalid-credential|invalid-login/.test(code)) return 'كلمة السر الحالية غير صحيحة.';
   if (/weak-password/.test(code)) return 'كلمة السر ضعيفة، استخدم 6 أحرف أو أكثر.';
-  if (/email-already-in-use|credential-already-in-use/.test(code)) return 'هذا البريد مرتبط بحساب آخر.';
+  if (/email-already-in-use/.test(code)) return 'هذا البريد مرتبط بحساب آخر.';
+  if (/credential-already-in-use/.test(code)) return 'هذا الحساب مرتبط بمستخدم آخر في AnimeVerse.';
   if (/provider-already-linked/.test(code)) return 'هذه الطريقة مضافة مسبقاً.';
   if (/user-mismatch/.test(code)) return 'سجّل بنفس حساب جوجل المرتبط بهذا الحساب.';
   if (/too-many-requests/.test(code)) return 'محاولات كثيرة، حاول لاحقاً.';
