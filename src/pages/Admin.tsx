@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import { logAdmin } from '../services/adminLog';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
 import type { UserProfile, UserRole } from '../types';
@@ -18,32 +19,38 @@ type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'ann
 const input =
   'w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500';
 const smallBtn = 'px-3 py-1.5 rounded-xl text-xs font-bold border active:scale-95 flex items-center gap-1';
-const errMsg = (e: any) => alert('حدث خطأ: ' + (e?.message || e));
 const Spinner = () => <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto my-10" />;
+
+// يعرض رسالة الخطأ بلغة المستخدم
+const useErr = () => {
+  const { t } = useI18n();
+  return useCallback((e: any) => alert(t('adm.err', { msg: e?.message || e })), [t]);
+};
 
 /* -------------------------------- الإحصائيات -------------------------------- */
 const StatsTab: React.FC = () => {
-  const [stats, setStats] = useState<{ label: string; value: string }[] | null>(null);
+  const { t } = useI18n();
+  const [stats, setStats] = useState<{ key: string; value: string }[] | null>(null);
 
   useEffect(() => {
     (async () => {
       const count = async (q: any) => (await getCountFromServer(q)).data().count;
       const week = Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const defs: [string, any][] = [
-        ['المستخدمون', collection(db, 'users')],
-        ['جدد (7 أيام)', query(collection(db, 'users'), where('createdAt', '>=', week))],
-        ['المحظورون', query(collection(db, 'users'), where('isBanned', '==', true))],
-        ['المنشورات', collection(db, 'posts')],
-        ['التعليقات', collection(db, 'comments')],
-        ['بلاغات معلّقة', query(collection(db, 'reports'), where('status', '==', 'pending'))],
-        ['المتابعات', collection(db, 'follows')],
-        ['عناصر المكتبات', collection(db, 'library')],
-        ['التقييمات', collection(db, 'episodeRatings')],
-        ['أنمي خاص', collection(db, 'customAnime')],
+        ['adm.st.users', collection(db, 'users')],
+        ['adm.st.newUsers', query(collection(db, 'users'), where('createdAt', '>=', week))],
+        ['adm.st.banned', query(collection(db, 'users'), where('isBanned', '==', true))],
+        ['adm.st.posts', collection(db, 'posts')],
+        ['adm.st.comments', collection(db, 'comments')],
+        ['adm.st.pendingReports', query(collection(db, 'reports'), where('status', '==', 'pending'))],
+        ['adm.st.follows', collection(db, 'follows')],
+        ['adm.st.libraryItems', collection(db, 'library')],
+        ['adm.st.ratings', collection(db, 'episodeRatings')],
+        ['adm.st.customAnime', collection(db, 'customAnime')],
       ];
       const res = await Promise.allSettled(defs.map(([, q]) => count(q)));
-      setStats(defs.map(([label], i) => ({
-        label,
+      setStats(defs.map(([key], i) => ({
+        key,
         value: res[i].status === 'fulfilled' ? String((res[i] as PromiseFulfilledResult<number>).value) : '—',
       })));
     })();
@@ -53,9 +60,9 @@ const StatsTab: React.FC = () => {
   return (
     <div className="grid grid-cols-2 gap-3">
       {stats.map((s) => (
-        <div key={s.label} className="card p-4 text-center">
+        <div key={s.key} className="card p-4 text-center">
           <p className="text-2xl font-black text-primary-400">{s.value}</p>
-          <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
+          <p className="text-[11px] text-slate-400 mt-1">{t(s.key)}</p>
         </div>
       ))}
     </div>
@@ -64,6 +71,8 @@ const StatsTab: React.FC = () => {
 
 /* ------------------------------ المستخدمون ------------------------------ */
 const UsersTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +87,7 @@ const UsersTab: React.FC = () => {
       setUsers(snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserProfile)));
     } catch (e) { errMsg(e); }
     setLoading(false);
-  }, []);
+  }, [errMsg]);
   useEffect(() => { load(); }, [load]);
 
   const patch = async (u: UserProfile, data: Partial<UserProfile>, action: string, details = '') => {
@@ -99,7 +108,7 @@ const UsersTab: React.FC = () => {
   };
 
   const remove = async (u: UserProfile) => {
-    if (!confirm(`حذف ملف ${u.displayName}؟ (الحظر أفضل. حساب الدخول نفسه لا يُحذف من هنا)`)) return;
+    if (!confirm(t('adm.confirmDeleteProfile', { name: u.displayName }))) return;
     try {
       await deleteDoc(doc(db, 'users', u.uid));
       setUsers((us) => us.filter((x) => x.uid !== u.uid));
@@ -113,32 +122,32 @@ const UsersTab: React.FC = () => {
   return (
     <div className="space-y-3">
       <div className="relative">
-        <Search className="w-4 h-4 text-slate-500 absolute right-3 top-3.5" />
-        <input className={input + ' pr-9'} placeholder="بحث بالاسم أو اسم المستخدم" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Search className="w-4 h-4 text-slate-500 absolute start-3 top-3.5" />
+        <input className={input + ' ps-9'} placeholder={t('adm.searchUser')} value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
-      <p className="text-[11px] text-slate-500">{filtered.length} مستخدم</p>
+      <p className="text-[11px] text-slate-500">{t('adm.userCount', { n: filtered.length })}</p>
       {filtered.map((u) => (
         <div key={u.uid} className="card p-3 space-y-3">
-          <button onClick={() => showEmail(u.uid)} className="w-full flex items-center gap-3 text-right">
+          <button onClick={() => showEmail(u.uid)} className="w-full flex items-center gap-3 text-start">
             <img src={u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.uid}`} alt="" className="w-10 h-10 rounded-full bg-dark-900" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-white truncate">{u.displayName} {u.isVerified && '✔️'}</p>
-              <p className="text-[11px] text-slate-500 truncate">@{u.username} · {u.role}{u.isBanned ? ' · محظور' : ''}</p>
+              <p className="text-[11px] text-slate-500 truncate">@{u.username} · {u.role}{u.isBanned ? ` · ${t('adm.bannedTag')}` : ''}</p>
             </div>
           </button>
           {open === u.uid && (
             <div className="space-y-3 pt-2 border-t border-white/5">
-              <p className="text-[11px] text-slate-400 break-all">البريد: {emails[u.uid] ?? '...'}</p>
+              <p className="text-[11px] text-slate-400 break-all">{t('adm.email', { email: emails[u.uid] ?? '...' })}</p>
               <div className="flex flex-wrap gap-2">
                 <button
                   disabled={u.uid === user?.uid}
                   onClick={() => patch(u, { isBanned: !u.isBanned }, u.isBanned ? 'unban_user' : 'ban_user')}
                   className={`${smallBtn} ${u.isBanned ? 'border-emerald-500/40 text-emerald-400' : 'border-red-500/40 text-red-400'} disabled:opacity-40`}
                 >
-                  <Ban className="w-3.5 h-3.5" /> {u.isBanned ? 'رفع الحظر' : 'حظر'}
+                  <Ban className="w-3.5 h-3.5" /> {u.isBanned ? t('adm.unban') : t('adm.ban')}
                 </button>
                 <button onClick={() => patch(u, { isVerified: !u.isVerified }, u.isVerified ? 'unverify_user' : 'verify_user')} className={`${smallBtn} border-primary-500/40 text-primary-400`}>
-                  <BadgeCheck className="w-3.5 h-3.5" /> {u.isVerified ? 'إلغاء التوثيق' : 'توثيق'}
+                  <BadgeCheck className="w-3.5 h-3.5" /> {u.isVerified ? t('adm.unverify') : t('adm.verify')}
                 </button>
                 <select
                   value={u.role}
@@ -151,7 +160,7 @@ const UsersTab: React.FC = () => {
                   <option value="admin">admin</option>
                 </select>
                 <button disabled={u.uid === user?.uid} onClick={() => remove(u)} className={`${smallBtn} border-red-500/40 text-red-400 disabled:opacity-40`}>
-                  <Trash2 className="w-3.5 h-3.5" /> حذف الملف
+                  <Trash2 className="w-3.5 h-3.5" /> {t('adm.deleteProfile')}
                 </button>
               </div>
             </div>
@@ -164,6 +173,8 @@ const UsersTab: React.FC = () => {
 
 /* ------------------------------- المنشورات ------------------------------- */
 const PostsTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -178,7 +189,7 @@ const PostsTab: React.FC = () => {
   }, []);
 
   const remove = async (p: any) => {
-    if (!confirm('حذف هذا المنشور مع تعليقاته وإعجاباته؟')) return;
+    if (!confirm(t('adm.confirmDeletePost'))) return;
     try {
       const [cs, ls] = await Promise.all([
         getDocs(query(collection(db, 'comments'), where('postId', '==', p.id), limit(300))),
@@ -196,7 +207,7 @@ const PostsTab: React.FC = () => {
   };
 
   if (loading) return <Spinner />;
-  if (!posts.length) return <p className="text-center text-sm text-slate-500 py-10">لا توجد منشورات</p>;
+  if (!posts.length) return <p className="text-center text-sm text-slate-500 py-10">{t('adm.noPosts')}</p>;
 
   return (
     <div className="space-y-3">
@@ -208,7 +219,7 @@ const PostsTab: React.FC = () => {
             ? <video src={p.mediaUrl} controls className="w-full max-h-52 rounded-xl" />
             : <img src={p.mediaUrl} alt="" className="w-full max-h-52 object-cover rounded-xl" />)}
           <button onClick={() => remove(p)} className={`${smallBtn} border-red-500/40 text-red-400`}>
-            <Trash2 className="w-3.5 h-3.5" /> حذف
+            <Trash2 className="w-3.5 h-3.5" /> {t('adm.delete')}
           </button>
         </div>
       ))}
@@ -218,6 +229,8 @@ const PostsTab: React.FC = () => {
 
 /* -------------------------------- البلاغات -------------------------------- */
 const ReportsTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const { user } = useAuth();
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,7 +261,7 @@ const ReportsTab: React.FC = () => {
   };
 
   if (loading) return <Spinner />;
-  if (!reports.length) return <p className="text-center text-sm text-slate-500 py-10">لا توجد بلاغات</p>;
+  if (!reports.length) return <p className="text-center text-sm text-slate-500 py-10">{t('adm.noReports')}</p>;
 
   return (
     <div className="space-y-3">
@@ -256,12 +269,12 @@ const ReportsTab: React.FC = () => {
         <div key={r.id} className="card p-3 space-y-2">
           <p className="text-xs text-slate-400">{r.type} · {r.targetType} · <span className="text-white">{r.status}</span></p>
           <p className="text-sm text-slate-200 break-words">{r.reason}</p>
-          <p className="text-[10px] text-slate-500 break-all">الهدف: {r.targetId}</p>
+          <p className="text-[10px] text-slate-500 break-all">{t('adm.target', { id: r.targetId })}</p>
           <div className="flex gap-2">
             {r.status === 'pending' && (
               <>
-                <button onClick={() => setStatus(r.id, 'resolved')} className={`${smallBtn} border-emerald-500/40 text-emerald-400`}>تم الحل</button>
-                <button onClick={() => setStatus(r.id, 'dismissed')} className={`${smallBtn} border-white/20 text-slate-300`}>تجاهل</button>
+                <button onClick={() => setStatus(r.id, 'resolved')} className={`${smallBtn} border-emerald-500/40 text-emerald-400`}>{t('adm.resolved')}</button>
+                <button onClick={() => setStatus(r.id, 'dismissed')} className={`${smallBtn} border-white/20 text-slate-300`}>{t('adm.dismiss')}</button>
               </>
             )}
             <button onClick={() => remove(r.id)} className={`${smallBtn} border-red-500/40 text-red-400`}><Trash2 className="w-3.5 h-3.5" /></button>
@@ -274,6 +287,8 @@ const ReportsTab: React.FC = () => {
 
 /* -------------------------- الحلقات والسيرفرات -------------------------- */
 const EpisodesTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const [animeId, setAnimeId] = useState('');
   const [ep, setEp] = useState('');
   const [servers, setServers] = useState<any[] | null>(null);
@@ -293,7 +308,7 @@ const EpisodesTab: React.FC = () => {
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^https?:\/\//.test(link)) return alert('الرابط يجب أن يبدأ بـ http:// أو https://');
+    if (!/^https?:\/\//.test(link)) return alert(t('adm.linkInvalid'));
     const id = name.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '') || `s_${Date.now()}`;
     try {
       await setDoc(doc(epPath(), 'servers', id), { name, quality: quality || 'HD', link });
@@ -304,7 +319,7 @@ const EpisodesTab: React.FC = () => {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('حذف السيرفر؟')) return;
+    if (!confirm(t('adm.confirmDeleteServer'))) return;
     try {
       await deleteDoc(doc(epPath(), 'servers', id));
       logAdmin('delete_server', 'episode', key(), id);
@@ -315,14 +330,14 @@ const EpisodesTab: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="card p-3 space-y-2">
-        <input className={input} placeholder="رقم الأنمي (MAL ID أو c_xxxx للأنمي الخاص)" value={animeId} onChange={(e) => setAnimeId(e.target.value)} />
-        <input className={input} placeholder="رقم الحلقة" value={ep} onChange={(e) => setEp(e.target.value)} inputMode="numeric" />
-        <button onClick={load} className="btn-primary w-full py-2 text-sm">عرض سيرفرات الحلقة</button>
+        <input className={input} placeholder={t('adm.animeIdPh')} value={animeId} onChange={(e) => setAnimeId(e.target.value)} />
+        <input className={input} placeholder={t('adm.epPh')} value={ep} onChange={(e) => setEp(e.target.value)} inputMode="numeric" />
+        <button onClick={load} className="btn-primary w-full py-2 text-sm">{t('adm.showServers')}</button>
       </div>
       {servers && (
         <>
           <div className="space-y-2">
-            {servers.length === 0 && <p className="text-center text-xs text-slate-500">لا توجد سيرفرات</p>}
+            {servers.length === 0 && <p className="text-center text-xs text-slate-500">{t('adm.noServers')}</p>}
             {servers.map((s) => (
               <div key={s.id} className="card p-3 flex items-center gap-2">
                 <div className="flex-1 min-w-0">
@@ -334,11 +349,11 @@ const EpisodesTab: React.FC = () => {
             ))}
           </div>
           <form onSubmit={add} className="card p-3 space-y-2">
-            <p className="text-xs font-bold text-white">إضافة سيرفر</p>
-            <input required className={input} placeholder="اسم السيرفر" value={name} onChange={(e) => setName(e.target.value)} />
-            <input className={input} placeholder="الجودة (HD)" value={quality} onChange={(e) => setQuality(e.target.value)} />
-            <input required className={input} placeholder="https://..." value={link} onChange={(e) => setLink(e.target.value)} />
-            <button className="btn-primary w-full py-2 text-sm">إضافة</button>
+            <p className="text-xs font-bold text-white">{t('adm.addServer')}</p>
+            <input required className={input} placeholder={t('adm.serverName')} value={name} onChange={(e) => setName(e.target.value)} />
+            <input className={input} placeholder={t('adm.qualityPh')} value={quality} onChange={(e) => setQuality(e.target.value)} />
+            <input required className={input} placeholder="https://..." value={link} onChange={(e) => setLink(e.target.value)} dir="ltr" />
+            <button className="btn-primary w-full py-2 text-sm">{t('adm.add')}</button>
           </form>
         </>
       )}
@@ -353,6 +368,8 @@ const emptyAnime = {
 };
 
 const AnimeTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ ...emptyAnime });
@@ -366,7 +383,7 @@ const AnimeTab: React.FC = () => {
       setList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) { errMsg(e); }
     setLoading(false);
-  }, []);
+  }, [errMsg]);
   useEffect(() => { load(); }, [load]);
 
   const set = (k: keyof typeof emptyAnime, v: any) => setForm((f) => ({ ...f, [k]: v }));
@@ -380,7 +397,7 @@ const AnimeTab: React.FC = () => {
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.imageUrl) return alert('أضف صورة الغلاف (رفع أو رابط).');
+    if (!form.imageUrl) return alert(t('adm.coverRequired'));
     setSaving(true);
     const data = {
       title: form.title.trim(),
@@ -416,13 +433,13 @@ const AnimeTab: React.FC = () => {
       title: a.title || '', titleEnglish: a.titleEnglish || '', synopsis: a.synopsis || '',
       imageUrl: a.imageUrl || '', trailerUrl: a.trailerUrl || '', type: a.type || 'TV',
       episodes: String(a.episodes ?? ''), year: a.year ? String(a.year) : '', score: a.score ? String(a.score) : '',
-      airing: !!a.airing, genres: (a.genres || []).join('، '),
+      airing: !!a.airing, genres: (a.genres || []).join(', '),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const remove = async (a: any) => {
-    if (!confirm(`حذف "${a.title}"؟ (سيرفرات حلقاته تبقى محفوظة)`)) return;
+    if (!confirm(t('adm.confirmDeleteAnime', { title: a.title }))) return;
     try {
       await deleteDoc(doc(db, 'customAnime', a.id));
       logAdmin('delete_anime', 'anime', a.id, a.title);
@@ -433,34 +450,34 @@ const AnimeTab: React.FC = () => {
   return (
     <div className="space-y-4">
       <form onSubmit={save} className="card p-3 space-y-2">
-        <p className="text-xs font-bold text-white">{editId ? `تعديل (${editId})` : 'إضافة أنمي خاص'}</p>
-        <input required className={input} placeholder="العنوان" value={form.title} onChange={(e) => set('title', e.target.value)} />
-        <input className={input} placeholder="العنوان بالإنجليزية (اختياري)" value={form.titleEnglish} onChange={(e) => set('titleEnglish', e.target.value)} />
-        <textarea className={input} rows={3} placeholder="القصة" value={form.synopsis} onChange={(e) => set('synopsis', e.target.value)} />
+        <p className="text-xs font-bold text-white">{editId ? t('adm.editing', { id: editId }) : t('adm.addAnime')}</p>
+        <input required className={input} placeholder={t('adm.titlePh')} value={form.title} onChange={(e) => set('title', e.target.value)} />
+        <input className={input} placeholder={t('adm.titleEnPh')} value={form.titleEnglish} onChange={(e) => set('titleEnglish', e.target.value)} />
+        <textarea className={input} rows={3} placeholder={t('adm.synopsisPh')} value={form.synopsis} onChange={(e) => set('synopsis', e.target.value)} />
         <div className="flex gap-2 items-center">
-          <input className={input} placeholder="رابط الغلاف https://..." value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} />
+          <input className={input} placeholder={t('adm.coverPh')} value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} />
           <label className={`${smallBtn} border-primary-500/40 text-primary-400 whitespace-nowrap cursor-pointer`}>
-            {uploading ? '...' : 'رفع'}
+            {uploading ? '...' : t('adm.upload')}
             <input type="file" accept="image/*" hidden onChange={(e) => upload(e.target.files?.[0])} />
           </label>
         </div>
         {form.imageUrl && <img src={form.imageUrl} alt="" className="h-32 rounded-xl object-cover" />}
-        <input className={input} placeholder="رابط التريلر (اختياري)" value={form.trailerUrl} onChange={(e) => set('trailerUrl', e.target.value)} />
+        <input className={input} placeholder={t('adm.trailerPh')} value={form.trailerUrl} onChange={(e) => set('trailerUrl', e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
           <select className={input} value={form.type} onChange={(e) => set('type', e.target.value)}>
-            {['TV', 'Movie', 'OVA', 'ONA', 'Special'].map((t) => <option key={t}>{t}</option>)}
+            {['TV', 'Movie', 'OVA', 'ONA', 'Special'].map((x) => <option key={x}>{x}</option>)}
           </select>
-          <input className={input} inputMode="numeric" placeholder="عدد الحلقات" value={form.episodes} onChange={(e) => set('episodes', e.target.value)} />
-          <input className={input} inputMode="numeric" placeholder="السنة" value={form.year} onChange={(e) => set('year', e.target.value)} />
-          <input className={input} inputMode="decimal" placeholder="التقييم (اختياري)" value={form.score} onChange={(e) => set('score', e.target.value)} />
+          <input className={input} inputMode="numeric" placeholder={t('adm.episodesPh')} value={form.episodes} onChange={(e) => set('episodes', e.target.value)} />
+          <input className={input} inputMode="numeric" placeholder={t('adm.yearPh')} value={form.year} onChange={(e) => set('year', e.target.value)} />
+          <input className={input} inputMode="decimal" placeholder={t('adm.scorePh')} value={form.score} onChange={(e) => set('score', e.target.value)} />
         </div>
-        <input className={input} placeholder="التصنيفات مفصولة بفاصلة: أكشن، فانتازيا" value={form.genres} onChange={(e) => set('genres', e.target.value)} />
+        <input className={input} placeholder={t('adm.genresPh')} value={form.genres} onChange={(e) => set('genres', e.target.value)} />
         <label className="flex items-center gap-2 text-xs text-slate-300">
-          <input type="checkbox" checked={form.airing} onChange={(e) => set('airing', e.target.checked)} /> مستمر (يُعرض حالياً)
+          <input type="checkbox" checked={form.airing} onChange={(e) => set('airing', e.target.checked)} /> {t('adm.airing')}
         </label>
         <div className="flex gap-2">
-          <button disabled={saving} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{editId ? 'حفظ التعديل' : 'إضافة'}</button>
-          {editId && <button type="button" onClick={() => { setEditId(null); setForm({ ...emptyAnime }); }} className={`${smallBtn} border-white/20 text-slate-300`}>إلغاء</button>}
+          <button disabled={saving} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{editId ? t('adm.saveEdit') : t('adm.add')}</button>
+          {editId && <button type="button" onClick={() => { setEditId(null); setForm({ ...emptyAnime }); }} className={`${smallBtn} border-white/20 text-slate-300`}>{t('adm.cancel')}</button>}
         </div>
       </form>
 
@@ -469,9 +486,9 @@ const AnimeTab: React.FC = () => {
           <img src={a.imageUrl} alt="" className="w-12 h-16 rounded-lg object-cover bg-dark-900" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-white truncate">{a.title}</p>
-            <p className="text-[10px] text-slate-500">{a.id} · {a.episodes} حلقة</p>
+            <p className="text-[10px] text-slate-500">{a.id} · {t('adm.epCount', { n: a.episodes })}</p>
           </div>
-          <button onClick={() => edit(a)} className={`${smallBtn} border-primary-500/40 text-primary-400`}>تعديل</button>
+          <button onClick={() => edit(a)} className={`${smallBtn} border-primary-500/40 text-primary-400`}>{t('adm.edit')}</button>
           <button onClick={() => remove(a)} className="p-2 text-red-400"><Trash2 className="w-4 h-4" /></button>
         </div>
       ))}
@@ -481,6 +498,8 @@ const AnimeTab: React.FC = () => {
 
 /* -------------------------------- الإعلانات -------------------------------- */
 const AnnounceTab: React.FC = () => {
+  const { t } = useI18n();
+  const errMsg = useErr();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -492,7 +511,7 @@ const AnnounceTab: React.FC = () => {
       setList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) { errMsg(e); }
     setLoading(false);
-  }, []);
+  }, [errMsg]);
   useEffect(() => { load(); }, [load]);
 
   const add = async (e: React.FormEvent) => {
@@ -514,7 +533,7 @@ const AnnounceTab: React.FC = () => {
     } catch (err) { errMsg(err); }
   };
   const remove = async (a: any) => {
-    if (!confirm('حذف الإعلان؟')) return;
+    if (!confirm(t('adm.confirmDeleteAnn'))) return;
     try {
       await deleteDoc(doc(db, 'announcements', a.id));
       logAdmin('delete_announcement', 'announcement', a.id, a.title);
@@ -525,17 +544,17 @@ const AnnounceTab: React.FC = () => {
   return (
     <div className="space-y-4">
       <form onSubmit={add} className="card p-3 space-y-2">
-        <p className="text-xs font-bold text-white">إعلان جديد لكل المستخدمين</p>
-        <input required maxLength={100} className={input} placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <textarea required maxLength={500} rows={3} className={input} placeholder="النص" value={body} onChange={(e) => setBody(e.target.value)} />
-        <button className="btn-primary w-full py-2 text-sm">نشر</button>
+        <p className="text-xs font-bold text-white">{t('adm.newAnnounce')}</p>
+        <input required maxLength={100} className={input} placeholder={t('adm.titlePh')} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <textarea required maxLength={500} rows={3} className={input} placeholder={t('adm.bodyPh')} value={body} onChange={(e) => setBody(e.target.value)} />
+        <button className="btn-primary w-full py-2 text-sm">{t('adm.publish')}</button>
       </form>
       {loading ? <Spinner /> : list.map((a) => (
         <div key={a.id} className="card p-3 space-y-2">
-          <p className="text-sm font-bold text-white">{a.title} {a.active === false && <span className="text-[10px] text-slate-500">(متوقف)</span>}</p>
+          <p className="text-sm font-bold text-white">{a.title} {a.active === false && <span className="text-[10px] text-slate-500">{t('adm.paused')}</span>}</p>
           <p className="text-xs text-slate-300 break-words">{a.body}</p>
           <div className="flex gap-2">
-            <button onClick={() => toggle(a)} className={`${smallBtn} border-white/20 text-slate-300`}>{a.active === false ? 'تفعيل' : 'إيقاف'}</button>
+            <button onClick={() => toggle(a)} className={`${smallBtn} border-white/20 text-slate-300`}>{a.active === false ? t('adm.enable') : t('adm.disable')}</button>
             <button onClick={() => remove(a)} className={`${smallBtn} border-red-500/40 text-red-400`}><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </div>
@@ -546,6 +565,8 @@ const AnnounceTab: React.FC = () => {
 
 /* ---------------------------------- السجل ---------------------------------- */
 const LogsTab: React.FC = () => {
+  const { t, lang } = useI18n();
+  const errMsg = useErr();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -560,14 +581,14 @@ const LogsTab: React.FC = () => {
   }, []);
 
   if (loading) return <Spinner />;
-  if (!logs.length) return <p className="text-center text-sm text-slate-500 py-10">السجل فارغ</p>;
+  if (!logs.length) return <p className="text-center text-sm text-slate-500 py-10">{t('adm.logEmpty')}</p>;
   return (
     <div className="space-y-2">
       {logs.map((l) => (
         <div key={l.id} className="card p-3 space-y-1">
           <p className="text-xs font-bold text-white">{l.action} <span className="text-slate-500 font-normal">· {l.targetType}</span></p>
           <p className="text-[11px] text-slate-400 break-all">{l.targetId}{l.details ? ` — ${l.details}` : ''}</p>
-          <p className="text-[10px] text-slate-500">{l.adminName} · {l.createdAt?.toDate?.().toLocaleString('ar') ?? ''}</p>
+          <p className="text-[10px] text-slate-500">{l.adminName} · {l.createdAt?.toDate?.().toLocaleString(lang) ?? ''}</p>
         </div>
       ))}
     </div>
@@ -576,31 +597,32 @@ const LogsTab: React.FC = () => {
 
 /* --------------------------------- الصفحة --------------------------------- */
 const Admin: React.FC = () => {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('stats');
   const tabs: { id: Tab; label: string; icon: any }[] = [
-    { id: 'stats', label: 'إحصائيات', icon: BarChart3 },
-    { id: 'users', label: 'المستخدمون', icon: Users },
-    { id: 'posts', label: 'المنشورات', icon: FileText },
-    { id: 'reports', label: 'البلاغات', icon: Flag },
-    { id: 'episodes', label: 'الحلقات', icon: Server },
-    { id: 'anime', label: 'أنمي خاص', icon: Film },
-    { id: 'announce', label: 'إعلانات', icon: Megaphone },
-    { id: 'logs', label: 'السجل', icon: ScrollText },
+    { id: 'stats', label: t('adm.tab.stats'), icon: BarChart3 },
+    { id: 'users', label: t('adm.tab.users'), icon: Users },
+    { id: 'posts', label: t('adm.tab.posts'), icon: FileText },
+    { id: 'reports', label: t('adm.tab.reports'), icon: Flag },
+    { id: 'episodes', label: t('adm.tab.episodes'), icon: Server },
+    { id: 'anime', label: t('adm.tab.anime'), icon: Film },
+    { id: 'announce', label: t('adm.tab.announce'), icon: Megaphone },
+    { id: 'logs', label: t('adm.tab.logs'), icon: ScrollText },
   ];
   return (
     <div className="px-4 py-6 space-y-4">
       <div className="flex items-center gap-2">
         <Shield className="w-6 h-6 text-primary-400" />
-        <h2 className="text-xl font-black text-white">لوحة الأدمن</h2>
+        <h2 className="text-xl font-black text-white">{t('adm.title')}</h2>
       </div>
       <div className="flex gap-1 overflow-x-auto no-scrollbar">
-        {tabs.map((t) => (
+        {tabs.map((x) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap ${tab === t.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-500'}`}
+            key={x.id}
+            onClick={() => setTab(x.id)}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap ${tab === x.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-500'}`}
           >
-            <t.icon className="w-4 h-4" /> {t.label}
+            <x.icon className="w-4 h-4" /> {x.label}
           </button>
         ))}
       </div>
