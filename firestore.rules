@@ -28,6 +28,17 @@ service cloud.firestore {
       return v is string && v.size() >= min && v.size() <= max;
     }
 
+    // حقول التسجيل الجديدة (كلها اختيارية للتوافق مع الحسابات القديمة وحسابات Google)
+    function validSignupFields(d) {
+      return (!('firstName' in d) || validText(d.firstName, 1, 25))
+        && (!('lastName' in d) || validText(d.lastName, 1, 25))
+        && (!('gender' in d) || d.gender in ['male', 'female', 'none'])
+        && (!('birthDate' in d)
+            || (d.birthDate is string
+                && d.birthDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+        && (!('age' in d) || (d.age is int && d.age >= 13 && d.age <= 120));
+    }
+
     function isBlockedBy(otherUid) {
       return exists(
         /databases/$(database)/documents/blocks/$(otherUid + '_' + request.auth.uid)
@@ -85,7 +96,8 @@ service cloud.firestore {
         && request.resource.data.postsCount == 0
         && request.resource.data.accountType in ['public', 'private']
         && validText(request.resource.data.displayName, 1, 50)
-        && validText(request.resource.data.username, 3, 30);
+        && validText(request.resource.data.username, 3, 30)
+        && validSignupFields(request.resource.data);
 
       allow update: if (
           isOwner(uid)
@@ -110,6 +122,7 @@ service cloud.firestore {
               || validText(request.resource.data.pronouns, 0, 30))
           && (!('gender' in request.resource.data)
               || request.resource.data.gender in ['male', 'female', 'none'])
+          && validSignupFields(request.resource.data)
         )
         // عدّاد المنشورات: يزيد/ينقص عند النشر والحذف (صاحب الحساب أو الأدمن)
         || (
