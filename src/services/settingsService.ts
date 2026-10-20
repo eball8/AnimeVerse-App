@@ -16,6 +16,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc } 
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, db, googleProvider } from '../config/firebase';
+import { tr } from '../i18n/staticT';
 import { deviceLabel, getDeviceId } from './deviceService';
 
 // ---------------- الأجهزة والثقة ----------------
@@ -43,7 +44,7 @@ export const loadDevices = async (uid: string): Promise<DeviceItem[]> => {
       const x = d.data() as { label?: string; platform?: string; createdAt?: { toMillis?: () => number } };
       return {
         id: d.id,
-        label: x.label || 'جهاز',
+        label: x.label || tr('misc.device'),
         platform: x.platform || 'android',
         createdAt: x.createdAt?.toMillis?.() ?? now,
       };
@@ -294,27 +295,28 @@ export const changePassword = async (current: string, next: string): Promise<voi
   await updatePassword(user, next);
 };
 
+// نص الخطأ بلغة المستخدم الحالية (المفاتيح موجودة في ملف الترجمة securityExtra)
 export const authErrorText = (e: any): string => {
   const code = String(e?.code ?? e?.message ?? '');
-  if (/untrusted-device/.test(code)) return 'هذا الجهاز غير موثوق بعد، لا يمكن تعديل طرق تسجيل الدخول منه.';
-  if (/trust-check-failed/.test(code)) return 'تعذّر التحقق من حالة هذا الجهاز. تحقق من الاتصال وأعد المحاولة.';
-  if (/last-method/.test(code)) return 'لا يمكن حذف هذه الطريقة لأنها الوحيدة المتبقية. أضف طريقة أخرى أولاً.';
-  if (/same-email/.test(code)) return 'هذا هو بريدك الحالي بالفعل.';
-  if (/same-google/.test(code)) return 'اخترت نفس حساب جوجل الحالي. اختر حساباً مختلفاً.';
-  if (/need-email-method/.test(code)) return 'أضف البريد وكلمة السر أولاً.';
-  if (/no-such-provider/.test(code)) return 'هذه الطريقة غير مضافة أصلاً.';
-  if (/invalid-email/.test(code)) return 'البريد الإلكتروني غير صحيح.';
-  if (/wrong-password|invalid-credential|invalid-login/.test(code)) return 'كلمة السر الحالية غير صحيحة.';
-  if (/weak-password/.test(code)) return 'كلمة السر ضعيفة، استخدم 6 أحرف أو أكثر.';
-  if (/email-already-in-use/.test(code)) return 'هذا البريد مرتبط بحساب آخر.';
-  if (/credential-already-in-use/.test(code)) return 'هذا الحساب مرتبط بمستخدم آخر في AnimeVerse.';
-  if (/provider-already-linked/.test(code)) return 'هذه الطريقة مضافة مسبقاً.';
-  if (/user-mismatch/.test(code)) return 'سجّل بنفس حساب جوجل المرتبط بهذا الحساب.';
-  if (/too-many-requests/.test(code)) return 'محاولات كثيرة، حاول لاحقاً.';
-  if (/network/.test(code)) return 'تحقق من اتصالك بالإنترنت.';
-  if (/cancel|12501|12502|popup-closed/i.test(code)) return 'تم إلغاء العملية.';
-  if (/requires-recent-login/.test(code)) return 'سجّل الدخول مرة أخرى ثم أعد المحاولة.';
-  return 'حدث خطأ، حاول مرة أخرى.';
+  if (/untrusted-device/.test(code)) return tr('sc.err.untrusted');
+  if (/trust-check-failed/.test(code)) return tr('sc.err.trustCheck');
+  if (/last-method/.test(code)) return tr('sc.err.lastMethod');
+  if (/same-email/.test(code)) return tr('sc.err.sameEmail');
+  if (/same-google/.test(code)) return tr('sc.err.sameGoogle');
+  if (/need-email-method/.test(code)) return tr('sc.err.needEmail');
+  if (/no-such-provider/.test(code)) return tr('sc.err.noProvider');
+  if (/invalid-email/.test(code)) return tr('sc.err.invalidEmail');
+  if (/wrong-password|invalid-credential|invalid-login/.test(code)) return tr('sc.err.wrongPassword');
+  if (/weak-password/.test(code)) return tr('sc.err.weakPassword');
+  if (/email-already-in-use/.test(code)) return tr('sc.err.emailInUse');
+  if (/credential-already-in-use/.test(code)) return tr('sc.err.credentialInUse');
+  if (/provider-already-linked/.test(code)) return tr('sc.err.alreadyLinked');
+  if (/user-mismatch/.test(code)) return tr('sc.err.userMismatch');
+  if (/too-many-requests/.test(code)) return tr('sc.err.tooMany');
+  if (/network/.test(code)) return tr('sc.err.network');
+  if (/cancel|12501|12502|popup-closed/i.test(code)) return tr('sc.err.cancelled');
+  if (/requires-recent-login/.test(code)) return tr('sc.err.recentLogin');
+  return tr('sc.err.generic');
 };
 
 // ---------------- المشغل الافتراضي ----------------
