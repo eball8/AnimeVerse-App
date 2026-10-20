@@ -32,9 +32,12 @@ export const createUserProfile = async (
   const profile: Omit<UserProfile, 'uid'> = {
     username: data.username || `user_${uid.slice(0, 8)}`,
     displayName: data.displayName || 'مستخدم AnimeVerse',
+    firstName: data.firstName,
+    lastName: data.lastName,
     photoURL: data.photoURL,
     bio: '',
     gender: data.gender,
+    birthDate: data.birthDate,
     age: data.age,
     role: 'user',
     accountType: 'public',
