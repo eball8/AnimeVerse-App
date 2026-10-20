@@ -9,9 +9,12 @@ export interface UserProfile {
   email?: string;
   username: string;
   displayName: string;
+  firstName?: string;
+  lastName?: string;
   photoURL?: string;
   bio?: string;
   gender?: Gender;
+  birthDate?: string; // YYYY-MM-DD
   pronouns?: string;
   age?: number;
   role: UserRole;
