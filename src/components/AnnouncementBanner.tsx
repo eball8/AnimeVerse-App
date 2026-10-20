@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { Megaphone, X } from 'lucide-react';
 import { db } from '../config/firebase';
+import { useI18n } from '../i18n/I18nContext';
 
 const KEY = 'dismissedAnnouncement';
 
 const AnnouncementBanner: React.FC = () => {
+  const { t } = useI18n();
   const [ann, setAnn] = useState<{ id: string; title: string; body: string } | null>(null);
 
   useEffect(() => {
@@ -38,7 +40,7 @@ const AnnouncementBanner: React.FC = () => {
         <p className="text-sm font-black text-white">{ann.title}</p>
         <p className="text-xs text-slate-300 mt-1 break-words">{ann.body}</p>
       </div>
-      <button onClick={dismiss} className="p-1 text-slate-400 self-start" aria-label="إغلاق"><X className="w-4 h-4" /></button>
+      <button onClick={dismiss} className="p-1 text-slate-400 self-start" aria-label={t('wt.close')}><X className="w-4 h-4" /></button>
     </div>
   );
 };
