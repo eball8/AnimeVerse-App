@@ -22,7 +22,7 @@ export const searchUsers = async (term: string): Promise<UserProfile[]> => {
     if (!map.has(d.id)) map.set(d.id, { uid: d.id, ...(d.data() as any) } as UserProfile);
   });
   return Array.from(map.values())
-    .filter((u) => !u.isBanned)
+    .filter((u) => !u.isBanned && !u.isDeactivated)
     .slice(0, MAX_USERS);
 };
 
