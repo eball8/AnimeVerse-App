@@ -127,6 +127,15 @@ service cloud.firestore {
               || request.resource.data.gender in ['male', 'female', 'none'])
           && validSignupFields(request.resource.data)
         )
+        // إدارة المستخدمين من لوحة الأدمن: حظر / توثيق / تغيير الدور (المالك فقط)
+        || (
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isBanned', 'isVerified', 'role', 'updatedAt'])
+          && request.resource.data.isBanned is bool
+          && request.resource.data.isVerified is bool
+          && request.resource.data.role in ['admin', 'moderator', 'user']
+        )
         // عدّاد المنشورات: يزيد/ينقص عند النشر والحذف (صاحب الحساب أو الأدمن)
         || (
           (isOwner(uid) || isAdmin())
