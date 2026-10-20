@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(GalleryPlugin.class);
+        registerPlugin(GoogleHintPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
