@@ -1,3 +1,5 @@
+import { tr } from '../i18n/staticT';
+
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
@@ -10,11 +12,11 @@ export const uploadVideoToCloudinary = (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (file.size > MAX_VIDEO_SIZE_BYTES) {
-      reject(new Error(`حجم الفيديو كبير جداً. الحد الأقصى هو ${MAX_VIDEO_SIZE_MB} ميجابايت.`));
+      reject(new Error(tr('svc.up.videoTooBig', { mb: MAX_VIDEO_SIZE_MB })));
       return;
     }
     if (!file.type.startsWith('video/') && !file.type.startsWith('image/')) {
-      reject(new Error('الملف المرفوع ليس صورة أو فيديو.'));
+      reject(new Error(tr('svc.up.notMedia')));
       return;
     }
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
@@ -36,13 +38,13 @@ export const uploadVideoToCloudinary = (
         if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) {
           resolve(res.secure_url);
         } else {
-          reject(new Error(res?.error?.message || 'فشل رفع الوسائط.'));
+          reject(new Error(res?.error?.message || tr('svc.up.failedMedia')));
         }
       } catch {
-        reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
+        reject(new Error(tr('svc.up.parse')));
       }
     };
-    xhr.onerror = () => reject(new Error('حدث خطأ في الشبكة أثناء الرفع.'));
+    xhr.onerror = () => reject(new Error(tr('svc.up.network')));
     xhr.send(formData);
   });
 };
@@ -83,13 +85,13 @@ const uploadRawOnce = (
           resolve(res.secure_url);
           return;
         }
-        const msg: string = res?.error?.message || 'فشل رفع الملف.';
+        const msg: string = res?.error?.message || tr('svc.up.failedFile');
         reject(/not allowed/i.test(msg) ? new NotAllowedError(`Cloudinary: ${msg}`) : new Error(`Cloudinary: ${msg}`));
       } catch {
-        reject(new Error('فشل في تحليل الاستجابة من Cloudinary.'));
+        reject(new Error(tr('svc.up.parse')));
       }
     };
-    xhr.onerror = () => reject(new Error('حدث خطأ في الشبكة أثناء الرفع.'));
+    xhr.onerror = () => reject(new Error(tr('svc.up.network')));
     xhr.send(formData);
   });
 };
@@ -100,7 +102,7 @@ export const uploadEncryptedBlob = async (
   onProgress?: (percent: number) => void
 ): Promise<string> => {
   if (blob.size > MAX_ENCRYPTED_UPLOAD_MB * 1024 * 1024) {
-    throw new Error('الملف كبير جداً.');
+    throw new Error(tr('svc.up.tooBig'));
   }
   const failures: string[] = [];
   for (const ext of RAW_EXTENSIONS) {
@@ -114,5 +116,5 @@ export const uploadEncryptedBlob = async (
       throw e;
     }
   }
-  throw new Error(`كل الامتدادات مرفوضة [${failures.join(' | ')}]`);
+  throw new Error(tr('svc.up.allRejected', { list: failures.join(' | ') }));
 };
