@@ -5,6 +5,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { checkEmail } from '../utils/emailValidation';
+import { useI18n } from '../i18n/I18nContext';
 
 const COOLDOWN_SECONDS = 60;
 
@@ -18,6 +19,7 @@ const safeAreaStyle: React.CSSProperties = {
 
 const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { signInEmail } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,8 +35,8 @@ const ForgotPassword: React.FC = () => {
 
   useEffect(() => {
     if (cooldown <= 0) return;
-    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
   }, [cooldown]);
 
   const send = async (isResend: boolean) => {
@@ -43,7 +45,7 @@ const ForgotPassword: React.FC = () => {
 
     const emailCheck = checkEmail(email);
     if (!emailCheck.ok) {
-      setError(emailCheck.message);
+      setError(emailCheck.key ? t(emailCheck.key, emailCheck.vars) : emailCheck.message);
       return;
     }
 
@@ -52,17 +54,17 @@ const ForgotPassword: React.FC = () => {
       await sendPasswordResetEmail(auth, email.trim());
       setSent(true);
       setCooldown(COOLDOWN_SECONDS);
-      if (isResend) setInfo('تم إرسال رابط جديد. استخدم آخر رسالة وصلتك فقط.');
+      if (isResend) setInfo(t('af.resentNew'));
     } catch (err: unknown) {
       const e = err as { code?: string };
       if (e.code === 'auth/user-not-found') {
-        setError('لا يوجد حساب بهذا البريد.');
+        setError(t('auth.errNotFound'));
       } else if (e.code === 'auth/invalid-email') {
-        setError('البريد غير صالح.');
+        setError(t('auth.errEmailInvalid'));
       } else if (e.code === 'auth/too-many-requests') {
-        setError('محاولات كثيرة. انتظر قليلاً ثم حاول مجدداً.');
+        setError(t('auth.errTooMany'));
       } else {
-        setError('حدث خطأ، حاول مرة أخرى.');
+        setError(t('common.error'));
       }
     } finally {
       setLoading(false);
@@ -90,11 +92,11 @@ const ForgotPassword: React.FC = () => {
     } catch (err: unknown) {
       const c = (err as { code?: string }).code;
       if (c === 'auth/invalid-credential' || c === 'auth/wrong-password') {
-        setError('كلمة السر غير صحيحة. تأكد أنك حفظتها في صفحة الرابط، وإن لم تحفظها افتح آخر رابط وصلك.');
+        setError(t('af.errWrongPass'));
       } else if (c === 'auth/too-many-requests') {
-        setError('محاولات كثيرة. انتظر قليلاً ثم حاول مجدداً.');
+        setError(t('auth.errTooMany'));
       } else {
-        setError('تعذر تسجيل الدخول. (' + (c || 'unknown') + ')');
+        setError(t('af.errSignIn', { code: c || 'unknown' }));
       }
     } finally {
       setSigningIn(false);
@@ -109,18 +111,18 @@ const ForgotPassword: React.FC = () => {
             <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-primary-500/20 to-accent-500/20 border border-primary-500/30 flex items-center justify-center mb-4">
               <Mail className="w-10 h-10 text-primary-400" />
             </div>
-            <h1 className="text-2xl font-black text-white mb-2">افتح بريدك الإلكتروني</h1>
-            <p className="text-sm text-slate-400 leading-relaxed">أرسلنا رابط تغيير كلمة السر إلى:</p>
+            <h1 className="text-2xl font-black text-white mb-2">{t('af.checkMail')}</h1>
+            <p className="text-sm text-slate-400 leading-relaxed">{t('af.sentResetTo')}</p>
             <p dir="ltr" className="text-sm font-bold text-primary-400 mt-1">{email}</p>
           </div>
 
           <div className="card p-5 space-y-2 text-center">
             <p className="text-xs text-slate-300 leading-relaxed">
-              1) افتح الرابط في الرسالة.
+              {t('af.step1')}
               <br />
-              2) اكتب كلمة السر الجديدة في الصفحة التي تفتح واضغط حفظ.
+              {t('af.step2')}
               <br />
-              3) ارجع إلى هنا واضغط <b className="text-white">"لقد تحققت من بريدي"</b>.
+              {t('af.step3')} <b className="text-white">"{t('af.verified')}"</b>
             </p>
             {info && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">{info}</p>}
             {error && !confirming && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{error}</p>}
@@ -128,9 +130,9 @@ const ForgotPassword: React.FC = () => {
 
           {confirming ? (
             <form onSubmit={handleSignIn} className="card p-5 space-y-4">
-              <p className="text-xs text-slate-300 text-center">اكتب كلمة السر الجديدة لتدخل مباشرة:</p>
+              <p className="text-xs text-slate-300 text-center">{t('af.enterNewPass')}</p>
               <div className="relative">
-                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Lock className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
@@ -138,12 +140,12 @@ const ForgotPassword: React.FC = () => {
                   required
                   dir="ltr"
                   placeholder="••••••••"
-                  className="w-full pr-10 pl-10 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
+                  className="w-full ps-10 pe-10 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -154,7 +156,7 @@ const ForgotPassword: React.FC = () => {
                 disabled={signingIn}
                 className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {signingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <><LogIn className="w-4 h-4" /> دخول</>}
+                {signingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <><LogIn className="w-4 h-4" /> {t('auth.signIn')}</>}
               </button>
             </form>
           ) : (
@@ -162,7 +164,7 @@ const ForgotPassword: React.FC = () => {
               onClick={() => { setError(''); setCooldown(0); setConfirming(true); }}
               className="w-full btn-primary py-3 flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="w-4 h-4" /> لقد تحققت من بريدي
+              <CheckCircle2 className="w-4 h-4" /> {t('af.verified')}
             </button>
           )}
 
@@ -178,7 +180,7 @@ const ForgotPassword: React.FC = () => {
                 ) : (
                   <>
                     <RefreshCw className="w-4 h-4" />
-                    {cooldown > 0 ? `إعادة الإرسال بعد ${cooldown} ث` : 'إعادة إرسال الرابط'}
+                    {cooldown > 0 ? t('af.resendIn', { s: cooldown }) : t('af.resend')}
                   </>
                 )}
               </button>
@@ -187,7 +189,7 @@ const ForgotPassword: React.FC = () => {
               onClick={() => navigate('/login', { replace: true })}
               className="w-full py-2 text-slate-400 text-xs font-bold hover:text-white transition"
             >
-              العودة لتسجيل الدخول
+              {t('af.backToLogin')}
             </button>
           </div>
         </div>
@@ -199,17 +201,17 @@ const ForgotPassword: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center px-4" style={safeAreaStyle}>
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-black text-white mb-2">نسيت كلمة السر؟</h1>
+          <h1 className="text-2xl font-black text-white mb-2">{t('af.forgotTitle')}</h1>
           <p className="text-sm text-slate-400">
-            أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة التعيين.
+            {t('af.forgotSub')}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">البريد الإلكتروني</label>
+            <label className="block text-xs font-bold text-slate-300 mb-2">{t('auth.email')}</label>
             <div className="relative">
-              <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Mail className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="email"
                 value={email}
@@ -217,7 +219,7 @@ const ForgotPassword: React.FC = () => {
                 required
                 dir="ltr"
                 placeholder="you@example.com"
-                className="w-full pr-10 pl-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
+                className="w-full ps-10 pe-3 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50"
               />
             </div>
           </div>
@@ -229,13 +231,13 @@ const ForgotPassword: React.FC = () => {
             disabled={loading}
             className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'إرسال رابط الإعادة'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('af.sendReset')}
           </button>
 
           <p className="text-center text-xs text-slate-400">
-            تذكرت كلمة السر؟{' '}
+            {t('af.remembered')}{' '}
             <Link to="/login" className="text-primary-400 font-bold hover:underline">
-              تسجيل الدخول
+              {t('auth.loginLink')}
             </Link>
           </p>
         </form>
