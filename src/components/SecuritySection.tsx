@@ -3,13 +3,16 @@ import {
   ArrowRight, Lock, KeyRound, Mail, Loader2, CheckCircle2, AlertCircle, Pencil, Trash2, Plus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import { checkEmail } from '../utils/emailValidation';
 import {
-  TRUST_DAYS, addEmailPassword, addGoogleAccount, authErrorText, changeEmail, changeGoogleAccount,
+  TRUST_DAYS, addEmailPassword, addGoogleAccount, changeEmail, changeGoogleAccount,
   changePassword, getProviderEmail, hasProvider, isCurrentTrusted, loadDevices, removeEmailMethod,
   removeGoogleAccount, syncPrivateEmail,
 } from '../services/settingsService';
 import type { DeviceItem } from '../services/settingsService';
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 // ---------- عناصر مشتركة ----------
 const inputCls =
@@ -22,6 +25,30 @@ const ghostBtnCls =
   'w-full py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold disabled:opacity-50 active:scale-[0.98]';
 const miniBtnCls =
   'px-3 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 active:scale-95';
+
+// يحوّل أخطاء الأمان إلى نص بلغة المستخدم الحالية
+const errorText = (e: any, t: TFn): string => {
+  const code = String(e?.code ?? e?.message ?? '');
+  if (/untrusted-device/.test(code)) return t('sc.err.untrusted');
+  if (/trust-check-failed/.test(code)) return t('sc.err.trustCheck');
+  if (/last-method/.test(code)) return t('sc.err.lastMethod');
+  if (/same-email/.test(code)) return t('sc.err.sameEmail');
+  if (/same-google/.test(code)) return t('sc.err.sameGoogle');
+  if (/need-email-method/.test(code)) return t('sc.err.needEmail');
+  if (/no-such-provider/.test(code)) return t('sc.err.noProvider');
+  if (/invalid-email/.test(code)) return t('sc.err.invalidEmail');
+  if (/wrong-password|invalid-credential|invalid-login/.test(code)) return t('sc.err.wrongPassword');
+  if (/weak-password/.test(code)) return t('sc.err.weakPassword');
+  if (/email-already-in-use/.test(code)) return t('sc.err.emailInUse');
+  if (/credential-already-in-use/.test(code)) return t('sc.err.credentialInUse');
+  if (/provider-already-linked/.test(code)) return t('sc.err.alreadyLinked');
+  if (/user-mismatch/.test(code)) return t('sc.err.userMismatch');
+  if (/too-many-requests/.test(code)) return t('sc.err.tooMany');
+  if (/network/.test(code)) return t('sc.err.network');
+  if (/cancel|12501|12502|popup-closed/i.test(code)) return t('sc.err.cancelled');
+  if (/requires-recent-login/.test(code)) return t('sc.err.recentLogin');
+  return t('sc.err.generic');
+};
 
 const Notice: React.FC<{ kind: 'ok' | 'err' | 'warn'; text: string }> = ({ kind, text }) => {
   const color =
@@ -41,15 +68,18 @@ const Notice: React.FC<{ kind: 'ok' | 'err' | 'warn'; text: string }> = ({ kind,
 
 const SubPage: React.FC<{ title: string; onBack: () => void; children: React.ReactNode }> = ({
   title, onBack, children,
-}) => (
-  <div className="space-y-4">
-    <button onClick={onBack} className="flex items-center gap-2 text-sm text-primary-400 font-bold">
-      <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> رجوع للإعدادات
-    </button>
-    <h2 className="text-lg font-black text-white">{title}</h2>
-    {children}
-  </div>
-);
+}) => {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-2 text-sm text-primary-400 font-bold">
+        <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> {t('settings.backToSettings')}
+      </button>
+      <h2 className="text-lg font-black text-white">{title}</h2>
+      {children}
+    </div>
+  );
+};
 
 // ---------- الأجهزة والثقة ----------
 const useDevices = (uid: string) => {
@@ -79,16 +109,15 @@ const useDevices = (uid: string) => {
 const TrustBanner: React.FC<{ loaded: boolean; trusted: boolean; failed: boolean; daysLeft?: number }> = ({
   loaded, trusted, failed, daysLeft,
 }) => {
+  const { t } = useI18n();
   if (!loaded || trusted) return null;
-  if (failed) return <Notice kind="warn" text="تعذّر التحقق من حالة هذا الجهاز. تحقق من الاتصال ثم أعد فتح الصفحة." />;
-  return (
-    <Notice
-      kind="warn"
-      text={`هذا الجهاز غير موثوق بعد، فلا يمكن تغيير الإعدادات الحساسة منه. يصبح موثوقاً تلقائياً بعد ${TRUST_DAYS} أيام من تسجيله${
-        daysLeft ? ` (متبقٍ ${daysLeft} ${daysLeft === 1 ? 'يوم' : 'أيام'})` : ''
-      } بشرط ألا تحذف التطبيق أو الحساب خلالها.`}
-    />
-  );
+  if (failed) return <Notice kind="warn" text={t('sc.trustFailed')} />;
+  const left = daysLeft
+    ? daysLeft === 1
+      ? t('sc.daysLeftOne')
+      : t('sc.daysLeftMany', { n: daysLeft })
+    : '';
+  return <Notice kind="warn" text={`${t('sc.untrusted', { days: TRUST_DAYS })}${left}`} />;
 };
 
 // ---------- صف طريقة الدخول ----------
@@ -97,20 +126,23 @@ const MethodRow: React.FC<{
   added: boolean;
   email?: string | null;
   children?: React.ReactNode;
-}> = ({ label, added, email, children }) => (
-  <div className="p-4 space-y-3">
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-slate-400">{label}</span>
-      <span className={`text-sm font-bold ${added ? 'text-emerald-400' : 'text-slate-500'}`}>
-        {added ? 'مضاف' : 'غير مضاف'}
-      </span>
+}> = ({ label, added, email, children }) => {
+  const { t } = useI18n();
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-slate-400">{label}</span>
+        <span className={`text-sm font-bold ${added ? 'text-emerald-400' : 'text-slate-500'}`}>
+          {added ? t('sc.added') : t('sc.notAdded')}
+        </span>
+      </div>
+      {added && email && (
+        <p dir="ltr" className="text-sm font-bold text-white text-start break-all">{email}</p>
+      )}
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>
-    {added && email && (
-      <p dir="ltr" className="text-sm font-bold text-white text-start break-all">{email}</p>
-    )}
-    {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
-  </div>
-);
+  );
+};
 
 type Panel =
   | null
@@ -123,6 +155,7 @@ type Panel =
 
 // ---------- الأمان وكلمة السر ----------
 const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const { t } = useI18n();
   const { user, refreshUser } = useAuth();
   const { devices, trusted, current, loaded, failed } = useDevices(user!.uid);
   const [panel, setPanel] = useState<Panel>(null);
@@ -163,10 +196,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const validNewPassword = (): string | null => {
-    if (pw.length < 6) return 'كلمة السر يجب أن تكون 6 أحرف أو أكثر.';
-    if (pw !== pw2) return 'كلمتا السر غير متطابقتين.';
+    if (pw.length < 6) return t('sc.pwShort');
+    if (pw !== pw2) return t('sc.pwMismatch');
     return null;
   };
+
+  // نص خطأ التحقق من البريد بلغة المستخدم
+  const emailError = (chk: { message: string; key?: string; vars?: Record<string, string> }) =>
+    chk.key ? t(chk.key, chk.vars) : chk.message;
 
   // يشغّل عملية ويعرض نتيجتها ويحدّث الواجهة
   const run = async (task: () => Promise<void>, okText: string, closePanel = true) => {
@@ -181,7 +218,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     } catch (e) {
       console.error(e);
       refreshUser();
-      setMsg({ kind: 'err', text: authErrorText(e) });
+      setMsg({ kind: 'err', text: errorText(e, t) });
     } finally {
       setBusy(false);
     }
@@ -190,44 +227,40 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   // ---- البريد وكلمة السر ----
   const onAddEmail = () => {
     const chk = checkEmail(email);
-    if (!chk.ok) return setMsg({ kind: 'err', text: chk.message });
+    if (!chk.ok) return setMsg({ kind: 'err', text: emailError(chk) });
     const bad = validNewPassword();
     if (bad) return setMsg({ kind: 'err', text: bad });
-    run(() => addEmailPassword(email, pw), 'تمت إضافة تسجيل الدخول بالبريد وكلمة السر. أرسلنا رسالة تأكيد إلى بريدك.');
+    run(() => addEmailPassword(email, pw), t('sc.addEmailOk'));
   };
 
   const onChangeEmail = () => {
     const chk = checkEmail(email);
-    if (!chk.ok) return setMsg({ kind: 'err', text: chk.message });
-    if (!cur) return setMsg({ kind: 'err', text: 'اكتب كلمة السر الحالية.' });
-    run(
-      () => changeEmail(cur, email),
-      'أرسلنا رابط تأكيد إلى البريد الجديد. يتغيّر البريد بعد فتح الرابط، وسيُطلب منك تسجيل الدخول به.'
-    );
+    if (!chk.ok) return setMsg({ kind: 'err', text: emailError(chk) });
+    if (!cur) return setMsg({ kind: 'err', text: t('sc.needCurrent') });
+    run(() => changeEmail(cur, email), t('sc.changeEmailOk'));
   };
 
-  const onRemoveEmail = () => run(() => removeEmailMethod(), 'تم حذف تسجيل الدخول بالبريد وكلمة السر.');
+  const onRemoveEmail = () => run(() => removeEmailMethod(), t('sc.removeEmailOk'));
 
   const onChangePassword = () => {
-    if (!cur) return setMsg({ kind: 'err', text: 'اكتب كلمة السر الحالية.' });
+    if (!cur) return setMsg({ kind: 'err', text: t('sc.needCurrent') });
     const bad = validNewPassword();
     if (bad) return setMsg({ kind: 'err', text: bad });
-    if (cur === pw) return setMsg({ kind: 'err', text: 'كلمة السر الجديدة مطابقة للحالية.' });
-    run(() => changePassword(cur, pw), 'تم تغيير كلمة السر.', false);
+    if (cur === pw) return setMsg({ kind: 'err', text: t('sc.samePw') });
+    run(() => changePassword(cur, pw), t('sc.pwChanged'), false);
   };
 
   // ---- جوجل ----
   const onAddGoogle = () => {
-    if (!cur) return setMsg({ kind: 'err', text: 'اكتب كلمة السر الحالية.' });
-    run(() => addGoogleAccount(cur), 'تم ربط حساب جوجل.');
+    if (!cur) return setMsg({ kind: 'err', text: t('sc.needCurrent') });
+    run(() => addGoogleAccount(cur), t('sc.googleLinked'));
   };
 
-  const onChangeGoogle = () =>
-    run(() => changeGoogleAccount(), 'تم تغيير حساب جوجل المرتبط.');
+  const onChangeGoogle = () => run(() => changeGoogleAccount(), t('sc.googleChanged'));
 
   const onRemoveGoogle = () => {
-    if (!cur) return setMsg({ kind: 'err', text: 'اكتب كلمة السر الحالية.' });
-    run(() => removeGoogleAccount(cur), 'تم حذف حساب جوجل من طرق الدخول.');
+    if (!cur) return setMsg({ kind: 'err', text: t('sc.needCurrent') });
+    run(() => removeGoogleAccount(cur), t('sc.googleRemoved'));
   };
 
   const passwordField = (
@@ -236,7 +269,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       autoComplete="current-password"
       value={cur}
       onChange={(e) => setCur(e.target.value)}
-      placeholder="كلمة السر الحالية"
+      placeholder={t('sc.currentPw')}
       className={inputCls}
       disabled={!canEdit || busy}
     />
@@ -245,14 +278,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const spinner = busy && <Loader2 className="w-4 h-4 animate-spin" />;
 
   return (
-    <SubPage title="الأمان وتغيير كلمة السر" onBack={onBack}>
+    <SubPage title={t('sc.title')} onBack={onBack}>
       <TrustBanner loaded={loaded} trusted={trusted} failed={failed} daysLeft={current?.daysLeft} />
 
       {/* ---------- طرق تسجيل الدخول ---------- */}
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">طرق تسجيل الدخول</h3>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('sc.methods')}</h3>
         <div className="card divide-y divide-white/5">
-          <MethodRow label="جوجل" added={hasGoogle} email={googleEmail}>
+          <MethodRow label={t('sc.google')} added={hasGoogle} email={googleEmail}>
             {hasGoogle ? (
               <>
                 <button
@@ -260,14 +293,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   disabled={!canEdit || busy || !hasPassword}
                   className={`${miniBtnCls} border-primary-500/30 bg-primary-500/10 text-primary-300`}
                 >
-                  <Pencil className="w-3 h-3" /> تغيير الحساب
+                  <Pencil className="w-3 h-3" /> {t('sc.changeAccount')}
                 </button>
                 <button
                   onClick={() => openPanel('removeGoogle')}
                   disabled={!canEdit || busy || !hasPassword}
                   className={`${miniBtnCls} border-red-500/30 bg-red-500/10 text-red-400`}
                 >
-                  <Trash2 className="w-3 h-3" /> حذف
+                  <Trash2 className="w-3 h-3" /> {t('sc.delete')}
                 </button>
               </>
             ) : (
@@ -276,12 +309,12 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 disabled={!canEdit || busy}
                 className={`${miniBtnCls} border-primary-500/30 bg-primary-500/10 text-primary-300`}
               >
-                <Plus className="w-3 h-3" /> ربط حساب جوجل
+                <Plus className="w-3 h-3" /> {t('sc.linkGoogle')}
               </button>
             )}
           </MethodRow>
 
-          <MethodRow label="البريد وكلمة السر" added={hasPassword} email={passwordEmail}>
+          <MethodRow label={t('sc.emailPw')} added={hasPassword} email={passwordEmail}>
             {hasPassword ? (
               <>
                 <button
@@ -289,14 +322,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   disabled={!canEdit || busy}
                   className={`${miniBtnCls} border-primary-500/30 bg-primary-500/10 text-primary-300`}
                 >
-                  <Pencil className="w-3 h-3" /> تعديل البريد
+                  <Pencil className="w-3 h-3" /> {t('sc.editEmail')}
                 </button>
                 <button
                   onClick={() => openPanel('removeEmail')}
                   disabled={!canEdit || busy || !hasGoogle}
                   className={`${miniBtnCls} border-red-500/30 bg-red-500/10 text-red-400`}
                 >
-                  <Trash2 className="w-3 h-3" /> حذف
+                  <Trash2 className="w-3 h-3" /> {t('sc.delete')}
                 </button>
               </>
             ) : (
@@ -305,7 +338,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 disabled={!canEdit || busy}
                 className={`${miniBtnCls} border-primary-500/30 bg-primary-500/10 text-primary-300`}
               >
-                <Plus className="w-3 h-3" /> إضافة بريد وكلمة سر
+                <Plus className="w-3 h-3" /> {t('sc.addEmailPw')}
               </button>
             )}
           </MethodRow>
@@ -313,17 +346,17 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         {hasGoogle && !hasPassword && (
           <p className="text-[11px] text-slate-500 leading-relaxed mt-2 px-1">
-            لتغيير حساب جوجل أو حذفه أضف البريد وكلمة السر أولاً، حتى تبقى لديك طريقة دخول دائماً.
+            {t('sc.noteGoogleOnly')}
           </p>
         )}
         {hasPassword && !hasGoogle && (
           <p className="text-[11px] text-slate-500 leading-relaxed mt-2 px-1">
-            لا يمكن حذف البريد وكلمة السر قبل ربط حساب جوجل، حتى تبقى لديك طريقة دخول دائماً.
+            {t('sc.noteEmailOnly')}
           </p>
         )}
         {hasPassword && hasGoogle && (
           <p className="text-[11px] text-slate-500 leading-relaxed mt-2 px-1">
-            لا يمكن حذف الطريقتين معاً: يجب أن تبقى إحداهما على الأقل.
+            {t('sc.noteBoth')}
           </p>
         )}
       </div>
@@ -333,10 +366,10 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-black text-white">إضافة تسجيل الدخول بالبريد وكلمة السر</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.addEmailHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            اكتب البريد الذي ستسجّل به، ويمكن أن يكون نفس بريد حساب جوجل أو بريداً آخر. ثم اختر كلمة سر.
+            {t('sc.addEmailDesc')}
           </p>
           <input
             type="email"
@@ -344,7 +377,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="البريد الإلكتروني"
+            placeholder={t('sc.emailPlaceholder')}
             className={inputCls}
             disabled={!canEdit || busy}
           />
@@ -355,7 +388,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               disabled={!canEdit || busy}
               className={ghostBtnCls}
             >
-              استخدام بريد جوجل ({googleEmail})
+              {t('sc.useGoogleEmail', { email: googleEmail })}
             </button>
           )}
           <input
@@ -363,7 +396,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="new-password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
-            placeholder="كلمة السر الجديدة"
+            placeholder={t('sc.newPw')}
             className={inputCls}
             disabled={!canEdit || busy}
           />
@@ -372,12 +405,12 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="new-password"
             value={pw2}
             onChange={(e) => setPw2(e.target.value)}
-            placeholder="أعد كتابة كلمة السر"
+            placeholder={t('sc.repeatPw')}
             className={inputCls}
             disabled={!canEdit || busy}
           />
           <button onClick={onAddEmail} disabled={!canEdit || busy} className={btnCls}>
-            {spinner} إضافة الطريقة
+            {spinner} {t('sc.addMethod')}
           </button>
         </div>
       )}
@@ -387,10 +420,10 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-black text-white">تعديل البريد الإلكتروني</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.changeEmailHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            سنرسل رابط تأكيد إلى البريد الجديد، ولا يتغيّر بريدك إلا بعد فتح الرابط.
+            {t('sc.changeEmailDesc')}
           </p>
           <input
             type="email"
@@ -398,13 +431,13 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="البريد الجديد"
+            placeholder={t('sc.newEmail')}
             className={inputCls}
             disabled={!canEdit || busy}
           />
           {passwordField}
           <button onClick={onChangeEmail} disabled={!canEdit || busy} className={btnCls}>
-            {spinner} إرسال رابط التأكيد
+            {spinner} {t('sc.sendConfirm')}
           </button>
         </div>
       )}
@@ -414,13 +447,13 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Trash2 className="w-4 h-4 text-red-400" />
-            <h3 className="text-sm font-black text-white">حذف البريد وكلمة السر</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.removeEmailHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            ستدخل بعدها بحساب جوجل فقط. سنطلب منك تأكيد حساب جوجل الحالي قبل الحذف.
+            {t('sc.removeEmailDesc')}
           </p>
           <button onClick={onRemoveEmail} disabled={!canEdit || busy || !hasGoogle} className={dangerBtnCls}>
-            {spinner} تأكيد الحذف
+            {spinner} {t('sc.confirmDelete')}
           </button>
         </div>
       )}
@@ -430,14 +463,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Plus className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-black text-white">ربط حساب جوجل</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.linkGoogleHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            اكتب كلمة السر الحالية ثم اختر حساب جوجل الذي تريد ربطه.
+            {t('sc.linkGoogleDesc')}
           </p>
           {passwordField}
           <button onClick={onAddGoogle} disabled={!canEdit || busy} className={btnCls}>
-            {spinner} اختيار حساب جوجل
+            {spinner} {t('sc.pickGoogle')}
           </button>
         </div>
       )}
@@ -447,13 +480,13 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Pencil className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-black text-white">تغيير حساب جوجل</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.changeGoogleHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            الخطوة 1: أكّد حساب جوجل الحالي. الخطوة 2: اختر الحساب الجديد. إن فشل الربط يعود حسابك القديم تلقائياً.
+            {t('sc.changeGoogleDesc')}
           </p>
           <button onClick={onChangeGoogle} disabled={!canEdit || busy || !hasPassword} className={btnCls}>
-            {spinner} البدء
+            {spinner} {t('sc.start')}
           </button>
         </div>
       )}
@@ -463,14 +496,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Trash2 className="w-4 h-4 text-red-400" />
-            <h3 className="text-sm font-black text-white">حذف حساب جوجل</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.removeGoogleHead')}</h3>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            ستدخل بعدها بالبريد وكلمة السر فقط. اكتب كلمة السر الحالية للتأكيد.
+            {t('sc.removeGoogleDesc')}
           </p>
           {passwordField}
           <button onClick={onRemoveGoogle} disabled={!canEdit || busy || !hasPassword} className={dangerBtnCls}>
-            {spinner} تأكيد الحذف
+            {spinner} {t('sc.confirmDelete')}
           </button>
         </div>
       )}
@@ -480,14 +513,14 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-black text-white">تغيير كلمة السر</h3>
+            <h3 className="text-sm font-black text-white">{t('sc.changePwHead')}</h3>
           </div>
           <input
             type="password"
             autoComplete="current-password"
             value={panel ? '' : cur}
             onChange={(e) => setCur(e.target.value)}
-            placeholder="كلمة السر الحالية"
+            placeholder={t('sc.currentPw')}
             className={inputCls}
             disabled={!canEdit || busy || panel !== null}
           />
@@ -496,7 +529,7 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="new-password"
             value={panel ? '' : pw}
             onChange={(e) => setPw(e.target.value)}
-            placeholder="كلمة السر الجديدة"
+            placeholder={t('sc.newPw')}
             className={inputCls}
             disabled={!canEdit || busy || panel !== null}
           />
@@ -505,12 +538,12 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             autoComplete="new-password"
             value={panel ? '' : pw2}
             onChange={(e) => setPw2(e.target.value)}
-            placeholder="أعد كتابة كلمة السر الجديدة"
+            placeholder={t('sc.repeatNewPw')}
             className={inputCls}
             disabled={!canEdit || busy || panel !== null}
           />
           <button onClick={onChangePassword} disabled={!canEdit || busy || panel !== null} className={btnCls}>
-            {spinner} حفظ كلمة السر
+            {spinner} {t('sc.savePw')}
           </button>
         </div>
       )}
