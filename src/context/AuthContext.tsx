@@ -17,7 +17,7 @@ import { createUserProfile, getUserProfile, checkUsernameAvailable, updateUserPr
 import { accountGuard } from '../services/accountService';
 import { calcAge } from '../utils/age';
 import type { UserProfile, Gender } from '../types';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { saveAccount } from '../utils/savedAccounts';
 import { checkDevice } from '../services/deviceService';
 
@@ -46,7 +46,7 @@ interface AuthContextType {
   isModerator: boolean;
   signInEmail: (email: string, password: string) => Promise<void>;
   signUpEmail: (data: SignUpData) => Promise<void>;
-  signInGoogle: () => Promise<void>;
+  signInGoogle: (hintEmail?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
@@ -54,6 +54,9 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// إضافة أندرويد صغيرة تسجّل الدخول بحساب غوغل محدد مباشرة بدون قائمة الحسابات
+const GoogleHint = registerPlugin<{ signIn(opts: { email: string }): Promise<{ idToken: string }> }>('GoogleHint');
 
 // المالك الأساسي للتطبيق يُعرَف باسم المستخدم المحجوز فقط (بدون أي إيميل في الكود أو القواعد)
 const OWNER_USERNAME = 'animeverse_official';
@@ -224,20 +227,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fbUpdateProfile(cred.user, { displayName }).catch(console.error);
   };
 
-  const signInGoogle = async () => {
+  const signInGoogle = async (hintEmail?: string) => {
     try {
       if (Capacitor.isNativePlatform()) {
-        const result = await FirebaseAuthentication.signInWithGoogle({
-          skipNativeAuth: true,
-          useCredentialManager: false,
-        } as any);
-        const idToken = result.credential?.idToken;
+        let idToken: string | undefined;
+        if (hintEmail && Capacitor.isPluginAvailable('GoogleHint')) {
+          // دخول مباشر بالحساب المحفوظ بدون قائمة الحسابات
+          const r = await GoogleHint.signIn({ email: hintEmail });
+          idToken = r.idToken;
+        } else {
+          const result = await FirebaseAuthentication.signInWithGoogle({
+            skipNativeAuth: true,
+            useCredentialManager: false,
+          } as any);
+          idToken = result.credential?.idToken;
+        }
         if (!idToken) throw new Error('NO_ID_TOKEN');
         const cred = GoogleAuthProvider.credential(idToken);
         await signInWithCredential(auth, cred);
       } else {
         const { signInWithPopup } = await import('firebase/auth');
-        const cred = await signInWithPopup(auth, googleProvider);
+        let provider = googleProvider;
+        if (hintEmail) {
+          // login_hint يجعل غوغل يختار الحساب مباشرة بدون قائمة الحسابات
+          provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ login_hint: hintEmail });
+        }
+        const cred = await signInWithPopup(auth, provider);
         const existing = await getUserProfile(cred.user.uid);
         if (!existing) {
           await createUserProfile(cred.user.uid, {
