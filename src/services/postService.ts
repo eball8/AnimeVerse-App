@@ -7,6 +7,7 @@ import {
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
 import { getMutualFriendIds } from './followService';
+import { isValidUsername } from '../utils/username';
 
 export interface Post {
   id?: string;
@@ -56,12 +57,15 @@ export const setShareLikesWithFriends = (v: boolean): void => {
 };
 
 // استخراج @username من نص المنشور وتحويلها إلى معرّفات مستخدمين حقيقيين (حد أقصى 10)
+// اسم المستخدم قد يحتوي نقاطاً في الوسط (مثل @ahmed.diaz)، والنقطة في نهاية الجملة لا تُحتسب
 const extractMentionIds = async (content: string, authorId: string): Promise<string[]> => {
   const names = new Set<string>();
-  const re = /(^|\s)@([a-zA-Z0-9_]{3,30})/g;
+  const re = /(^|\s)@([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
-    names.add(m[2].toLowerCase());
+    const name = m[2].toLowerCase();
+    if (!isValidUsername(name)) continue;
+    names.add(name);
     if (names.size >= 10) break;
   }
   if (names.size === 0) return [];
