@@ -12,8 +12,9 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { tr } from '../i18n/staticT';
 import type { UserProfile } from '../types';
-import { isValidUsername, USERNAME_ERROR } from '../utils/username';
+import { isValidUsername } from '../utils/username';
 
 const USERS_COLLECTION = 'users';
 // حجز أسماء المستخدمين: وثيقة لكل اسم، معرّفها هو الاسم نفسه، وتحمل uid صاحبه
@@ -23,7 +24,7 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): T =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
 
 const takenError = () => {
-  const e: any = new Error('اسم المستخدم مستخدم بالفعل.');
+  const e: any = new Error(tr('misc.usernameTaken'));
   e.code = 'app/username-taken';
   return e;
 };
@@ -141,7 +142,7 @@ export const updateUserProfile = async (
   }
 
   if (!isValidUsername(newName)) {
-    const e: any = new Error(USERNAME_ERROR);
+    const e: any = new Error(tr('ep.usernameError'));
     e.code = 'app/username-invalid';
     throw e;
   }
