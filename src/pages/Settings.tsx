@@ -56,12 +56,19 @@ const Notice: React.FC<{ kind: 'ok' | 'err' | 'warn'; text: string }> = ({ kind,
   );
 };
 
+const dayUnit = (t: (k: string) => string, n: number) => (n === 1 ? t('sx.unitDay') : t('sx.unitDays'));
+
+const BackLabel: React.FC = () => {
+  const { t } = useI18n();
+  return <>{t('settings.backToSettings')}</>;
+};
+
 const SubPage: React.FC<{ title: string; onBack: () => void; children: React.ReactNode }> = ({
   title, onBack, children,
 }) => (
   <div className="space-y-4">
     <button onClick={onBack} className="flex items-center gap-2 text-sm text-primary-400 font-bold">
-      <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> رجوع للإعدادات
+      <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> <BackLabel />
     </button>
     <h2 className="text-lg font-black text-white">{title}</h2>
     {children}
@@ -119,14 +126,16 @@ const useDevices = (uid: string) => {
 const TrustBanner: React.FC<{ loaded: boolean; trusted: boolean; failed: boolean; daysLeft?: number }> = ({
   loaded, trusted, failed, daysLeft,
 }) => {
+  const { t } = useI18n();
   if (!loaded || trusted) return null;
-  if (failed) return <Notice kind="warn" text="تعذّر التحقق من حالة هذا الجهاز. تحقق من الاتصال ثم أعد فتح الصفحة." />;
+  if (failed) return <Notice kind="warn" text={t('sx.trustFailed')} />;
   return (
     <Notice
       kind="warn"
-      text={`هذا الجهاز غير موثوق بعد، فلا يمكن تغيير الإعدادات الحساسة منه. يصبح موثوقاً تلقائياً بعد ${TRUST_DAYS} أيام من تسجيله${
-        daysLeft ? ` (متبقٍ ${daysLeft} ${daysLeft === 1 ? 'يوم' : 'أيام'})` : ''
-      } بشرط ألا تحذف التطبيق أو الحساب خلالها.`}
+      text={t('sx.untrusted', {
+        days: TRUST_DAYS,
+        left: daysLeft ? ' ' + t('sx.untrustedLeft', { n: daysLeft, unit: dayUnit(t, daysLeft) }) : '',
+      })}
     />
   );
 };
@@ -135,7 +144,7 @@ const TrustBanner: React.FC<{ loaded: boolean; trusted: boolean; failed: boolean
 const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
   const { user, profile, resendVerification, refreshProfile } = useAuth();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -149,10 +158,10 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     try {
       await updateUserProfile(user.uid, { birthDate: iso, age: calcAge(iso) });
       await refreshProfile();
-      setMsg({ kind: 'ok', text: 'تم حفظ تاريخ الميلاد.' });
+      setMsg({ kind: 'ok', text: t('sx.birthSaved') });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّر حفظ تاريخ الميلاد.' });
+      setMsg({ kind: 'err', text: t('sx.birthFail') });
     } finally {
       setBusy(false);
     }
@@ -162,7 +171,7 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setBusy(true);
     try {
       await resendVerification();
-      setMsg({ kind: 'ok', text: 'أرسلنا رابط التفعيل إلى بريدك.' });
+      setMsg({ kind: 'ok', text: t('sx.verifySent') });
     } catch (e) {
       setMsg({ kind: 'err', text: authErrorText(e) });
     } finally {
@@ -171,7 +180,7 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   return (
-    <SubPage title="البيانات الشخصية" onBack={onBack}>
+    <SubPage title={t('sx.personalTitle')} onBack={onBack}>
       <div className="card flex items-center gap-3 p-4">
         <Avatar
           src={profile?.photoURL}
@@ -186,43 +195,43 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </div>
 
       <div className="card divide-y divide-white/5">
-        <InfoRow label="البريد الإلكتروني" value={<span dir="ltr">{user.email || '—'}</span>} />
+        <InfoRow label={t('sx.email')} value={<span dir="ltr">{user.email || '—'}</span>} />
         <InfoRow
-          label="حالة البريد"
+          label={t('sx.emailStatus')}
           value={
             user.emailVerified ? (
-              <span className="text-emerald-400">مفعّل</span>
+              <span className="text-emerald-400">{t('sx.verified')}</span>
             ) : (
-              <span className="text-amber-400">غير مفعّل</span>
+              <span className="text-amber-400">{t('sx.unverified')}</span>
             )
           }
         />
-        <InfoRow label="تاريخ إنشاء الحساب" value={created ? created.toLocaleDateString(lang) : undefined} />
+        <InfoRow label={t('sx.created')} value={created ? created.toLocaleDateString(lang) : undefined} />
       </div>
 
       <div className="card p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-white">تاريخ الميلاد</h3>
-          {typeof age === 'number' && <span className="text-xs text-slate-400">العمر: {age} سنة</span>}
+          <h3 className="text-sm font-black text-white">{t('sx.birth')}</h3>
+          {typeof age === 'number' && <span className="text-xs text-slate-400">{t('sx.age', { age })}</span>}
         </div>
         <DatePickerSheet
           value={profile?.birthDate || ''}
           onChange={saveBirth}
           minAge={13}
-          placeholder="أضف تاريخ ميلادك"
+          placeholder={t('sx.addBirth')}
         />
       </div>
 
       {!user.emailVerified && user.email && (
         <button onClick={resend} disabled={busy} className={btnCls}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-          إرسال رابط تفعيل البريد
+          {t('sx.sendVerify')}
         </button>
       )}
       {msg && <Notice kind={msg.kind} text={msg.text} />}
 
       <button onClick={() => navigate('/edit-profile')} className={btnCls}>
-        <User className="w-4 h-4" /> تعديل الاسم والصورة واسم المستخدم
+        <User className="w-4 h-4" /> {t('sx.editProfile')}
       </button>
     </SubPage>
   );
@@ -232,34 +241,33 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { devices, reload, trusted, current, loaded, failed } = useDevices(user!.uid);
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const [busyId, setBusyId] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   if (!user) return null;
 
   const remove = async (d: DeviceItem) => {
-    if (!confirm(`إزالة الجهاز "${d.label}" من القائمة؟`)) return;
+    if (!confirm(t('sx.removeConfirm', { name: d.label }))) return;
     setBusyId(d.id);
     setMsg(null);
     try {
       await removeDevice(user.uid, d.id);
       await reload();
-      setMsg({ kind: 'ok', text: 'تمت إزالة الجهاز من القائمة.' });
+      setMsg({ kind: 'ok', text: t('sx.removed') });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّرت إزالة الجهاز.' });
+      setMsg({ kind: 'err', text: t('sx.removeFail') });
     } finally {
       setBusyId('');
     }
   };
 
   return (
-    <SubPage title="الأجهزة النشطة والثقة" onBack={onBack}>
+    <SubPage title={t('sx.devicesTitle')} onBack={onBack}>
       <TrustBanner loaded={loaded} trusted={trusted} failed={failed} daysLeft={current?.daysLeft} />
       <p className="text-xs text-slate-400 leading-relaxed">
-        الجهاز الأول الذي أنشأت منه الحساب موثوق مباشرة. أي جهاز جديد يصبح موثوقاً بعد {TRUST_DAYS} أيام من تسجيله.
-        الجهاز غير الموثوق لا يستطيع تغيير كلمة السر أو الإعدادات الحساسة.
+        {t('sx.devicesInfo', { days: TRUST_DAYS })}
       </p>
 
       {!loaded && <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto" />}
@@ -274,10 +282,10 @@ const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-white truncate">
-                {d.label} {d.current && <span className="text-[10px] text-primary-400">(هذا الجهاز)</span>}
+                {d.label} {d.current && <span className="text-[10px] text-primary-400">{t('sx.thisDevice')}</span>}
               </p>
               <p className="text-[11px] text-slate-400">
-                {d.trusted ? 'موثوق' : `غير موثوق، يصبح موثوقاً بعد ${d.daysLeft} ${d.daysLeft === 1 ? 'يوم' : 'أيام'}`}
+                {d.trusted ? t('sx.trusted') : t('sx.untrustedIn', { n: d.daysLeft, unit: dayUnit(t, d.daysLeft) })}
                 {' • '}
                 {new Date(d.createdAt).toLocaleDateString(lang)}
               </p>
@@ -287,7 +295,7 @@ const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 onClick={() => remove(d)}
                 disabled={!trusted || busyId === d.id}
                 className="p-2 rounded-xl text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-                aria-label="إزالة"
+                aria-label={t('sx.remove')}
               >
                 {busyId === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
               </button>
@@ -298,7 +306,7 @@ const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       {msg && <Notice kind={msg.kind} text={msg.text} />}
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        إزالة جهاز من القائمة لا تُسجّل خروجه فوراً. إذا شككت في جهاز، غيّر كلمة السر من قسم الأمان.
+        {t('sx.removeNote')}
       </p>
     </SubPage>
   );
@@ -343,6 +351,7 @@ type MsgPrivacy = 'everyone' | 'following' | 'nobody';
 
 const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user, profile, refreshProfile } = useAuth();
+  const { t } = useI18n();
   const [reqs, setReqs] = useState<string[]>([]);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -370,7 +379,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       return true;
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّر حفظ الإعداد.' });
+      setMsg({ kind: 'err', text: t('sx.saveFail') });
       return false;
     } finally {
       setBusy('');
@@ -381,7 +390,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const next = !showActivity;
     await save(
       { showActivity: next },
-      next ? 'تم إظهار حالة النشاط.' : 'تم إخفاء حالة النشاط.',
+      next ? t('sx.activityOn') : t('sx.activityOff'),
       'toggle:activity'
     );
   };
@@ -390,7 +399,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const next = !showLikedReels;
     const ok = await save(
       { showLikedReels: next },
-      next ? 'سيظهر ما تُعجب به من فيديوهات لأصدقائك.' : 'تم إخفاء إعجاباتك عن الأصدقاء.',
+      next ? t('sx.likedOn') : t('sx.likedOff'),
       'toggle:liked'
     );
     if (ok && !next) {
@@ -399,7 +408,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         await clearMyFriendActivity(user.uid);
       } catch (e) {
         console.error('clear friend activity failed:', e);
-        setMsg({ kind: 'err', text: 'تم حفظ الإعداد لكن تعذّر حذف الإعجابات المنشورة سابقاً.' });
+        setMsg({ kind: 'err', text: t('sx.likedClearFail') });
       }
     }
   };
@@ -411,7 +420,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       else await rejectRequest(fid, user.uid);
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّرت معالجة الطلب.' });
+      setMsg({ kind: 'err', text: t('sx.requestFail') });
     } finally {
       setBusy('');
     }
@@ -433,48 +442,48 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 
   return (
-    <SubPage title="نوع الحساب وطلبات المراسلة" onBack={onBack}>
+    <SubPage title={t('sx.privacyTitle')} onBack={onBack}>
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">نوع الحساب</h3>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('sx.accountType')}</h3>
         <div className="card divide-y divide-white/5">
-          {choice(accountType === 'public', 'عام', 'أي شخص يتابعك مباشرة ويرى منشوراتك.', () =>
-            accountType !== 'public' && save({ accountType: 'public' }, 'أصبح حسابك عاماً.')
+          {choice(accountType === 'public', t('sx.public'), t('sx.publicSub'), () =>
+            accountType !== 'public' && save({ accountType: 'public' }, t('sx.nowPublic'))
           )}
-          {choice(accountType === 'private', 'خاص', 'المتابعة تحتاج موافقتك على الطلب.', () =>
-            accountType !== 'private' && save({ accountType: 'private' }, 'أصبح حسابك خاصاً.')
+          {choice(accountType === 'private', t('sx.private'), t('sx.privateSub'), () =>
+            accountType !== 'private' && save({ accountType: 'private' }, t('sx.nowPrivate'))
           )}
         </div>
       </div>
 
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">من يستطيع مراسلتك أول مرة؟</h3>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('sx.whoMsg')}</h3>
         <div className="card divide-y divide-white/5">
-          {choice(msgPrivacy === 'everyone', 'الجميع', 'أي مستخدم يستطيع بدء محادثة معك.', () =>
-            save({ messagePrivacy: 'everyone' }, 'تم حفظ الإعداد.')
+          {choice(msgPrivacy === 'everyone', t('sx.everyone'), t('sx.everyoneSub'), () =>
+            save({ messagePrivacy: 'everyone' }, t('sx.saved'))
           )}
-          {choice(msgPrivacy === 'following', 'من أتابعهم فقط', 'فقط الأشخاص الذين تتابعهم يبدأون محادثة معك.', () =>
-            save({ messagePrivacy: 'following' }, 'تم حفظ الإعداد.')
+          {choice(msgPrivacy === 'following', t('sx.followingOnly'), t('sx.followingOnlySub'), () =>
+            save({ messagePrivacy: 'following' }, t('sx.saved'))
           )}
-          {choice(msgPrivacy === 'nobody', 'لا أحد', 'لا تصلك محادثات جديدة. المحادثات الحالية تستمر.', () =>
-            save({ messagePrivacy: 'nobody' }, 'تم حفظ الإعداد.')
+          {choice(msgPrivacy === 'nobody', t('sx.nobody'), t('sx.nobodySub'), () =>
+            save({ messagePrivacy: 'nobody' }, t('sx.saved'))
           )}
         </div>
       </div>
 
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">الظهور والنشاط</h3>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('sx.visibility')}</h3>
         <div className="card divide-y divide-white/5">
           <ToggleRow
-            title="إظهار حالة النشاط"
-            sub="إظهار أنك متصل الآن وآخر ظهور لك. عند الإيقاف لن يرى الآخرون حالتك، ولن ترى أنت حالتهم."
+            title={t('sx.showActivity')}
+            sub={t('sx.showActivitySub')}
             on={showActivity}
             loading={busy === 'toggle:activity'}
             disabled={busy !== ''}
             onToggle={toggleActivity}
           />
           <ToggleRow
-            title="إظهار الفيديوهات والريلز التي أعجبتني للأصدقاء"
-            sub="تظهر الفيديوهات التي تُعجب بها في تبويب الأصدقاء لدى من تتابعهم ويتابعونك. عند الإيقاف تُحذف الإعجابات المنشورة سابقاً."
+            title={t('sx.showLiked')}
+            sub={t('sx.showLikedSub')}
             on={showLikedReels}
             loading={busy === 'toggle:liked'}
             disabled={busy !== ''}
@@ -486,9 +495,9 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       {msg && <Notice kind={msg.kind} text={msg.text} />}
 
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">طلبات المتابعة ({reqs.length})</h3>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('sx.followReqs', { n: reqs.length })}</h3>
         {reqs.length === 0 ? (
-          <p className="text-xs text-slate-500 px-1">لا توجد طلبات حالياً.</p>
+          <p className="text-xs text-slate-500 px-1">{t('sx.noReqs')}</p>
         ) : (
           <div className="card divide-y divide-white/5">
             {reqs.map((fid) => {
@@ -502,14 +511,14 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     disabled={busy === fid}
                     className="px-3 py-1.5 rounded-lg bg-primary-500/20 text-primary-300 text-xs font-bold disabled:opacity-50"
                   >
-                    قبول
+                    {t('sx.accept')}
                   </button>
                   <button
                     onClick={() => decide(fid, false)}
                     disabled={busy === fid}
                     className="px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 text-xs font-bold disabled:opacity-50"
                   >
-                    رفض
+                    {t('sx.reject')}
                   </button>
                 </div>
               );
@@ -526,6 +535,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { trusted, current, loaded, failed } = useDevices(user!.uid);
+  const { t } = useI18n();
   const [state, setState] = useState<E2EEInit['state'] | 'loading' | 'error'>('loading');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
@@ -551,9 +561,9 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const pinProblem = (): string | null => {
     const c = checkPin(pin);
-    if (c === 'invalid') return 'يجب أن يتكوّن الكود من 6 أرقام.';
-    if (c === 'weak') return 'الكود سهل التخمين، تجنّب الأرقام المكررة أو المتسلسلة.';
-    if (pin !== pin2) return 'الكودان غير متطابقين.';
+    if (c === 'invalid') return t('sx.pinInvalid');
+    if (c === 'weak') return t('sx.pinWeak');
+    if (pin !== pin2) return t('sx.pinMismatch');
     return null;
   };
 
@@ -567,10 +577,10 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setState('ready');
       setPin('');
       setPin2('');
-      setMsg({ kind: 'ok', text: 'تم حفظ كود الأمان. رسائلك محمية.' });
+      setMsg({ kind: 'ok', text: t('sx.pinSaved') });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّر حفظ الكود، حاول مرة أخرى.' });
+      setMsg({ kind: 'err', text: t('sx.pinSaveFail') });
     } finally {
       setBusy(false);
     }
@@ -579,7 +589,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const doReset = async () => {
     const bad = pinProblem();
     if (bad) return setMsg({ kind: 'err', text: bad });
-    if (!confirm('سيتم إنشاء مفاتيح جديدة وحذف رسائلك القديمة نهائياً. هل تريد المتابعة؟')) return;
+    if (!confirm(t('sx.resetConfirm'))) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -588,10 +598,10 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setShowReset(false);
       setPin('');
       setPin2('');
-      setMsg({ kind: 'ok', text: 'تم إنشاء مفاتيح وكود جديد. المحادثات الجديدة محمية.' });
+      setMsg({ kind: 'ok', text: t('sx.resetDone') });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّرت إعادة التعيين، حاول مرة أخرى.' });
+      setMsg({ kind: 'err', text: t('sx.resetFail') });
     } finally {
       setBusy(false);
     }
@@ -607,7 +617,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         maxLength={6}
         value={pin}
         onChange={(e) => setPin(sanitizePin(e.target.value))}
-        placeholder="الكود الجديد (6 أرقام)"
+        placeholder={t('sx.pinNew')}
         className={inputCls}
         disabled={busy}
       />
@@ -619,7 +629,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         maxLength={6}
         value={pin2}
         onChange={(e) => setPin2(sanitizePin(e.target.value))}
-        placeholder="أعد كتابة الكود"
+        placeholder={t('sx.pinRepeat')}
         className={inputCls}
         disabled={busy}
       />
@@ -627,31 +637,30 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 
   return (
-    <SubPage title="التشفير التام (E2EE)" onBack={onBack}>
+    <SubPage title={t('sx.e2eeTitle')} onBack={onBack}>
       <p className="text-xs text-slate-400 leading-relaxed">
-        رسائلك تُشفَّر على جهازك ولا يستطيع أحد قراءتها، ولا حتى نحن. كود الأمان (6 أرقام) يحفظ لك نسخة احتياطية
-        من مفتاحك، وتحتاجه فقط عند تغيير الهاتف أو إعادة تثبيت التطبيق.
+        {t('sx.e2eeIntro')}
       </p>
 
       {state === 'loading' && <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto" />}
-      {state === 'error' && <Notice kind="err" text="تعذّر قراءة حالة التشفير. تحقق من الاتصال وأعد المحاولة." />}
+      {state === 'error' && <Notice kind="err" text={t('sx.e2eeReadFail')} />}
 
       {state === 'ready' && (
         <div className="card p-4 flex items-center gap-3">
           <ShieldCheck className="w-6 h-6 text-emerald-400" />
-          <p className="text-sm font-bold text-white">التشفير مفعّل على هذا الجهاز</p>
+          <p className="text-sm font-bold text-white">{t('sx.e2eeOn')}</p>
         </div>
       )}
 
       {state === 'setup' && (
         <div className="card p-4 space-y-3">
-          <h3 className="text-sm font-black text-white">أنشئ كود الأمان</h3>
+          <h3 className="text-sm font-black text-white">{t('sx.createPin')}</h3>
           <p className="text-xs text-slate-400 leading-relaxed">
-            لا يمكننا استرجاع الكود لك، فاحفظه جيداً. إن نسيته لن تُستعاد رسائلك القديمة.
+            {t('sx.pinWarn')}
           </p>
           {pinInputs}
           <button onClick={doSetup} disabled={busy} className={btnCls}>
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />} حفظ الكود
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />} {t('sx.savePin')}
           </button>
         </div>
       )}
@@ -659,16 +668,16 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       {(state === 'restore' || state === 'migrate') && (
         <div className="card p-4 space-y-3">
           <p className="text-xs text-slate-300 leading-relaxed">
-            هذا الجهاز يحتاج كود الأمان لاستعادة رسائلك. افتح الرسائل واكتب الكود.
+            {t('sx.restoreNeed')}
           </p>
           <button onClick={() => navigate('/messages')} className={btnCls}>
-            <MessageSquare className="w-4 h-4" /> فتح الرسائل
+            <MessageSquare className="w-4 h-4" /> {t('sx.openMessages')}
           </button>
         </div>
       )}
 
       {state === 'reset' && (
-        <Notice kind="warn" text="لا توجد نسخة احتياطية صالحة لمفتاحك. أنشئ كوداً جديداً من الأسفل لبدء محادثات جديدة." />
+        <Notice kind="warn" text={t('sx.noBackup')} />
       )}
 
       {state !== 'loading' && state !== 'error' && state !== 'setup' && (
@@ -680,19 +689,19 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               disabled={state !== 'reset' && !trusted}
               className={dangerBtnCls}
             >
-              نسيت الكود؟ إنشاء كود ومفاتيح جديدة
+              {t('sx.forgot')}
             </button>
           ) : (
             <div className="card p-4 space-y-3 border-red-500/30">
               <p className="text-xs text-red-300 leading-relaxed">
-                تحذير: سيتم حذف رسائلك القديمة نهائياً، وتبدأ كود جديد ومحادثات جديدة.
+                {t('sx.resetWarn')}
               </p>
               {pinInputs}
               <button onClick={doReset} disabled={busy} className={dangerBtnCls}>
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد وإعادة التعيين
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />} {t('sx.confirmReset')}
               </button>
               <button onClick={() => setShowReset(false)} disabled={busy} className={btnCls}>
-                إلغاء
+                {t('sx.cancel')}
               </button>
             </div>
           )}
@@ -706,6 +715,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
 // ---------- المشغل ----------
 const PlayerSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const { t } = useI18n();
   const [pref, setPref] = useState<PlayerPref>(getPlayerPref);
   const pick = (p: PlayerPref) => {
     setPref(p);
@@ -724,11 +734,11 @@ const PlayerSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     </button>
   );
   return (
-    <SubPage title="المشغل الافتراضي (EZV)" onBack={onBack}>
-      <p className="text-xs text-slate-400 leading-relaxed">اختر كيف تُفتح روابط السيرفرات عند مشاهدة الحلقات.</p>
+    <SubPage title={t('sx.playerTitle')} onBack={onBack}>
+      <p className="text-xs text-slate-400 leading-relaxed">{t('sx.playerHint')}</p>
       <div className="card divide-y divide-white/5">
-        {opt('ezv', 'EZV Player', 'يفتح الرابط مباشرة في تطبيق EZV إن كان مثبتاً.')}
-        {opt('browser', 'المتصفح', 'يفتح الرابط في المتصفح بدل المشغل الخارجي.')}
+        {opt('ezv', 'EZV Player', t('sx.ezvSub'))}
+        {opt('browser', t('sx.browser'), t('sx.browserSub'))}
       </div>
       <a
         href="https://play.google.com/store/apps/details?id=com.player.easy"
@@ -736,7 +746,7 @@ const PlayerSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         rel="noreferrer"
         className={btnCls}
       >
-        <ExternalLink className="w-4 h-4" /> تحميل EZV Player
+        <ExternalLink className="w-4 h-4" /> {t('sx.downloadEzv')}
       </a>
     </SubPage>
   );
@@ -745,13 +755,14 @@ const PlayerSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 // ---------- المظهر ----------
 const ThemeSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const opts: { value: 'dark' | 'light' | 'system'; label: string; icon: any }[] = [
-    { value: 'dark', label: 'داكن', icon: Moon },
-    { value: 'light', label: 'فاتح', icon: Sun },
-    { value: 'system', label: 'حسب النظام', icon: MonitorSmartphone },
+    { value: 'dark', label: t('sx.themeDark'), icon: Moon },
+    { value: 'light', label: t('sx.themeLight'), icon: Sun },
+    { value: 'system', label: t('sx.themeSystem'), icon: MonitorSmartphone },
   ];
   return (
-    <SubPage title="المظهر" onBack={onBack}>
+    <SubPage title={t('sx.themeTitle')} onBack={onBack}>
       <div className="card divide-y divide-white/5">
         {opts.map(({ value, label, icon: Icon }) => (
           <button
@@ -786,42 +797,43 @@ const useAppVersion = (): string => {
 // ---------- الإبلاغ عن مشكلة ----------
 const SupportSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const version = useAppVersion();
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const send = async () => {
-    if (text.trim().length < 5) return setMsg({ kind: 'err', text: 'اشرح المشكلة بجملة واضحة.' });
+    if (text.trim().length < 5) return setMsg({ kind: 'err', text: t('sx.reportShort') });
     setBusy(true);
     setMsg(null);
     try {
       await sendProblemReport(text, version);
       setText('');
-      setMsg({ kind: 'ok', text: 'وصلنا بلاغك، شكراً لك.' });
+      setMsg({ kind: 'ok', text: t('sx.reportSent') });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّر إرسال البلاغ حالياً.' });
+      setMsg({ kind: 'err', text: t('sx.reportFail') });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <SubPage title="الإبلاغ عن مشكلة" onBack={onBack}>
+    <SubPage title={t('sx.reportTitle')} onBack={onBack}>
       <p className="text-xs text-slate-400 leading-relaxed">
-        اكتب ما حدث وفي أي صفحة. نُرفق تلقائياً رقم الإصدار واسم الجهاز لتسهيل الحل.
+        {t('sx.reportHint')}
       </p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value.slice(0, 400))}
         rows={6}
-        placeholder="اشرح المشكلة هنا..."
+        placeholder={t('sx.reportPlaceholder')}
         className={inputCls}
         disabled={busy}
       />
       <p className="text-[11px] text-slate-500 text-end">{text.length}/400</p>
       <button onClick={send} disabled={busy} className={btnCls}>
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} إرسال البلاغ
+        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {t('sx.sendReport')}
       </button>
       {msg && <Notice kind={msg.kind} text={msg.text} />}
     </SubPage>
@@ -831,27 +843,28 @@ const SupportSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 // ---------- حول التطبيق ----------
 const AboutSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const version = useAppVersion();
+  const { t } = useI18n();
   return (
-    <SubPage title="حول التطبيق والإصدار" onBack={onBack}>
+    <SubPage title={t('sx.aboutTitle')} onBack={onBack}>
       <div className="card p-6 text-center space-y-1">
         <h3 className="text-xl font-black text-white">AnimeVerse</h3>
-        <p className="text-xs text-slate-400">مجتمع الأنمي</p>
+        <p className="text-xs text-slate-400">{t('sx.communityTag')}</p>
       </div>
       <div className="card divide-y divide-white/5">
-        <InfoRow label="الإصدار" value={<span dir="ltr">{version}</span>} />
-        <InfoRow label="المنصة" value={Capacitor.isNativePlatform() ? 'تطبيق أندرويد' : 'الويب'} />
+        <InfoRow label={t('sx.version')} value={<span dir="ltr">{version}</span>} />
+        <InfoRow label={t('sx.platform')} value={Capacitor.isNativePlatform() ? t('sx.androidApp') : t('sx.web')} />
       </div>
     </SubPage>
   );
 };
 
 // ---------- إدارة الحساب: تعطيل مؤقت / حذف نهائي ----------
-const DELETE_WORD = 'حذف';
-
 const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { trusted, current, loaded, failed } = useDevices(user!.uid);
+  const { t } = useI18n();
+  const deleteWord = t('sx.deleteWord');
   const [mode, setMode] = useState<'none' | 'deactivate' | 'delete'>('none');
   const [password, setPassword] = useState('');
   const [typed, setTyped] = useState('');
@@ -878,14 +891,15 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       navigate('/login', { replace: true });
     } catch (e) {
       console.error(e);
-      setMsg({ kind: 'err', text: 'تعذّر تعطيل الحساب، حاول مرة أخرى.' });
+      setMsg({ kind: 'err', text: t('sx.deactivateFail') });
       setBusy(false);
     }
   };
 
   const doDelete = async () => {
-    if (typed.trim() !== DELETE_WORD) return setMsg({ kind: 'err', text: `اكتب كلمة "${DELETE_WORD}" للتأكيد.` });
-    if (hasPassword && !password) return setMsg({ kind: 'err', text: 'اكتب كلمة السر لتأكيد هويتك.' });
+    if (typed.trim().toLowerCase() !== deleteWord.toLowerCase())
+      return setMsg({ kind: 'err', text: t('sx.typeWord', { word: deleteWord }) });
+    if (hasPassword && !password) return setMsg({ kind: 'err', text: t('sx.needPassword') });
     setBusy(true);
     setMsg(null);
     try {
@@ -900,24 +914,23 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   return (
-    <SubPage title="تعطيل الحساب أو حذفه" onBack={onBack}>
+    <SubPage title={t('sx.manageTitle')} onBack={onBack}>
       <TrustBanner loaded={loaded} trusted={trusted} failed={failed} daysLeft={current?.daysLeft} />
 
       <div className="card p-4 space-y-3">
         <div className="flex items-center gap-2">
           <PauseCircle className="w-5 h-5 text-amber-400" />
-          <h3 className="text-sm font-black text-white">تعطيل الحساب مؤقتاً</h3>
+          <h3 className="text-sm font-black text-white">{t('sx.deactivateHead')}</h3>
         </div>
         <p className="text-xs text-slate-400 leading-relaxed">
-          يختفي ملفك الشخصي من البحث ومن زوار صفحتك، وتبقى بياناتك محفوظة كما هي. يعاد تفعيل حسابك تلقائياً
-          عند تسجيل الدخول في أي وقت.
+          {t('sx.deactivateDesc')}
         </p>
         {mode === 'deactivate' ? (
           <div className="space-y-2">
             <button onClick={doDeactivate} disabled={!canEdit || busy} className={btnCls}>
-              {busy && <Loader2 className="w-4 h-4 animate-spin" />} تأكيد التعطيل وتسجيل الخروج
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />} {t('sx.confirmDeactivate')}
             </button>
-            <button onClick={reset} disabled={busy} className={btnCls}>إلغاء</button>
+            <button onClick={reset} disabled={busy} className={btnCls}>{t('sx.cancel')}</button>
           </div>
         ) : (
           <button
@@ -925,7 +938,7 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             disabled={!canEdit || busy}
             className={btnCls}
           >
-            <PauseCircle className="w-4 h-4" /> تعطيل حسابي
+            <PauseCircle className="w-4 h-4" /> {t('sx.deactivateBtn')}
           </button>
         )}
       </div>
@@ -933,11 +946,10 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="card p-4 space-y-3 border-red-500/30">
         <div className="flex items-center gap-2">
           <UserX className="w-5 h-5 text-red-400" />
-          <h3 className="text-sm font-black text-white">حذف الحساب نهائياً</h3>
+          <h3 className="text-sm font-black text-white">{t('sx.deleteHead')}</h3>
         </div>
         <p className="text-xs text-red-300 leading-relaxed">
-          لا يمكن التراجع. تُحذف منشوراتك وتعليقاتك وقصصك وإعجاباتك ومتابعاتك ورسائلك المرسلة ومفاتيح التشفير
-          واسم المستخدم وحساب الدخول نفسه. إن أردت العودة لاحقاً فعطّل الحساب بدل حذفه.
+          {t('sx.deleteDesc')}
         </p>
         {mode === 'delete' ? (
           <div className="space-y-2">
@@ -947,26 +959,26 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="كلمة السر الحالية"
+                placeholder={t('sx.currentPassword')}
                 className={inputCls}
                 disabled={busy}
               />
             )}
             {!hasPassword && (
-              <p className="text-[11px] text-slate-400">سيُطلب منك تأكيد الهوية بحساب جوجل.</p>
+              <p className="text-[11px] text-slate-400">{t('sx.googleConfirm')}</p>
             )}
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              placeholder={`اكتب "${DELETE_WORD}" للتأكيد`}
+              placeholder={t('sx.typePlaceholder', { word: deleteWord })}
               className={inputCls}
               disabled={busy}
             />
             <button onClick={doDelete} disabled={!canEdit || busy} className={dangerBtnCls}>
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              {busy && step ? step : 'حذف حسابي نهائياً'}
+              {busy && step ? step : t('sx.deleteForever')}
             </button>
-            <button onClick={reset} disabled={busy} className={btnCls}>إلغاء</button>
+            <button onClick={reset} disabled={busy} className={btnCls}>{t('sx.cancel')}</button>
           </div>
         ) : (
           <button
@@ -974,7 +986,7 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             disabled={!canEdit || busy}
             className={dangerBtnCls}
           >
-            <Trash2 className="w-4 h-4" /> حذف حسابي
+            <Trash2 className="w-4 h-4" /> {t('sx.deleteBtn')}
           </button>
         )}
       </div>
@@ -1080,7 +1092,7 @@ const Settings: React.FC = () => {
                 <Row icon={User} label={t('settings.personal')} onClick={() => setActiveSection('account')} />
                 <Row icon={Shield} label={t('settings.security')} onClick={() => setActiveSection('security')} />
                 <Row icon={Smartphone} label={t('settings.devices')} onClick={() => setActiveSection('devices')} />
-                <Row icon={UserX} label="تعطيل الحساب أو حذفه" onClick={() => setActiveSection('manage')} />
+                <Row icon={UserX} label={t('sx.manageTitle')} onClick={() => setActiveSection('manage')} />
               </div>
             </div>
 
