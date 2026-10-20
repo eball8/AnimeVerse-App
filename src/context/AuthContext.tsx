@@ -12,7 +12,9 @@ import {
 } from 'firebase/auth';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, googleProvider } from '../config/firebase';
-import { createUserProfile, getUserProfile, checkUsernameAvailable } from '../services/userService';
+import { createUserProfile, getUserProfile, checkUsernameAvailable, updateUserProfile } from '../services/userService';
+import { accountGuard } from '../services/accountService';
+import { calcAge } from '../utils/age';
 import type { UserProfile, Gender } from '../types';
 import { Capacitor } from '@capacitor/core';
 import { saveAccount } from '../utils/savedAccounts';
@@ -34,14 +36,6 @@ let pendingSignUpProfile: Partial<UserProfile> | null = null;
 // بوابة تُبقي المستمع ينتظر حتى ينتهي فحص اسم المستخدم (true = متاح)
 let signUpGate: Promise<boolean> | null = null;
 let openSignUpGate: (ok: boolean) => void = () => undefined;
-
-const calcAge = (birthDate: string): number => {
-  const [y, m, d] = birthDate.split('-').map(Number);
-  const now = new Date();
-  let age = now.getFullYear() - y;
-  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
-  return age;
-};
 
 interface AuthContextType {
   user: User | null;
@@ -108,6 +102,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         let p = await getUserProfile(fbUser.uid);
         if (!p) {
+          // أثناء حذف الحساب لا نُنشئ ملفاً جديداً
+          if (accountGuard.busy) return;
           if (signUpGate) {
             const ok = await signUpGate;
             signUpGate = null;
@@ -121,6 +117,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             photoURL: fbUser.photoURL || undefined,
             ...(pending || {}),
           });
+        }
+        // تسجيل الدخول يعيد تفعيل الحساب المعطّل تلقائياً
+        if (p.isDeactivated && !accountGuard.busy) {
+          try {
+            await updateUserProfile(fbUser.uid, { isDeactivated: false });
+            p = { ...p, isDeactivated: false };
+          } catch (e) {
+            console.error('Reactivation failed:', e);
+          }
         }
         setProfile(p);
         writeCachedProfile(p);
