@@ -1,10 +1,12 @@
 import { db } from '../config/firebase';
 import {
-  collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where, limit,
-  doc, writeBatch, increment, getDocs, getDoc, deleteDoc, startAfter,
+  collection, serverTimestamp, query, orderBy, onSnapshot, where, limit,
+  doc, writeBatch, increment, getDocs, getDoc, setDoc, updateDoc, deleteDoc, startAfter,
+  documentId, getCountFromServer,
 } from 'firebase/firestore';
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
+import { getMutualFriendIds } from './followService';
 
 export interface Post {
   id?: string;
@@ -32,6 +34,26 @@ export interface PostComment {
   content: string;
   createdAt: any;
 }
+
+// ---------------------------------------------------------------
+// حدث داخلي: عدد منشورات مستخدم تغيّر (نشر/حذف). الصفحات المفتوحة تستمع له
+// لتحدّث العدّاد فوراً بدون إعادة فتحها.
+// ---------------------------------------------------------------
+export const POSTS_CHANGED_EVENT = 'av:posts-changed';
+
+const announcePostsChanged = (uid: string, delta: number): void => {
+  try {
+    window.dispatchEvent(new CustomEvent(POSTS_CHANGED_EVENT, { detail: { uid, delta } }));
+  } catch {
+    // لا يؤثر على عمل التطبيق
+  }
+};
+
+// هل أسمح للأصدقاء برؤية الريلز التي أعجبتني؟ (يُضبط من Layout حسب إعداد الحساب)
+let shareLikesWithFriends = true;
+export const setShareLikesWithFriends = (v: boolean): void => {
+  shareLikesWithFriends = v;
+};
 
 // استخراج @username من نص المنشور وتحويلها إلى معرّفات مستخدمين حقيقيين (حد أقصى 10)
 const extractMentionIds = async (content: string, authorId: string): Promise<string[]> => {
@@ -78,20 +100,32 @@ export const createPost = async (
     if (allMentions.length) payload.mentions = allMentions;
     if (collab.length) payload.collaborators = collab;
 
-    const docRef = await addDoc(collection(db, 'posts'), payload);
+    // نشر المنشور + زيادة عدّاد المستخدم في عملية واحدة (Atomic)
+    const newRef = doc(collection(db, 'posts'));
+    try {
+      const batch = writeBatch(db);
+      batch.set(newRef, payload);
+      batch.update(doc(db, 'users', postData.authorId), { postsCount: increment(1) });
+      await batch.commit();
+    } catch (e: any) {
+      if (e?.code !== 'permission-denied') throw e;
+      // قواعد Firestore الجديدة لم تُنشر بعد: ننشر المنشور بدون تحديث العدّاد
+      await setDoc(newRef, payload);
+    }
+    announcePostsChanged(postData.authorId, 1);
 
     // إشعار كل شخص تمت الإشارة إليه أو إضافته كمتعاون
-    mentionIds.forEach((uid) => notify(uid, 'comment', 'أشار إليك في منشور', docRef.id));
-    collab.forEach((uid) => notify(uid, 'comment', 'شاركك في منشور تعاوني', docRef.id));
+    mentionIds.forEach((uid) => notify(uid, 'comment', 'أشار إليك في منشور', newRef.id));
+    collab.forEach((uid) => notify(uid, 'comment', 'شاركك في منشور تعاوني', newRef.id));
 
-    return docRef.id;
+    return newRef.id;
   } catch (error) {
     console.error('Error creating post:', error);
     throw error;
   }
 };
 
-// إعادة نشر فيديو/صورة في ملفي (تشير للمنشور الأصلي)
+// إعادة نشر فيديو/صورة في ملفي (تشير للمنشور الأصلي). تعيد معرّف منشور إعادة النشر.
 export const repostPost = async (
   original: Post,
   me: { uid: string; displayName: string; photoURL?: string }
@@ -109,6 +143,17 @@ export const repostPost = async (
   });
   notify(original.authorId, 'like', 'أعاد نشر منشورك', original.id);
   return id;
+};
+
+// خريطة: معرّف المنشور الأصلي -> معرّف منشور إعادة النشر الخاص بي (لزر التبديل)
+export const getMyRepostMap = async (uid: string): Promise<Record<string, string>> => {
+  const snap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), limit(300)));
+  const out: Record<string, string> = {};
+  snap.docs.forEach((d) => {
+    const x = d.data() as { repostOfId?: string };
+    if (x.repostOfId) out[x.repostOfId] = d.id;
+  });
+  return out;
 };
 
 // آخر منشورات المجتمع (بحد أقصى لتوفير القراءات)
@@ -157,6 +202,60 @@ export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 
   }
 };
 
+// ---------------------------------------------------------------
+// تبويب Friends: ريلز أعجبت أصدقائي (المتابعة المتبادلة) وسمحوا بإظهارها
+// ---------------------------------------------------------------
+export interface FriendReel {
+  post: Post;
+  likedBy: string[];
+}
+
+export const getFriendsReels = async (me: string, max = 40): Promise<FriendReel[]> => {
+  const friends = await getMutualFriendIds(me);
+  if (!friends.length) return [];
+  const friendSet = new Set(friends);
+
+  const snap = await getDocs(
+    query(collection(db, 'friendActivity'), where('audience', 'array-contains', me), limit(120))
+  );
+  const acts = snap.docs
+    .map((d) => d.data() as { userId: string; postId: string; createdAt?: any })
+    .filter((a) => !!a.postId && friendSet.has(a.userId));
+  acts.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+
+  const order: string[] = [];
+  const likers = new Map<string, string[]>();
+  for (const a of acts) {
+    if (!likers.has(a.postId)) {
+      likers.set(a.postId, []);
+      order.push(a.postId);
+    }
+    likers.get(a.postId)!.push(a.userId);
+  }
+
+  const ids = order.slice(0, max);
+  const posts = new Map<string, Post>();
+  for (let i = 0; i < ids.length; i += 10) {
+    const chunk = ids.slice(i, i + 10);
+    const ps = await getDocs(query(collection(db, 'posts'), where(documentId(), 'in', chunk)));
+    ps.forEach((d) => posts.set(d.id, { id: d.id, ...d.data() } as Post));
+  }
+
+  return ids
+    .filter((id) => posts.get(id)?.mediaType === 'video' && !!posts.get(id)?.mediaUrl)
+    .map((id) => ({ post: posts.get(id)!, likedBy: likers.get(id) || [] }));
+};
+
+// حذف كل إعجاباتي المنشورة للأصدقاء (عند إيقاف "إظهار الإعجابات للأصدقاء")
+export const clearMyFriendActivity = async (uid: string): Promise<void> => {
+  const snap = await getDocs(query(collection(db, 'friendActivity'), where('userId', '==', uid), limit(500)));
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+};
+
 const createdMs = (p: Post) => p.createdAt?.toMillis?.() ?? 0;
 
 // منشورات مستخدم معيّن (الأحدث أولاً). إن لم يُنشأ الفهرس المركّب نرتّب محلياً.
@@ -184,8 +283,44 @@ export const getMentionedPosts = async (uid: string, max = 100): Promise<Post[]>
   return items;
 };
 
-export const deletePost = async (postId: string) => {
-  await deleteDoc(doc(db, 'posts', postId));
+// حذف منشور/ريلز + إنقاص عدّاد صاحبه في عملية واحدة (Atomic Decrement)
+export const deletePost = async (postId: string): Promise<void> => {
+  const ref = doc(db, 'posts', postId);
+  let authorId: string | undefined;
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    authorId = (snap.data() as { authorId?: string }).authorId;
+  } catch (e) {
+    console.error('delete: read failed', e);
+  }
+
+  try {
+    const batch = writeBatch(db);
+    batch.delete(ref);
+    if (authorId) batch.update(doc(db, 'users', authorId), { postsCount: increment(-1) });
+    await batch.commit();
+  } catch (e: any) {
+    if (e?.code !== 'permission-denied') throw e;
+    // العدّاد وصل 0 أو القواعد الجديدة غير منشورة: نحذف المنشور وحده
+    await deleteDoc(ref);
+  }
+  if (authorId) announcePostsChanged(authorId, -1);
+};
+
+// مزامنة العدّاد المخزّن مع العدد الفعلي (تصحيح الأرقام القديمة غير المتطابقة)
+export const reconcilePostsCount = async (uid: string): Promise<number> => {
+  const actual = (
+    await getCountFromServer(query(collection(db, 'posts'), where('authorId', '==', uid)))
+  ).data().count;
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    const stored = (snap.data() as { postsCount?: number } | undefined)?.postsCount;
+    if (stored !== actual) await updateDoc(doc(db, 'users', uid), { postsCount: actual });
+  } catch (e) {
+    console.error('postsCount reconcile failed:', e);
+  }
+  return actual;
 };
 
 export const getMyLikedPostIds = async (uid: string): Promise<Set<string>> => {
@@ -197,15 +332,38 @@ export const toggleLike = async (post: Post, uid: string, liked: boolean): Promi
   if (!post.id) return;
   const likeRef = doc(db, 'likes', `${post.id}_${uid}`);
   const postRef = doc(db, 'posts', post.id);
-  const batch = writeBatch(db);
-  if (liked) {
-    batch.delete(likeRef);
-    batch.update(postRef, { likesCount: increment(-1) });
-  } else {
-    batch.set(likeRef, { postId: post.id, userId: uid, createdAt: serverTimestamp() });
-    batch.update(postRef, { likesCount: increment(1) });
+  const isReel = post.mediaType === 'video';
+  const actRef = doc(db, 'friendActivity', `${post.id}_${uid}`);
+
+  // الجمهور: أصدقائي (متابعة متبادلة) فقط، وفقط إذا فعّلت "إظهار الإعجابات للأصدقاء"
+  let audience: string[] = [];
+  if (isReel && !liked && shareLikesWithFriends) {
+    audience = await getMutualFriendIds(uid).catch(() => [] as string[]);
   }
-  await batch.commit();
+
+  const run = async (withActivity: boolean) => {
+    const batch = writeBatch(db);
+    if (liked) {
+      batch.delete(likeRef);
+      batch.update(postRef, { likesCount: increment(-1) });
+      if (withActivity) batch.delete(actRef);
+    } else {
+      batch.set(likeRef, { postId: post.id, userId: uid, createdAt: serverTimestamp() });
+      batch.update(postRef, { likesCount: increment(1) });
+      if (withActivity && audience.length) {
+        batch.set(actRef, { userId: uid, postId: post.id, audience, createdAt: serverTimestamp() });
+      }
+    }
+    await batch.commit();
+  };
+
+  try {
+    await run(isReel);
+  } catch (e: any) {
+    // قواعد friendActivity غير منشورة بعد: نعيد المحاولة بدونها حتى يعمل الإعجاب
+    if (isReel && e?.code === 'permission-denied') await run(false);
+    else throw e;
+  }
   if (!liked) notify(post.authorId, 'like', 'أعجب بمنشورك', post.id);
 };
 
