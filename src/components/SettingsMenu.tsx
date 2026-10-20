@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  X, Pencil, Bookmark, Shield, Lock, ShieldCheck, Settings as SettingsIcon, LogOut, Link2, Share2, Check, ChevronLeft,
+  X, Pencil, Bookmark, Shield, Lock, ShieldCheck, Settings as SettingsIcon, LogOut, Users, Link2, Share2, Check, ChevronLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -94,6 +94,13 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
     navigate('/login');
   };
 
+  // تبديل الحساب: نخرج من الحساب الحالي ونعرض قائمة الحسابات المحفوظة (الحساب يبقى محفوظاً)
+  const handleSwitch = async () => {
+    onClose();
+    await signOut();
+    navigate('/login');
+  };
+
   return (
     <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="القائمة">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
@@ -167,7 +174,13 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
           </Section>
         </div>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-2">
+          <button
+            onClick={handleSwitch}
+            className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition"
+          >
+            <Users className="w-4 h-4 text-primary-400" /> تبديل الحساب
+          </button>
           <button
             onClick={handleLogout}
             className="w-full py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition"
