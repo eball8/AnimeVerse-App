@@ -4,6 +4,16 @@ import { extraAr, extraEn } from './extraTranslations';
 import { uiTranslations } from './uiTranslations';
 import type { Lang } from './translations';
 
+// يحمّل تلقائياً كل ملفات الترجمة داخل مجلد packs
+const packModules = import.meta.glob('./packs/*.ts', { eager: true, import: 'default' }) as Record<
+  string,
+  Record<Lang, Record<string, string>>
+>;
+const packs: Record<Lang, Record<string, string>> = { ar: {}, en: {}, fr: {}, es: {} };
+Object.values(packModules).forEach((p) => {
+  (Object.keys(packs) as Lang[]).forEach((l) => Object.assign(packs[l], p?.[l] || {}));
+});
+
 export type LangPref = 'system' | Lang;
 
 const STORAGE_KEY = 'animeverse_lang';
@@ -74,13 +84,16 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let s =
         translations[lang][key] ??
         uiTranslations[lang]?.[key] ??
+        packs[lang][key] ??
         extra[key] ??
         translations.en[key] ??
         uiTranslations.en[key] ??
+        packs.en[key] ??
         extraEn[key] ??
         translations.ar[key] ??
         extraAr[key] ??
         uiTranslations.ar[key] ??
+        packs.ar[key] ??
         key;
       if (vars) {
         Object.keys(vars).forEach((k) => {
