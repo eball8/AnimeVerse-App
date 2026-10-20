@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star } from 'lucide-react';
 import type { Anime } from '../services/animeService';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Props {
   anime: Anime;
@@ -10,6 +11,7 @@ interface Props {
 
 const AnimeCard: React.FC<Props> = ({ anime, episodeNumber }) => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
 
   return (
@@ -27,7 +29,7 @@ const AnimeCard: React.FC<Props> = ({ anime, episodeNumber }) => {
         
         {episodeNumber && (
           <div className="absolute bottom-0 left-0 right-0 bg-primary-600/90 backdrop-blur-sm py-1 text-center">
-            <span className="text-[10px] font-bold text-white">الحلقة : {episodeNumber}</span>
+            <span className="text-[10px] font-bold text-white">{t('ui.episode', { n: episodeNumber ?? '' })}</span>
           </div>
         )}
 
@@ -45,7 +47,7 @@ const AnimeCard: React.FC<Props> = ({ anime, episodeNumber }) => {
         </h3>
         <div className="flex items-center justify-between mt-1">
           <span className="text-[9px] text-emerald-400 font-bold">
-            {anime.airing ? 'مستمر' : 'مكتمل'}
+            {anime.airing ? t('ui.airing') : t('ui.completed')}
           </span>
           <span className="text-[9px] text-slate-500">
             {anime.type}
