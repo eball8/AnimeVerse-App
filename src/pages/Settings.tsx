@@ -25,6 +25,7 @@ import {
   isCurrentTrusted, loadDevices, removeDevice, sendProblemReport, setPlayerPref,
 } from '../services/settingsService';
 import type { DeviceItem, PlayerPref } from '../services/settingsService';
+import { clearMyFriendActivity } from '../services/postService';
 import Avatar from '../components/Avatar';
 
 // ---------- عناصر مشتركة ----------
@@ -430,6 +431,40 @@ const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 };
 
+// ---------- مفتاح تبديل (Switch) مشترك لإعدادات الخصوصية ----------
+interface ToggleRowProps {
+  title: string;
+  sub: string;
+  on: boolean;
+  loading: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}
+
+const ToggleRow: React.FC<ToggleRowProps> = ({ title, sub, on, loading, disabled, onToggle }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    aria-label={title}
+    onClick={onToggle}
+    disabled={disabled || loading}
+    className="w-full flex items-center justify-between gap-4 p-4 hover:bg-white/5 text-start disabled:opacity-60"
+  >
+    <div className="min-w-0">
+      <p className="text-sm font-bold text-white">{title}</p>
+      <p className="text-[11px] text-slate-500 leading-relaxed">{sub}</p>
+    </div>
+    {loading ? (
+      <Loader2 className="w-5 h-5 text-primary-400 animate-spin shrink-0" />
+    ) : (
+      <span className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${on ? 'bg-primary-500' : 'bg-white/15'}`}>
+        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${on ? 'start-[22px]' : 'start-0.5'}`} />
+      </span>
+    )}
+  </button>
+);
+
 // ---------- نوع الحساب وطلبات المراسلة ----------
 type MsgPrivacy = 'everyone' | 'following' | 'nobody';
 
@@ -448,20 +483,51 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   if (!user || !profile) return null;
   const accountType = profile.accountType === 'private' ? 'private' : 'public';
   const msgPrivacy: MsgPrivacy = ((profile as any).messagePrivacy as MsgPrivacy) || 'everyone';
-  const showActivity = (profile as any).showActivity !== false;
+  const showActivity = profile.showActivity !== false;
+  const showLikedReels = profile.showLikedReels !== false;
 
-  const save = async (updates: Record<string, unknown>, okText: string) => {
-    setBusy('save');
+  // يعيد true عند نجاح الحفظ. key = اسم العملية الجارية (لإظهار مؤشر التحميل في المفتاح المعني)
+  const save = async (updates: Record<string, unknown>, okText: string, key = 'save'): Promise<boolean> => {
+    setBusy(key);
     setMsg(null);
     try {
       await updateUserProfile(user.uid, updates as any);
       await refreshProfile();
       setMsg({ kind: 'ok', text: okText });
+      return true;
     } catch (e) {
       console.error(e);
       setMsg({ kind: 'err', text: 'تعذّر حفظ الإعداد.' });
+      return false;
     } finally {
       setBusy('');
+    }
+  };
+
+  const toggleActivity = async () => {
+    const next = !showActivity;
+    await save(
+      { showActivity: next },
+      next ? 'تم إظهار حالة النشاط.' : 'تم إخفاء حالة النشاط.',
+      'toggle:activity'
+    );
+  };
+
+  const toggleLikedReels = async () => {
+    const next = !showLikedReels;
+    const ok = await save(
+      { showLikedReels: next },
+      next ? 'سيظهر ما تُعجب به من فيديوهات لأصدقائك.' : 'تم إخفاء إعجاباتك عن الأصدقاء.',
+      'toggle:liked'
+    );
+    if (ok && !next) {
+      // عند الإيقاف نحذف النشاط المنشور سابقاً حتى لا يبقى ظاهراً في تبويب Friends
+      try {
+        await clearMyFriendActivity(user.uid);
+      } catch (e) {
+        console.error('clear friend activity failed:', e);
+        setMsg({ kind: 'err', text: 'تم حفظ الإعداد لكن تعذّر حذف الإعجابات المنشورة سابقاً.' });
+      }
     }
   };
 
@@ -482,7 +548,7 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <button
       key={title}
       onClick={onClick}
-      disabled={busy === 'save'}
+      disabled={busy !== ''}
       className="w-full flex items-center justify-between p-4 hover:bg-white/5 text-start disabled:opacity-60"
     >
       <div>
@@ -523,21 +589,24 @@ const PrivacySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </div>
 
       <div>
-        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">حالة النشاط</h3>
-        <div className="card">
-          <button
-            onClick={() => save({ showActivity: !showActivity }, showActivity ? 'تم إخفاء حالة النشاط.' : 'تم إظهار حالة النشاط.')}
-            disabled={busy === 'save'}
-            className="w-full flex items-center justify-between gap-4 p-4 hover:bg-white/5 text-start disabled:opacity-60"
-          >
-            <div>
-              <p className="text-sm font-bold text-white">إظهار حالة النشاط</p>
-              <p className="text-[11px] text-slate-500">عند الإيقاف لن يرى الآخرون أنك متصل الآن، ولن ترى أنت حالتهم.</p>
-            </div>
-            <span className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${showActivity ? 'bg-primary-500' : 'bg-white/15'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${showActivity ? 'start-[22px]' : 'start-0.5'}`} />
-            </span>
-          </button>
+        <h3 className="text-xs font-black text-primary-400 mb-2 px-1">الظهور والنشاط</h3>
+        <div className="card divide-y divide-white/5">
+          <ToggleRow
+            title="إظهار حالة النشاط"
+            sub="إظهار أنك متصل الآن وآخر ظهور لك. عند الإيقاف لن يرى الآخرون حالتك، ولن ترى أنت حالتهم."
+            on={showActivity}
+            loading={busy === 'toggle:activity'}
+            disabled={busy !== ''}
+            onToggle={toggleActivity}
+          />
+          <ToggleRow
+            title="إظهار الفيديوهات والريلز التي أعجبتني للأصدقاء"
+            sub="تظهر الفيديوهات التي تُعجب بها في تبويب الأصدقاء لدى من تتابعهم ويتابعونك. عند الإيقاف تُحذف الإعجابات المنشورة سابقاً."
+            on={showLikedReels}
+            loading={busy === 'toggle:liked'}
+            disabled={busy !== ''}
+            onToggle={toggleLikedReels}
+          />
         </div>
       </div>
 
