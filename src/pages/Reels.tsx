@@ -24,31 +24,6 @@ import { useConfirm } from '../components/ConfirmDialog';
 
 type Tab = 'reels' | 'friends';
 
-const TXT = {
-  ar: {
-    create: 'إنشاء ريلز أو قصة',
-    follow: 'متابعة',
-    following: 'متابَع',
-    requested: 'تم الطلب',
-    friendsEmpty: 'لا توجد فيديوهات أعجب بها أصدقاؤك بعد. الأصدقاء هم الذين تتابعهم ويتابعونك.',
-    likedBy: (n: string, extra: number) => `أعجب ${n}${extra > 0 ? ` و${extra} آخرين` : ''} بهذا الفيديو`,
-    options: 'خيارات',
-    del: 'حذف الريلز',
-    followFail: 'تعذّرت المتابعة.',
-  },
-  en: {
-    create: 'Create reel or story',
-    follow: 'Follow',
-    following: 'Following',
-    requested: 'Requested',
-    friendsEmpty: 'No videos liked by your friends yet. Friends are people who follow each other.',
-    likedBy: (n: string, extra: number) => `${n}${extra > 0 ? ` and ${extra} others` : ''} liked this`,
-    options: 'Options',
-    del: 'Delete reel',
-    followFail: 'Could not update follow.',
-  },
-};
-
 interface ItemProps {
   post: Post;
   index: number;
@@ -81,8 +56,7 @@ interface ItemProps {
 const DOUBLE_TAP_MS = 280;
 
 const ReelItem: React.FC<ItemProps> = (p) => {
-  const { t, lang } = useI18n();
-  const L = lang === 'ar' ? TXT.ar : TXT.en;
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const vref = useRef<HTMLVideoElement>(null);
   const lastTap = useRef(0);
@@ -162,7 +136,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   };
 
   const railBtn = 'flex flex-col items-center gap-1 text-white drop-shadow active:scale-90 transition-transform';
-  const followLabel = p.followState === 'following' ? L.following : p.followState === 'requested' ? L.requested : L.follow;
+  const followLabel = p.followState === 'following'
+    ? t('reelsUi.following')
+    : p.followState === 'requested'
+    ? t('reelsUi.requested')
+    : t('reelsUi.follow');
 
   return (
     <div ref={ref} className="snap-start snap-always h-full w-full relative bg-black overflow-hidden">
@@ -198,11 +176,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
 
       {/* الأزرار الجانبية */}
       <div className="absolute end-3 bottom-8 flex flex-col items-center gap-5 z-10">
-        <button onClick={() => p.onLike(post)} className={railBtn} aria-label="like">
+        <button onClick={() => p.onLike(post)} className={railBtn} aria-label={t('reelsUi.like')}>
           <Heart className={`w-7 h-7 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
           <span className="text-[11px] font-bold">{post.likesCount}</span>
         </button>
-        <button onClick={() => p.onComment(post)} className={railBtn} aria-label="comments">
+        <button onClick={() => p.onComment(post)} className={railBtn} aria-label={t('reelsUi.comments')}>
           <MessageCircle className="w-7 h-7" />
           <span className="text-[11px] font-bold">{post.commentsCount}</span>
         </button>
@@ -215,11 +193,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
         <button onClick={() => p.onCopy(post)} className={railBtn} aria-label={t('common.copyLink')}>
           <Link2 className="w-6 h-6" />
         </button>
-        <button onClick={p.onToggleMute} className={railBtn} aria-label="mute">
+        <button onClick={p.onToggleMute} className={railBtn} aria-label={t('reelsUi.mute')}>
           {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
         </button>
         {p.canManage && (
-          <button onClick={() => p.onMore(post)} className={railBtn} aria-label={L.options}>
+          <button onClick={() => p.onMore(post)} className={railBtn} aria-label={t('reelsUi.options')}>
             <MoreVertical className="w-6 h-6" />
           </button>
         )}
@@ -270,9 +248,8 @@ const Reels: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { user, profile, isAdmin } = useAuth();
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const confirm = useConfirm();
-  const L = lang === 'ar' ? TXT.ar : TXT.en;
 
   const [tab, setTab] = useState<Tab>('reels');
   const [items, setItems] = useState<Post[]>([]);
@@ -469,7 +446,7 @@ const Reels: React.FC = () => {
     } catch (e) {
       console.error(e);
       setFollows((prev) => ({ ...prev, [target]: cur }));
-      showToast(L.followFail);
+      showToast(t('reelsUi.followFail'));
     } finally {
       followBusy.current.delete(target);
     }
@@ -514,7 +491,10 @@ const Reels: React.FC = () => {
     if (tab !== 'friends' || !pid) return undefined;
     const ids = likers[pid];
     if (!ids || ids.length === 0) return undefined;
-    return L.likedBy(pickAuthor(briefs, ids[0], '...').name, ids.length - 1);
+    const name = pickAuthor(briefs, ids[0], '...').name;
+    return ids.length > 1
+      ? t('reelsUi.likedByMore', { name, count: ids.length - 1 })
+      : t('reelsUi.likedBy', { name });
   };
 
   return (
@@ -533,7 +513,7 @@ const Reels: React.FC = () => {
         ) : items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
             {tab === 'friends' ? <Users className="w-12 h-12 text-slate-600" /> : <Clapperboard className="w-12 h-12 text-slate-600" />}
-            <p className="text-sm text-slate-400">{tab === 'friends' ? L.friendsEmpty : t('reels.empty')}</p>
+            <p className="text-sm text-slate-400">{tab === 'friends' ? t('reelsUi.friendsEmpty') : t('reels.empty')}</p>
             {tab === 'reels' && (
               <button onClick={() => navigate('/create-post')} className="btn-primary px-6 py-2">
                 +
@@ -591,8 +571,8 @@ const Reels: React.FC = () => {
           <div className="relative flex items-center justify-center px-3 h-10">
             <button
               onClick={() => navigate('/create-post')}
-              aria-label={L.create}
-              title={L.create}
+              aria-label={t('reelsUi.create')}
+              title={t('reelsUi.create')}
               className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition"
             >
               <Plus className="w-5 h-5" />
@@ -608,7 +588,7 @@ const Reels: React.FC = () => {
                       tab === k ? 'text-white border-white' : 'text-white/60 border-transparent'
                     }`}
                   >
-                    {k === 'reels' ? 'Reels' : 'Friends'}
+                    {k === 'reels' ? t('reelsUi.tabReels') : t('reelsUi.tabFriends')}
                   </button>
                 </React.Fragment>
               ))}
@@ -647,7 +627,7 @@ const Reels: React.FC = () => {
                 }}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/20 active:bg-red-500/20 transition"
               >
-                <Trash2 className="w-5 h-5" /> {L.del}
+                <Trash2 className="w-5 h-5" /> {t('reelsUi.delete')}
               </button>
               <button
                 onClick={() => setMenuPost(null)}
