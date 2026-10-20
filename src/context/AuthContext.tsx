@@ -16,6 +16,7 @@ import { auth, db, googleProvider } from '../config/firebase';
 import { createUserProfile, getUserProfile, checkUsernameAvailable, updateUserProfile } from '../services/userService';
 import { accountGuard } from '../services/accountService';
 import { calcAge } from '../utils/age';
+import { tr } from '../i18n/staticT';
 import type { UserProfile, Gender } from '../types';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { saveAccount } from '../utils/savedAccounts';
@@ -136,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           pendingSignUpProfile = null;
           p = await createUserProfile(fbUser.uid, {
             email: fbUser.email || undefined,
-            displayName: fbUser.displayName || 'مستخدم AnimeVerse',
+            displayName: fbUser.displayName || tr('misc.defaultUser'),
             photoURL: fbUser.photoURL || undefined,
             ...(pending || {}),
           });
@@ -258,7 +259,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!existing) {
           await createUserProfile(cred.user.uid, {
             email: cred.user.email || undefined,
-            displayName: cred.user.displayName || 'مستخدم AnimeVerse',
+            displayName: cred.user.displayName || tr('misc.defaultUser'),
             photoURL: cred.user.photoURL || undefined,
           });
         }
