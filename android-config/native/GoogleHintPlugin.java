@@ -62,3 +62,4 @@ public class GoogleHintPlugin extends Plugin {
             call.reject("Google sign-in failed: " + e.getStatusCode(), String.valueOf(e.getStatusCode()));
         }
     }
+}
