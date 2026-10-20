@@ -4,10 +4,12 @@ import { ArrowRight, Play, Server, Plus, X, Loader2 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import EpisodeRating from '../components/EpisodeRating';
 import { getPlayerPref } from '../services/settingsService';
 
 const Watch: React.FC = () => {
+  const { t } = useI18n();
   const { animeId, episodeNumber } = useParams<{ animeId: string; episodeNumber: string }>();
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
@@ -47,7 +49,7 @@ const Watch: React.FC = () => {
 
     // التحقق من صحة الرابط
     if (!newLink.startsWith('https://') && !newLink.startsWith('http://')) {
-      alert('الرابط غير صالح. يجب أن يبدأ بـ https:// أو http://');
+      alert(t('wt.invalidLink'));
       setSaving(false);
       return;
     }
@@ -74,7 +76,7 @@ const Watch: React.FC = () => {
       setNewLink('');
     } catch (error: any) {
       console.error('Firebase Error:', error);
-      alert('حدث خطأ: ' + (error.message || 'تأكد من الصلاحيات'));
+      alert(t('wt.errorPrefix', { msg: error.message || t('wt.checkPerms') }));
     } finally {
       setSaving(false);
     }
@@ -83,7 +85,7 @@ const Watch: React.FC = () => {
   // تشغيل السيرفر (استخدام Intent لفتح EZV Player)
   const handlePlayServer = (link: string) => {
     if (!link || link === '#') {
-      alert('لم يتم إضافة رابط لهذا السيرفر بعد.');
+      alert(t('wt.noLink'));
       return;
     }
 
@@ -119,11 +121,11 @@ const Watch: React.FC = () => {
     <div className="min-h-screen bg-dark-950 pb-10 relative">
       <div className="sticky top-0 z-40 bg-dark-950/90 backdrop-blur-md px-4 py-3 border-b border-white/10 flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300">
-          <ArrowRight className="w-5 h-5" />
+          <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
         </button>
         <div>
-          <h1 className="text-sm font-black text-white">مشاهدة الأنمي</h1>
-          <p className="text-[10px] text-slate-400">الحلقة {episodeNumber}</p>
+          <h1 className="text-sm font-black text-white">{t('wt.title')}</h1>
+          <p className="text-[10px] text-slate-400">{t('wt.episode', { n: episodeNumber ?? '' })}</p>
         </div>
       </div>
 
@@ -131,27 +133,27 @@ const Watch: React.FC = () => {
         <div className="w-full aspect-video bg-black rounded-2xl flex flex-col items-center justify-center border border-white/10 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-dark-950/80 to-transparent" />
           <Play className="w-12 h-12 text-white/50 mb-2" />
-          <p className="text-xs text-slate-400">سيتم فتح المشغل الخارجي (EZV Player) هنا</p>
+          <p className="text-xs text-slate-400">{t('wt.playerHint')}</p>
         </div>
 
         <section>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Server className="w-5 h-5 text-primary-400" />
-              <h3 className="text-sm font-black text-white">السيرفرات المتاحة</h3>
+              <h3 className="text-sm font-black text-white">{t('wt.servers')}</h3>
             </div>
             {isAdmin && (
               <button
                 onClick={() => setShowModal(true)}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30 active:scale-95"
               >
-                <Plus className="w-4 h-4" /> إضافة
+                <Plus className="w-4 h-4" /> {t('wt.add')}
               </button>
             )}
           </div>
           {servers.length === 0 ? (
             <p className="text-center text-xs text-slate-500 py-4">
-              لا توجد سيرفرات مضافة لهذه الحلقة بعد.
+              {t('wt.noServers')}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-2">
@@ -178,10 +180,11 @@ const Watch: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-black text-white">إضافة سيرفر</h3>
+              <h3 className="text-lg font-black text-white">{t('wt.addServer')}</h3>
               <button
                 onClick={() => setShowModal(false)}
                 className="p-1 rounded-lg text-slate-400 hover:bg-white/10"
+                aria-label={t('wt.close')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -189,28 +192,28 @@ const Watch: React.FC = () => {
 
             <form onSubmit={handleSaveServer} className="space-y-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم السيرفر</label>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('wt.serverName')}</label>
                 <input
                   required
                   type="text"
-                  placeholder="مثال: سيرفر MF"
+                  placeholder={t('wt.serverNameEx')}
                   value={newServerName}
                   onChange={(e) => setNewServerName(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">الجودة</label>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('wt.quality')}</label>
                 <input
                   type="text"
-                  placeholder="مثال: 1080p"
+                  placeholder={t('wt.qualityEx')}
                   value={newQuality}
                   onChange={(e) => setNewQuality(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">الرابط المباشر</label>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">{t('wt.directLink')}</label>
                 <input
                   required
                   type="text"
@@ -227,7 +230,7 @@ const Watch: React.FC = () => {
                 disabled={saving}
                 className="w-full btn-primary py-3 mt-2 flex items-center justify-center gap-2"
               >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ السيرفر'}
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : t('wt.saveServer')}
               </button>
             </form>
           </div>
