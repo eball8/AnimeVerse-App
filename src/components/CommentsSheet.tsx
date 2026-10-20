@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -15,9 +16,11 @@ import { useConfirm } from './ConfirmDialog';
 interface Props {
   post: Post;
   onClose: () => void;
+  /** يُستدعى فوراً بعدد التعليقات الحالي (لتحديث العدّاد في الشاشة الخلفية) */
+  onCountChange?: (count: number) => void;
 }
 
-const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
+const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
   const { user, profile, isAdmin } = useAuth();
   const { t, lang } = useI18n();
   const confirm = useConfirm();
@@ -29,8 +32,12 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
 
   useEffect(() => {
     if (!post.id) return;
-    const unsub = subscribeComments(post.id, setComments);
+    const unsub = subscribeComments(post.id, (items) => {
+      setComments(items);
+      onCountChange?.(items.length);
+    });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
   const send = async () => {
@@ -55,10 +62,11 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={onClose}>
+  // نعرض النافذة داخل body حتى تكون فوق الهيدر والشريط السفلي (كانت تختفي خلفهما داخل الريلز)
+  return createPortal(
+    <div className="fixed inset-0 z-[90] bg-black/70 flex items-end" onClick={onClose}>
       <div
-        className="w-full max-h-[80vh] flex flex-col bg-dark-900 border-t border-white/10 rounded-t-3xl"
+        className="w-full max-w-2xl mx-auto max-h-[80vh] flex flex-col bg-dark-900 border-t border-white/10 rounded-t-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-white/10">
@@ -93,6 +101,7 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && send()}
             maxLength={500}
             placeholder={t('comments.placeholder')}
             className="flex-1 px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
@@ -102,7 +111,8 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose }) => {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
