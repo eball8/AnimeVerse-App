@@ -118,7 +118,7 @@ const Profile: React.FC = () => {
   };
 
   const genderLabel =
-    profile?.gender === 'male' ? 'ذكر' : profile?.gender === 'female' ? 'أنثى' : '';
+    profile?.gender === 'male' ? t('auth.genderMale') : profile?.gender === 'female' ? t('auth.genderFemale') : '';
 
   return (
     <div className="px-4 py-4 space-y-4">
