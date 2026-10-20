@@ -5,6 +5,7 @@ import {
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import { convIdOf, sendDirect } from '../services/chatService';
 import type { ChatPayload } from '../services/chatService';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
@@ -16,6 +17,8 @@ import { copyText } from '../utils/links';
 import { generateQr, qrToSvgPath } from '../utils/qrcode';
 import type { QrCode } from '../utils/qrcode';
 import Avatar from './Avatar';
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 // ---------------------------------------------------------------
 // الأنواع
@@ -58,7 +61,12 @@ const roundedRect = (
 const clip = (text: string, max: number): string =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
-const renderStoryCard = (qr: QrCode, displayName: string, username?: string): Promise<Blob> =>
+const renderStoryCard = (
+  qr: QrCode,
+  displayName: string,
+  username: string | undefined,
+  caption: string
+): Promise<Blob> =>
   new Promise<Blob>((resolve, reject) => {
     const W = 1080;
     const H = 1920;
@@ -119,7 +127,7 @@ const renderStoryCard = (qr: QrCode, displayName: string, username?: string): Pr
 
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.font = '600 50px sans-serif';
-    ctx.fillText('امسح الرمز لزيارة الملف الشخصي', W / 2, cardY + cardH + 150);
+    ctx.fillText(clip(caption, 40), W / 2, cardY + cardH + 150);
 
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('BLOB_FAILED'))),
@@ -142,21 +150,21 @@ const errorCode = (e: unknown): string => {
   return String(x?.code ?? x?.message ?? '');
 };
 
-const sendErrorText = (e: unknown): string => {
+const sendErrorText = (e: unknown, t: TFn): string => {
   const c = errorCode(e);
-  if (c === 'RECIPIENT_NO_KEY') return 'هذا المستخدم لم يفعّل المحادثات المشفّرة بعد.';
-  if (c === 'MESSAGES_CLOSED') return 'هذا المستخدم لا يستقبل رسائل جديدة.';
-  if (c === 'NO_LOCAL_KEY') return 'افتح المحادثات أولاً لتفعيل التشفير على هذا الجهاز.';
-  if (c.includes('permission-denied')) return 'تعذّر الإرسال إلى هذا المستخدم.';
-  return 'تعذّر الإرسال، حاول مرة أخرى.';
+  if (c === 'RECIPIENT_NO_KEY') return t('psh.err.noKey');
+  if (c === 'MESSAGES_CLOSED') return t('psh.err.closed');
+  if (c === 'NO_LOCAL_KEY') return t('psh.err.noLocalKey');
+  if (c.includes('permission-denied')) return t('psh.err.denied');
+  return t('psh.err.send');
 };
 
-const storyErrorText = (e: unknown): string => {
+const storyErrorText = (e: unknown, t: TFn): string => {
   const c = errorCode(e);
-  if (c.includes('permission-denied')) return 'تعذّر نشر القصة. تأكد من نشر قواعد Firestore.';
-  if (c === 'CANVAS_UNSUPPORTED' || c === 'BLOB_FAILED') return 'تعذّر إنشاء صورة القصة على هذا الجهاز.';
+  if (c.includes('permission-denied')) return t('psh.err.storyDenied');
+  if (c === 'CANVAS_UNSUPPORTED' || c === 'BLOB_FAILED') return t('psh.err.storyImage');
   const msg = (e as { message?: unknown } | null)?.message;
-  return typeof msg === 'string' && msg.trim() ? msg : 'تعذّر نشر القصة، حاول مرة أخرى.';
+  return typeof msg === 'string' && msg.trim() ? msg : t('psh.err.story');
 };
 
 // ---------------------------------------------------------------
@@ -199,6 +207,7 @@ const ActionRow: React.FC<{
 const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
   userId, displayName, username, photoURL, onClose,
 }) => {
+  const { t } = useI18n();
   const { user, profile } = useAuth();
   const me = user?.uid ?? '';
 
@@ -241,7 +250,9 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
 
   const qrPath = useMemo<string>(() => (qr ? qrToSvgPath(qr) : ''), [qr]);
 
-  const shareText = `${displayName}${username ? ` (@${username})` : ''} على AnimeVerse`;
+  const shareText = t('psh.shareText', {
+    name: `${displayName}${username ? ` (@${username})` : ''}`,
+  });
 
   const briefs = useUserBriefs(friendIds);
 
@@ -262,7 +273,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
         if (alive.current) setCopied(false);
       }, 1800);
     } else {
-      flash('err', 'تعذّر نسخ الرابط.');
+      flash('err', t('psh.copyFailed'));
     }
   };
 
@@ -272,7 +283,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
     setNotice(null);
     if (typeof navigator.share !== 'function') {
       const ok = await copyText(link);
-      flash(ok ? 'ok' : 'err', ok ? 'المشاركة غير مدعومة هنا، تم نسخ الرابط.' : 'تعذّرت المشاركة.');
+      flash(ok ? 'ok' : 'err', ok ? t('psh.shareUnsupported') : t('psh.shareFailed'));
       return;
     }
     try {
@@ -280,7 +291,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
     } catch (e) {
       if ((e as { name?: string } | null)?.name === 'AbortError') return;
       console.error('web share failed:', e);
-      flash('err', 'تعذّرت المشاركة.');
+      flash('err', t('psh.shareFailed'));
     }
   };
 
@@ -290,7 +301,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
     setBusy('story');
     setNotice(null);
     try {
-      const blob = await renderStoryCard(qr, displayName, username);
+      const blob = await renderStoryCard(qr, displayName, username, t('psh.cardCaption'));
       const file = new File([blob], `profile-${userId}.png`, { type: 'image/png' });
       const mediaUrl = await uploadVideoToCloudinary(file);
       await createStory({
@@ -303,10 +314,10 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
       });
       if (!alive.current) return;
       setStoryDone(true);
-      flash('ok', 'تم نشر الملف الشخصي في قصتك.');
+      flash('ok', t('psh.storyDone'));
     } catch (e) {
       console.error('share as story failed:', e);
-      flash('err', storyErrorText(e));
+      flash('err', storyErrorText(e, t));
     } finally {
       if (alive.current) setBusy('');
     }
@@ -355,7 +366,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
       setSentTo((prev) => new Set(prev).add(friendUid));
     } catch (e) {
       console.error('send profile to friend failed:', e);
-      flash('err', sendErrorText(e));
+      flash('err', sendErrorText(e, t));
     } finally {
       if (alive.current) setBusy('');
     }
@@ -395,7 +406,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="مشاركة الملف الشخصي"
+        aria-label={t('psh.title')}
       >
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           {view === 'friends' ? (
@@ -404,12 +415,12 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
               onClick={() => { setView('main'); setNotice(null); }}
               className="flex items-center gap-2 text-sm text-primary-400 font-bold"
             >
-              <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> رجوع
+              <ArrowRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" /> {t('common.back')}
             </button>
           ) : (
-            <h3 className="text-white font-black truncate">مشاركة الملف الشخصي</h3>
+            <h3 className="text-white font-black truncate">{t('psh.title')}</h3>
           )}
-          <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label="إغلاق">
+          <button type="button" onClick={onClose} className="text-slate-400 p-1" aria-label={t('psh.close')}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -424,7 +435,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
                     className="w-full h-full"
                     shapeRendering="crispEdges"
                     role="img"
-                    aria-label="رمز QR للملف الشخصي"
+                    aria-label={t('psh.qrAria')}
                   >
                     <rect
                       x={-QUIET_ZONE}
@@ -438,7 +449,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
                 </div>
               ) : (
                 <div className="mx-auto w-56 h-56 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center p-4">
-                  <p className="text-xs text-slate-400">تعذّر إنشاء رمز QR لهذا الحساب.</p>
+                  <p className="text-xs text-slate-400">{t('psh.qrFailed')}</p>
                 </div>
               )}
 
@@ -464,8 +475,8 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
             <div className="divide-y divide-white/5 border-t border-white/10">
               <ActionRow
                 icon={Camera}
-                label="مشاركة كقصة"
-                sub={user ? 'انشر بطاقة الملف مع رمز QR في قصتك' : 'سجّل الدخول لاستخدام هذا الخيار'}
+                label={t('psh.story')}
+                sub={user ? t('psh.storySub') : t('psh.needLogin')}
                 loading={busy === 'story'}
                 done={storyDone}
                 disabled={!user || !qr || !!busy}
@@ -473,23 +484,23 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
               />
               <ActionRow
                 icon={Send}
-                label="إرسال إلى صديق في المحادثة"
-                sub={user ? 'اختر صديقاً وأرسل له الرابط' : 'سجّل الدخول لاستخدام هذا الخيار'}
+                label={t('psh.sendFriend')}
+                sub={user ? t('psh.sendFriendSub') : t('psh.needLogin')}
                 disabled={!user || !link || !!busy}
                 onClick={openFriends}
               />
               <ActionRow
                 icon={Link2}
-                label="نسخ رابط الملف الشخصي"
-                sub="انسخ الرابط المباشر للحساب"
+                label={t('psh.copyLink')}
+                sub={t('psh.copyLinkSub')}
                 done={copied}
                 disabled={!link}
                 onClick={handleCopy}
               />
               <ActionRow
                 icon={Share2}
-                label="مشاركة عبر التطبيقات"
-                sub="افتح قائمة المشاركة في جهازك"
+                label={t('psh.shareApps')}
+                sub={t('psh.shareAppsSub')}
                 disabled={!link}
                 onClick={handleWebShare}
               />
@@ -503,7 +514,7 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="ابحث عن صديق"
+                  placeholder={t('psh.searchFriend')}
                   className="w-full rounded-xl bg-white/5 border border-white/10 ps-9 pe-3 py-2.5 text-sm text-white outline-none focus:border-primary-500"
                 />
               </div>
@@ -517,12 +528,10 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
                   <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
                 </div>
               ) : friendsError ? (
-                <p className="p-6 text-center text-xs text-red-300">تعذّر تحميل قائمة الأصدقاء.</p>
+                <p className="p-6 text-center text-xs text-red-300">{t('psh.friendsFailed')}</p>
               ) : visibleFriends.length === 0 ? (
                 <p className="p-6 text-center text-xs text-slate-500">
-                  {friendIds.length === 0
-                    ? 'لا يوجد أصدقاء بعد. الأصدقاء هم من تتابعهم ويتابعونك.'
-                    : 'لا توجد نتائج.'}
+                  {friendIds.length === 0 ? t('psh.noFriends') : t('psh.noResults')}
                 </p>
               ) : (
                 visibleFriends.map((f) => {
@@ -553,9 +562,9 @@ const ProfileShareSheet: React.FC<ProfileShareSheetProps> = ({
                         {sending ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : sent ? (
-                          <><Check className="w-3.5 h-3.5" /> أُرسل</>
+                          <><Check className="w-3.5 h-3.5" /> {t('psh.sent')}</>
                         ) : (
-                          <><Send className="w-3.5 h-3.5" /> إرسال</>
+                          <><Send className="w-3.5 h-3.5" /> {t('psh.send')}</>
                         )}
                       </button>
                     </div>
