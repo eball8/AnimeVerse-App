@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(GalleryPlugin.class);
         registerPlugin(GoogleHintPlugin.class);
+        registerPlugin(DeviceIdPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
