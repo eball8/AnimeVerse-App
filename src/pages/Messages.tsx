@@ -21,7 +21,6 @@ import {
 } from '../services/chatPrefsService';
 import type { ChatPrefMap, FollowRelations } from '../services/chatPrefsService';
 import { hasSeenAll } from '../services/storyService';
-import type { StoryGroup } from '../services/storyService';
 import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
 import type { Note } from '../services/noteService';
 import { usePresence, usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
@@ -157,19 +156,37 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
   const [viewer, setViewer] = useState<number | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const [, setTick] = useState(0);
+  
+  const [rel, setRel] = useState<FollowRelations | null>(null);
 
   useEffect(() => subscribeNotes(setNotes), []);
+  useEffect(() => {
+    if (!me) return;
+    return subscribeFollowRelations(me, setRel);
+  }, [me]);
+
+  const visibleNotes = useMemo(() => {
+    if (!rel) return {} as Record<string, Note>;
+    const filtered: Record<string, Note> = {};
+    Object.entries(notes).forEach(([uid, n]) => {
+      if (uid === me || (rel.following.has(uid) && rel.followers.has(uid))) {
+        filtered[uid] = n;
+      }
+    });
+    return filtered;
+  }, [notes, rel, me]);
 
   const mine = groups.find((g) => g.authorId === me);
   const others = groups.filter((g) => g.authorId !== me);
   const ordered = mine ? [mine, ...others] : others;
-  const noteCandidates = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
+  
+  const noteCandidates = Object.keys(visibleNotes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
   const briefs = useUserBriefs(noteCandidates);
   const noteOnlyUids = noteCandidates.filter((uid) => !!briefs[uid]);
   const online = usePresence([...others.map((g) => g.authorId), ...noteOnlyUids], showActivity);
 
   const ring = (active: boolean) => (active ? 'bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400' : 'bg-white/15');
-  const myNote = notes[me]?.text;
+  const myNote = visibleNotes[me]?.text;
 
   return (
     <>
@@ -191,7 +208,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
 
         {others.map((g) => {
           const seen = hasSeenAll(g);
-          const note = notes[g.authorId]?.text;
+          const note = visibleNotes[g.authorId]?.text;
           return (
             <button key={g.authorId} onClick={() => setViewer(ordered.indexOf(g))} className="shrink-0 snap-start w-[72px] flex flex-col items-center gap-1.5">
               <div className="relative">
@@ -211,7 +228,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
           return (
             <button key={uid} onClick={() => navigate(`/user/${uid}`)} className="shrink-0 snap-start w-[72px] flex flex-col items-center gap-1.5">
               <div className="relative">
-                <NoteBubble text={notes[uid].text} />
+                <NoteBubble text={visibleNotes[uid].text} />
                 <div className="w-[72px] h-[72px] rounded-full p-[2.5px] bg-white/15">
                   <Avatar src={b?.photoURL} seed={uid} name={b?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
                 </div>
