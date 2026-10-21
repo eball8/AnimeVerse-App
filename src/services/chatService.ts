@@ -5,6 +5,7 @@ import {
 import { db } from '../config/firebase';
 import { decryptJson, encryptJson, fromB64, getLocalKey, getSharedKey, toB64 } from './cryptoService';
 import type { LocalKey } from './cryptoService';
+import { acceptMessageRequest, getChatPref } from './chatPrefsService';
 
 // ---------------------------------------------------------------
 // أنواع الرسائل. الحقل f = رسالة معاد توجيهها
@@ -32,6 +33,8 @@ export interface Conversation {
   disappearAfter?: number;
   /** معرّفات الرسائل المثبّتة (الأحدث أولاً، حتى 3) */
   pinned?: string[];
+  /** من بدأ المحادثة الفردية (لتحديد طلبات المراسلة). غير موجود في المحادثات القديمة */
+  starterId?: string;
 }
 
 export interface WrappedKey { c: string; i: string; }
@@ -83,6 +86,7 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
           photoURL: data.photoURL,
           disappearAfter: typeof data.disappearAfter === 'number' ? data.disappearAfter : 0,
           pinned: Array.isArray(data.pinned) ? (data.pinned as string[]) : [],
+          starterId: typeof data.starterId === 'string' ? data.starterId : undefined,
         } as Conversation;
       });
       const t = (c: Conversation) => c.lastMessageAt?.toMillis?.() ?? Date.now();
@@ -174,14 +178,62 @@ export const subscribeMessages = (
   );
 };
 
+// من بدأ المحادثة (نخزّنه مؤقتاً لتجنب قراءات متكررة)
+const starterCache = new Map<string, string | null>();
+const getStarterId = async (convId: string): Promise<string | null> => {
+  if (starterCache.has(convId)) return starterCache.get(convId) ?? null;
+  const snap = await getDoc(doc(db, 'conversations', convId));
+  const s = snap.exists() ? (snap.data() as { starterId?: string }).starterId : undefined;
+  const v = typeof s === 'string' ? s : null;
+  starterCache.set(convId, v);
+  return v;
+};
+
+// الحساب الخاص: لا يمكن مراسلته قبل قبول طلب المتابعة (أي وجود وثيقة follows/أنا_هو)
+const assertPrivateAccess = async (me: string, other: string, accountType?: string): Promise<void> => {
+  let type = accountType;
+  if (type === undefined) {
+    const snap = await getDoc(doc(db, 'users', other));
+    type = (snap.data() as { accountType?: string } | undefined)?.accountType;
+  }
+  if (type !== 'private') return;
+  const f = await getDoc(doc(db, 'follows', `${me}_${other}`));
+  if (!f.exists()) throw new Error('MESSAGES_CLOSED');
+};
+
 const assertCanMessage = async (me: string, other: string): Promise<void> => {
   const snap = await getDoc(doc(db, 'users', other));
-  const mode = (snap.data() as { messagePrivacy?: string } | undefined)?.messagePrivacy;
+  const d = snap.data() as { messagePrivacy?: string; accountType?: string } | undefined;
+  const mode = d?.messagePrivacy;
   if (mode === 'nobody') throw new Error('MESSAGES_CLOSED');
+  await assertPrivateAccess(me, other, d?.accountType ?? 'public');
   if (mode === 'following') {
     const f = await getDoc(doc(db, 'follows', `${other}_${me}`));
     if (!f.exists()) throw new Error('MESSAGES_CLOSED');
   }
+};
+
+// محادثة موجودة بدأتُها أنا: إن أصبح الطرف الآخر حساباً خاصاً ولم أعد أتابعه يُمنع الإرسال
+const existingChecked = new Map<string, number>();
+const assertExistingChatAllowed = async (me: string, other: string, convId: string): Promise<void> => {
+  const last = existingChecked.get(convId);
+  if (last && Date.now() - last < 60000) return;
+  const starter = await getStarterId(convId);
+  if (starter === me) await assertPrivateAccess(me, other);
+  existingChecked.set(convId, Date.now());
+};
+
+// عندما أرد على محادثة بدأها غيري تُعتبر مقبولة وتنتقل من الطلبات إلى الوارد
+const acceptedThisSession = new Set<string>();
+const autoAcceptRequest = async (me: string, convId: string): Promise<void> => {
+  const key = `${me}_${convId}`;
+  if (acceptedThisSession.has(key)) return;
+  const starter = await getStarterId(convId);
+  if (starter && starter !== me) {
+    const cur = await getChatPref(me, convId);
+    if (!cur?.accepted) await acceptMessageRequest(me, convId, cur);
+  }
+  acceptedThisSession.add(key);
 };
 
 const touchConversation = async (convId: string, me: string): Promise<void> => {
@@ -217,10 +269,14 @@ export const sendDirect = async (
     await setDoc(doc(db, 'conversations', convId), {
       members: [me, otherUid].sort(),
       type: 'direct',
+      starterId: me,
       createdAt: serverTimestamp(),
       lastMessageAt: serverTimestamp(),
       lastMessageBy: me,
     });
+    starterCache.set(convId, me);
+  } else {
+    await assertExistingChatAllowed(me, otherUid, convId);
   }
 
   const msgData: any = {
@@ -235,6 +291,11 @@ export const sendDirect = async (
 
   await addDoc(collection(db, 'conversations', convId, 'messages'), msgData);
   await touchConversation(convId, me);
+
+  // الرد على محادثة بدأها غيري = تفاعل متبادل، فتخرج من طلبات المراسلة
+  if (conversationAlreadyExists) {
+    autoAcceptRequest(me, convId).catch((e) => console.error('autoAcceptRequest failed:', e));
+  }
 };
 
 // ---------------------------------------------------------------
