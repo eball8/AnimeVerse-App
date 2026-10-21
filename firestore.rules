@@ -261,7 +261,10 @@ service cloud.firestore {
           'repostOfId',
           'repostOfAuthorId',
           'mentions',
-          'collaborators'
+          'collaborators',
+          'allowAudio',
+          'audioSourceId',
+          'audioUrl'
         ])
         && validText(request.resource.data.authorName, 1, 50)
         && validText(request.resource.data.content, 0, 2000)
@@ -287,6 +290,22 @@ service cloud.firestore {
             ))
         && (!('mediaType' in request.resource.data)
             || request.resource.data.mediaType in ['image', 'video'])
+        && (!('allowAudio' in request.resource.data)
+            || (request.resource.data.allowAudio is bool
+                && request.resource.data.get('mediaType', '') == 'video'))
+        && (!('audioUrl' in request.resource.data)
+            || 'audioSourceId' in request.resource.data)
+        && (!('audioSourceId' in request.resource.data)
+            || (
+              validText(request.resource.data.audioSourceId, 1, 100)
+              && request.resource.data.get('mediaType', '') == 'video'
+              && request.resource.data.get('allowAudio', false) == false
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.audioSourceId))
+                   .data.get('allowAudio', false) == true
+              && request.resource.data.get('audioUrl', '') ==
+                 get(/databases/$(database)/documents/posts/$(request.resource.data.audioSourceId))
+                   .data.get('mediaUrl', '')
+            ))
         && (
           request.resource.data.content.size() > 0
           || (
@@ -299,8 +318,18 @@ service cloud.firestore {
         (
           request.auth.uid == resource.data.authorId
           && request.resource.data.diff(resource.data)
-            .affectedKeys().hasOnly(['content'])
+            .affectedKeys().hasOnly(['content', 'allowAudio'])
           && validText(request.resource.data.content, 0, 2000)
+          && (
+            !request.resource.data.diff(resource.data)
+              .affectedKeys().hasAny(['allowAudio'])
+            || (
+              request.resource.data.allowAudio is bool
+              && resource.data.get('mediaType', '') == 'video'
+              && !('audioSourceId' in resource.data)
+              && !('repostOfId' in resource.data)
+            )
+          )
         )
         || isAdmin()
         || (
