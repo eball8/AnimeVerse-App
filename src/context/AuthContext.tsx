@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   User,
   GoogleAuthProvider,
@@ -48,7 +48,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
-  refreshUser: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -68,6 +68,29 @@ const verifyOwner = async (fbUser: User, username: string | undefined): Promise<
 };
 
 const PROFILE_CACHE_KEY = 'av_profile_cache';
+const PENDING_SIGNUP_KEY = 'av_pending_signup';
+
+// حساب بريد/كلمة سر لم يؤكَّد بريده بعد: لا نُنشئ له ملفاً في قاعدة البيانات حتى يؤكّد
+export const isUnverifiedPasswordUser = (u: User | null | undefined): boolean =>
+  !!u && !u.emailVerified && u.providerData[0]?.providerId === 'password';
+
+// بيانات التسجيل تُحفظ محلياً مؤقتاً (تبقى حتى لو أُغلق التطبيق قبل التأكيد)
+const savePendingSignup = (uid: string, data: Partial<UserProfile>) => {
+  try { localStorage.setItem(PENDING_SIGNUP_KEY, JSON.stringify({ uid, data })); } catch {}
+};
+const readPendingSignup = (uid: string): Partial<UserProfile> | null => {
+  try {
+    const raw = localStorage.getItem(PENDING_SIGNUP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { uid: string; data: Partial<UserProfile> };
+    return parsed && parsed.uid === uid ? parsed.data : null;
+  } catch {
+    return null;
+  }
+};
+const clearPendingSignup = () => {
+  try { localStorage.removeItem(PENDING_SIGNUP_KEY); } catch {}
+};
 
 const readCachedProfile = (uid: string): UserProfile | null => {
   try {
@@ -93,6 +116,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [isOwnerAccount, setIsOwnerAccount] = useState(false);
 
+  const inflight = useRef<Map<string, Promise<void>>>(new Map());
+
+  const syncProfile = async (fbUser: User, cached: UserProfile | null) => {
+    try {
+      let p = await getUserProfile(fbUser.uid);
+      if (!p) {
+        if (accountGuard.busy) return;
+        // ✅ حساب لم يؤكَّد بريده: لا نكتب أي شيء في قاعدة البيانات الآن
+        if (isUnverifiedPasswordUser(fbUser)) {
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+        if (signUpGate) {
+          const ok = await signUpGate;
+          signUpGate = null;
+          if (!ok) return;
+        }
+        const pending = pendingSignUpProfile || readPendingSignup(fbUser.uid);
+        pendingSignUpProfile = null;
+        const base = {
+          email: fbUser.email || undefined,
+          displayName: fbUser.displayName || tr('misc.defaultUser'),
+          photoURL: fbUser.photoURL || undefined,
+        };
+        try {
+          p = await createUserProfile(fbUser.uid, { ...base, ...(pending || {}) });
+        } catch (e: any) {
+          // اسم المستخدم أُخذ من شخص آخر أثناء انتظار التأكيد → نُنشئ الحساب باسم تلقائي
+          if (pending?.username && (e?.code === 'app/username-taken' || /taken/i.test(String(e?.message)))) {
+            const { username: _u, ...rest } = pending;
+            p = await createUserProfile(fbUser.uid, { ...base, ...rest });
+          } else {
+            throw e;
+          }
+        }
+        clearPendingSignup();
+      }
+      if (p.isDeactivated && !accountGuard.busy) {
+        try {
+          await updateUserProfile(fbUser.uid, { isDeactivated: false });
+          p = { ...p, isDeactivated: false };
+        } catch (e) {
+          console.error('Reactivation failed:', e);
+        }
+      }
+
+      if (p.isEmailVerified !== fbUser.emailVerified) {
+        try {
+          await updateUserProfile(fbUser.uid, { isEmailVerified: fbUser.emailVerified });
+          p = { ...p, isEmailVerified: fbUser.emailVerified };
+        } catch (e) {
+          console.error('Email verification sync failed:', e);
+        }
+      }
+
+      setIsOwnerAccount(await verifyOwner(fbUser, p.username));
+      setProfile(p);
+      writeCachedProfile(p);
+      checkDevice(fbUser.uid).catch(() => undefined);
+      saveAccount({
+        uid: fbUser.uid,
+        email: fbUser.email || '',
+        displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
+        photoURL: p.photoURL || fbUser.photoURL || undefined,
+        provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
+      });
+    } catch (e) {
+      console.error('Profile fetch failed:', e);
+      if (!cached) setProfile(null);
+    }
+    setLoading(false);
+  };
+
+  // يمنع التنفيذ المزدوج (المستمع + refreshUser) لنفس المستخدم وبنفس حالة التأكيد
+  const runSync = (fbUser: User, cached: UserProfile | null): Promise<void> => {
+    const key = `${fbUser.uid}:${fbUser.emailVerified}`;
+    const existing = inflight.current.get(key);
+    if (existing) return existing;
+    const pr = syncProfile(fbUser, cached).finally(() => inflight.current.delete(key));
+    inflight.current.set(key, pr);
+    return pr;
+  };
+
   useEffect(() => {
     const unsub = onIdTokenChanged(auth, async (fbUser) => {
       setUser(fbUser);
@@ -112,60 +219,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
       }
 
-      try {
-        let p = await getUserProfile(fbUser.uid);
-        if (!p) {
-          if (accountGuard.busy) return;
-          if (signUpGate) {
-            const ok = await signUpGate;
-            signUpGate = null;
-            if (!ok) return;
-          }
-          const pending = pendingSignUpProfile;
-          pendingSignUpProfile = null;
-          p = await createUserProfile(fbUser.uid, {
-            email: fbUser.email || undefined,
-            displayName: fbUser.displayName || tr('misc.defaultUser'),
-            photoURL: fbUser.photoURL || undefined,
-            ...(pending || {}),
-          });
-        }
-        if (p.isDeactivated && !accountGuard.busy) {
-          try {
-            await updateUserProfile(fbUser.uid, { isDeactivated: false });
-            p = { ...p, isDeactivated: false };
-          } catch (e) {
-            console.error('Reactivation failed:', e);
-          }
-        }
-        
-        if (p.isEmailVerified !== fbUser.emailVerified) {
-          try {
-            await updateUserProfile(fbUser.uid, { isEmailVerified: fbUser.emailVerified });
-            p = { ...p, isEmailVerified: fbUser.emailVerified };
-          } catch (e) {
-            console.error('Email verification sync failed:', e);
-          }
-        }
-
-        setIsOwnerAccount(await verifyOwner(fbUser, p.username));
-        setProfile(p);
-        writeCachedProfile(p);
-        checkDevice(fbUser.uid).catch(() => undefined);
-        saveAccount({
-          uid: fbUser.uid,
-          email: fbUser.email || '',
-          displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
-          photoURL: p.photoURL || fbUser.photoURL || undefined,
-          provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
-        });
-      } catch (e) {
-        console.error('Profile fetch failed:', e);
-        if (!cached) setProfile(null);
-      }
-      setLoading(false);
+      await runSync(fbUser, cached);
     });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const signInEmail = async (email: string, password: string) => {
@@ -215,6 +272,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (e?.code === 'app/username-taken') throw e;
       console.error('Username check failed:', e);
     }
+    // نحفظ بيانات التسجيل محلياً فقط؛ الملف الشخصي يُنشأ في قاعدة البيانات بعد تأكيد البريد
+    if (pendingSignUpProfile) savePendingSignup(cred.user.uid, pendingSignUpProfile);
     openSignUpGate(true);
 
     sendEmailVerification(cred.user).catch(console.error);
@@ -295,8 +354,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await sendEmailVerification(auth.currentUser);
   };
 
-  const refreshUser = () => {
-    setUser(auth.currentUser ? { ...auth.currentUser } : null);
+  // يُستدعى بعد reload(): يجدّد التوكن (ليحمل email_verified) ثم ينشئ الملف الشخصي إن لزم
+  const refreshUser = async () => {
+    const cu = auth.currentUser;
+    if (!cu) {
+      setUser(null);
+      return;
+    }
+    if (cu.emailVerified) {
+      await cu.getIdToken(true).catch(() => undefined);
+    }
+    setUser({ ...cu } as User);
+    await runSync(cu, null);
   };
 
   const isAdmin = isOwnerAccount || profile?.role === 'admin';
