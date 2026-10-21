@@ -30,7 +30,7 @@ const Layout: React.FC = () => {
   const inChat = /^\/messages\/[^/]+/.test(pathname);
   // شاشة الريلز: ملء الشاشة بدون الهيدر العام (الشعار/الإشعارات/الرسائل/البحث)
   const isReels = /^\/reels(\/|$)/.test(pathname);
-  // شاشة صندوق الرسائل: هيدر نظيف (اسم المستخدم + بحث + إشعارات + رسائل) بلا شعار ولا ☰
+  // شاشة صندوق الرسائل: هيدر نظيف (اسم المستخدم فقط) بلا أيقونات إشعارات ولا بحث ولا رسائل
   const isInbox = pathname === '/messages';
   // شاشة الملف الشخصي الرئيسية: هنا فقط يظهر زر ☰
   const isProfileHome = pathname === '/profile';
@@ -150,7 +150,7 @@ const Layout: React.FC = () => {
                 AnimeVerse
               </h1>
             )}
-            {user && (
+            {user && !isInbox && (
               <div className="flex items-center gap-1">
                 <NavLink to="/notifications" className={iconBtn} aria-label={t('header.notifications')}>
                   <Bell className="w-5 h-5" />
