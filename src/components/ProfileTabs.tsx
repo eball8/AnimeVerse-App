@@ -4,6 +4,7 @@ import { LayoutGrid, Clapperboard, Repeat2, AtSign, Play, Lock, Loader2, Heart }
 import { getUserPosts, getMentionedPosts } from '../services/postService';
 import type { Post } from '../services/postService';
 import { videoThumb } from '../utils/links';
+import ProfilePostsViewer from './ProfilePostsViewer';
 import { useI18n } from '../i18n/I18nContext';
 
 type TabKey = 'posts' | 'reels' | 'reposts' | 'mentions';
@@ -27,7 +28,7 @@ const Tile: React.FC<{ post: Post; tall?: boolean; onOpen: () => void }> = ({ po
     <button
       type="button"
       onClick={onOpen}
-      className={`relative block w-full overflow-hidden bg-dark-900 ${tall ? 'aspect-[3/4]' : 'aspect-square'}`}
+      className={`relative block w-full overflow-hidden bg-dark-900 ${tall ? 'aspect-[3/4]' : 'aspect-[4/5]'}`}
     >
       {hasImage && (
         <img src={post.mediaUrl} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
@@ -76,6 +77,7 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
   const [tagged, setTagged] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewer, setViewer] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
     if (!canView) {
@@ -120,13 +122,26 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
 
   const open = (p: Post) => {
     if (!p.id) return;
-    navigate(p.mediaType === 'video' ? `/reels/${p.id}` : `/post/${p.id}`);
+    // الريلز تُفتح في شاشة الريلز، وبقية المنشورات في عارض كبير بنمط انستغرام
+    if (active === 'reels') navigate(`/reels/${p.id}`);
+    else setViewer({ id: p.id });
+  };
+
+  const patchPost = (id: string, patch: Partial<Post>) => {
+    const apply = (list: Post[]) => list.map((x) => (x.id === id ? { ...x, ...patch } : x));
+    setMine(apply);
+    setTagged(apply);
+  };
+  const removePost = (id: string) => {
+    const drop = (list: Post[]) => list.filter((x) => x.id !== id);
+    setMine(drop);
+    setTagged(drop);
   };
 
   const items = lists[active];
 
   return (
-    <div className="card overflow-hidden">
+    <div className="-mx-4 border-y border-white/10">
       <div className="grid grid-cols-4 border-b border-white/10" role="tablist">
         {TABS.map(({ key, icon: Icon }) => {
           const on = active === key;
@@ -166,6 +181,17 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
             <Tile key={p.id} post={p} tall={active === 'reels'} onOpen={() => open(p)} />
           ))}
         </div>
+      )}
+
+      {viewer && (
+        <ProfilePostsViewer
+          posts={items}
+          startId={viewer.id}
+          title={t(`ui.tab.${active}`)}
+          onClose={() => setViewer(null)}
+          onDeleted={removePost}
+          onPatch={patchPost}
+        />
       )}
     </div>
   );
