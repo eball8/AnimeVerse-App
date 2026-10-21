@@ -8,6 +8,8 @@ import E2EEGate from '../components/E2EEGate';
 import { useConfirm } from '../components/ConfirmDialog';
 import StoryViewer from '../components/StoryViewer';
 import { subscribeConversations, createGroup, isUnread } from '../services/chatService';
+import { getMutualFriendIds } from '../services/followService';
+import { searchUsers } from '../services/searchService';
 import type { Conversation } from '../services/chatService';
 import { setChatPref, subscribeChatPrefs, isInMainList } from '../services/chatPrefsService';
 import type { ChatPrefMap } from '../services/chatPrefsService';
@@ -240,6 +242,74 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
 };
 
 // ==========================================
+// نتائج البحث عن أشخاص (أصدقاء ومتابعون) لبدء محادثة جديدة
+// ==========================================
+const normQ = (s: string) => s.trim().toLowerCase().replace(/^@/, '');
+
+const PeopleResults: React.FC<{ me: string; query: string; excludeUids: Set<string>; showEmpty: boolean }> = ({ me, query, excludeUids, showEmpty }) => {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const q = normQ(query);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
+  const [remote, setRemote] = useState<Array<{ uid: string; displayName: string; username?: string; photoURL?: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const friendBriefs = useUserBriefs(friendIds.slice(0, 100));
+
+  useEffect(() => {
+    let alive = true;
+    getMutualFriendIds(me).then((ids) => { if (alive) setFriendIds(ids); }).catch(console.error);
+    return () => { alive = false; };
+  }, [me]);
+
+  useEffect(() => {
+    if (q.length < 2) { setRemote([]); setLoading(false); return; }
+    let alive = true;
+    setLoading(true);
+    const id = window.setTimeout(() => {
+      searchUsers(q)
+        .then((r) => { if (alive) setRemote(r); })
+        .catch(console.error)
+        .finally(() => { if (alive) setLoading(false); });
+    }, 300);
+    return () => { alive = false; window.clearTimeout(id); };
+  }, [q]);
+
+  const matches = (u: { displayName?: string; username?: string }) =>
+    (u.displayName || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q);
+
+  const map = new Map<string, { uid: string; displayName: string; username?: string; photoURL?: string }>();
+  Object.values(friendBriefs).forEach((b) => { if (matches(b)) map.set(b.uid, b); });
+  remote.forEach((u) => { if (!map.has(u.uid)) map.set(u.uid, u); });
+  const list = Array.from(map.values()).filter((u) => u.uid !== me && !excludeUids.has(u.uid)).slice(0, 15);
+
+  if (list.length === 0) {
+    if (loading || !showEmpty) return null;
+    return <p className="text-center text-sm text-slate-500 py-10">{t('msgSearch.noResults')}</p>;
+  }
+
+  return (
+    <div className="space-y-2 mt-4">
+      <p className="text-[11px] font-bold text-slate-500 px-1">{t('msgSearch.people')}</p>
+      {list.map((u) => (
+        <button
+          key={u.uid}
+          type="button"
+          onClick={() => navigate(`/messages/${u.uid}`)}
+          className="w-full flex items-center gap-3 p-3 rounded-2xl border bg-white/5 border-white/10 text-start hover:bg-white/10 transition"
+        >
+          <Avatar src={u.photoURL} seed={u.uid} name={u.displayName} className="w-12 h-12 rounded-full object-cover bg-dark-900 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-white truncate">{u.displayName}</p>
+            {u.username && <p className="text-[11px] text-slate-400 truncate">@{u.username}</p>}
+          </div>
+          <MessageCircle className="w-5 h-5 text-slate-400 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// ==========================================
 // قائمة المحادثات (فردية + مجموعات)
 // ==========================================
 const ConversationList: React.FC<{
@@ -250,16 +320,23 @@ const ConversationList: React.FC<{
   selected: Set<string>;
   onToggle: (id: string) => void;
   onStartSelect: (id: string) => void;
-}> = ({ me, showActivity, prefs, selectMode, selected, onToggle, onStartSelect }) => {
+  searchQuery: string;
+}> = ({ me, showActivity, prefs, selectMode, selected, onToggle, onStartSelect, searchQuery }) => {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const [all, setAll] = useState<Conversation[] | null>(null);
   const holdRef = useRef<number | null>(null);
   const heldRef = useRef(false);
-  const items = all === null ? null : all.filter((c) => isInMainList(c, prefs[c.id]));
-  const directUids = (items || []).filter((c) => c.type !== 'group').map((c) => c.otherUid);
+  const mainItems = all === null ? null : all.filter((c) => isInMainList(c, prefs[c.id]));
+  const directUids = (mainItems || []).filter((c) => c.type !== 'group').map((c) => c.otherUid);
   const briefs = useUserBriefs(directUids);
   const presence = usePresenceInfo(directUids, showActivity);
+  const sq = normQ(searchQuery);
+  const items = mainItems === null ? null : !sq ? mainItems : mainItems.filter((c) => {
+    if (c.type === 'group') return (c.name || '').toLowerCase().includes(sq);
+    const b = briefs[c.otherUid];
+    return (b?.displayName || '').toLowerCase().includes(sq) || (b?.username || '').toLowerCase().includes(sq);
+  });
 
   useEffect(() => subscribeConversations(me, setAll), [me]);
 
@@ -271,6 +348,8 @@ const ConversationList: React.FC<{
   };
 
   if (items === null) return <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 animate-spin text-primary-500" /></div>;
+
+  if (sq && items.length === 0) return <PeopleResults me={me} query={searchQuery} excludeUids={new Set()} showEmpty />;
 
   if (items.length === 0) return (
     <div className="card p-8 text-center space-y-4 mt-4">
@@ -337,6 +416,14 @@ const ConversationList: React.FC<{
           </button>
         );
       })}
+      {sq && (
+        <PeopleResults
+          me={me}
+          query={searchQuery}
+          excludeUids={new Set(items.filter((c) => c.type !== 'group').map((c) => c.otherUid))}
+          showEmpty={false}
+        />
+      )}
     </div>
   );
 };
@@ -355,6 +442,7 @@ const Messages: React.FC = () => {
   const [prefs, setPrefs] = useState<ChatPrefMap>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const showActivity = (profile as any)?.showActivity !== false;
   const me = user?.uid;
 
@@ -426,7 +514,26 @@ const Messages: React.FC = () => {
         </div>
       )}
 
-      {user && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
+      <div className="relative mt-2 mb-1">
+        <Search className="w-4 h-4 text-slate-400 absolute start-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t('msgSearch.placeholder')}
+          className="w-full ps-11 pe-10 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 outline-none focus:border-primary-500/50"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute end-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-white"
+            aria-label={t('msgSearch.clear')}
+          ><X className="w-4 h-4" /></button>
+        )}
+      </div>
+
+      {user && !searchQuery.trim() && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
 
       {user && (
         <E2EEGate>
@@ -438,6 +545,7 @@ const Messages: React.FC = () => {
             selected={selected}
             onToggle={toggle}
             onStartSelect={startSelect}
+            searchQuery={searchQuery}
           />
         </E2EEGate>
       )}
