@@ -3,7 +3,7 @@ import { db } from '../config/firebase';
 import type { UserProfile } from '../types';
 import type { Post } from './postService';
 
-const MAX_USERS = 10;
+const MAX_USERS = 15;
 const MAX_POSTS = 5;
 const SCAN_LATEST = 40;
 
@@ -23,18 +23,25 @@ export const searchUsers = async (term: string): Promise<UserProfile[]> => {
     
     const map = new Map<string, UserProfile>();
     [...byUsername.docs, ...byName.docs].forEach((d) => {
-      if (!map.has(d.id)) map.set(d.id, { uid: d.id, ...(d.data() as any) } as UserProfile);
+      if (!map.has(d.id)) {
+        const data = d.data() as any;
+        map.set(d.id, { 
+          uid: d.id, 
+          ...data 
+        } as UserProfile);
+      }
     });
     
     return Array.from(map.values())
       .filter((u) => {
+        if (!u.username || !u.displayName) return false;
         if (u.isBanned || u.isDeactivated) return false;
         if (u.isEmailVerified === false) return false;
         return true;
       })
       .slice(0, MAX_USERS);
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('Search users error:', error);
     return [];
   }
 };
