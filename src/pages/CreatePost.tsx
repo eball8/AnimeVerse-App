@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   X, Camera, Image as ImageIcon, Video, Check, Play, Loader2, ImagePlus,
-  Settings, Film, ShieldCheck,
+  Settings, Film, ShieldCheck, Music2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
-import { createPost } from '../services/postService';
+import { createPost, getPostById } from '../services/postService';
 import { createStory } from '../services/storyService';
 import {
   isNativeGallery, checkGalleryAccess, requestGalleryAccess, openAppSettings,
@@ -34,6 +34,7 @@ const CreatePost: React.FC = () => {
   const { user, profile } = useAuth();
 
   const mode: Mode = params.get('mode') === 'story' ? 'story' : 'post';
+  const audioId = params.get('audio');
 
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -42,6 +43,10 @@ const CreatePost: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  // السماح للآخرين باستخدام صوت الفيديو / الريمكس (مفعّل افتراضياً مثل انستغرام)
+  const [allowAudio, setAllowAudio] = useState(true);
+  // الصوت المستعار من منشور آخر (ريمكس)
+  const [audioSource, setAudioSource] = useState<{ id: string; url: string; name: string } | null>(null);
 
   const native = isNativeGallery();
   const [access, setAccess] = useState<Access>(native ? 'checking' : 'granted');
@@ -149,6 +154,43 @@ const CreatePost: React.FC = () => {
     io.observe(el);
     return () => io.disconnect();
   }, [native, access, hasMore, medias.length, loadMore]);
+
+  // تحميل الصوت المستعار عند الدخول من خيار "استعمال الصوت"
+  useEffect(() => {
+    if (!audioId) {
+      setAudioSource(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const src = await getPostById(audioId);
+        if (cancelled) return;
+        if (!src || src.mediaType !== 'video' || !src.mediaUrl || src.allowAudio !== true || src.audioSourceId) {
+          setAudioSource(null);
+          setError(t('audio.notAllowed'));
+          return;
+        }
+        setAudioSource({ id: src.id || audioId, url: src.mediaUrl, name: src.authorName });
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) {
+          setAudioSource(null);
+          setError(t('audio.loadFail'));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [audioId]);
+
+  const removeAudioSource = () => {
+    setAudioSource(null);
+    const next = new URLSearchParams(params);
+    next.delete('audio');
+    setParams(next, { replace: true });
+  };
 
   useEffect(() => {
     previewRef.current = preview;
@@ -261,6 +303,8 @@ const CreatePost: React.FC = () => {
           caption: content,
         });
       } else {
+        const isVideo = mediaType === 'video';
+        const useBorrowed = isVideo && !!audioSource;
         await createPost({
           authorId: user.uid,
           authorName: profile.displayName,
@@ -268,6 +312,10 @@ const CreatePost: React.FC = () => {
           content: content.trim(),
           mediaUrl,
           mediaType: mediaType || undefined,
+          // الإعداد يخص الفيديو الذي يملك صاحبه صوته فقط (وليس فيديو بصوت مستعار)
+          allowAudio: isVideo && !useBorrowed ? allowAudio : undefined,
+          audioSourceId: useBorrowed ? audioSource!.id : undefined,
+          audioUrl: useBorrowed ? audioSource!.url : undefined,
         });
       }
       navigate('/community', { replace: true });
@@ -370,6 +418,62 @@ const CreatePost: React.FC = () => {
             </div>
             {preview && (
               <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black">{mediaPreview}</div>
+            )}
+
+            {/* الصوت المستعار (ريمكس) */}
+            {audioSource && (
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-primary-500/10 border border-primary-500/30">
+                <span className="w-9 h-9 rounded-full bg-primary-500 flex items-center justify-center shrink-0">
+                  <Music2 className="w-4 h-4 text-white" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-black text-white truncate">
+                    {t('audio.usingFrom', { name: audioSource.name })}
+                  </p>
+                  {mediaType !== 'video' && (
+                    <p className="text-[11px] text-amber-300 mt-0.5">{t('audio.needVideo')}</p>
+                  )}
+                </div>
+                <button
+                  onClick={removeAudioSource}
+                  disabled={uploading}
+                  className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-slate-200 active:scale-90 transition"
+                  aria-label={t('audio.removeAudio')}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* خيار: السماح باستخدام الصوت / الريمكس (يظهر مع الفيديو الذي صوته لصاحبه فقط) */}
+            {mediaType === 'video' && !audioSource && (
+              <button
+                type="button"
+                onClick={() => setAllowAudio((v) => !v)}
+                disabled={uploading}
+                role="switch"
+                aria-checked={allowAudio}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-start active:bg-white/10 transition"
+              >
+                <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                  <Music2 className="w-4 h-4 text-primary-300" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-black text-white">{t('audio.allowTitle')}</span>
+                  <span className="block text-[11px] text-slate-400 leading-relaxed mt-0.5">{t('audio.allowDesc')}</span>
+                </span>
+                <span
+                  className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+                    allowAudio ? 'bg-primary-500' : 'bg-white/20'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      allowAudio ? 'start-[22px]' : 'start-0.5'
+                    }`}
+                  />
+                </span>
+              </button>
             )}
           </div>
         ) : (
