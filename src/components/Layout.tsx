@@ -45,7 +45,7 @@ const Layout: React.FC = () => {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const apply = () => {
-      root.style.setProperty('--app-header-h', `${headerRef.current?.offsetHeight ?? 0}px`);
+      root.style.setProperty('--app-header-h', inChat ? 'env(safe-area-inset-top)' : `${headerRef.current?.offsetHeight ?? 0}px`);
       root.style.setProperty('--app-nav-h', `${navRef.current?.offsetHeight ?? 0}px`);
     };
     apply();
@@ -133,8 +133,8 @@ const Layout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col relative overflow-x-hidden">
-      {/* Header: يختفي بالكامل في شاشة الريلز */}
-      {!isReels && (
+      {/* Header: يختفي بالكامل في شاشة الريلز وداخل المحادثة */}
+      {!isReels && !inChat && (
         <header
           ref={headerRef}
           className="fixed top-0 inset-x-0 z-40 backdrop-blur-xl bg-dark-950/90 border-b border-white/10 pt-[env(safe-area-inset-top)]"
