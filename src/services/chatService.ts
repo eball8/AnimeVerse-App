@@ -1,217 +1,303 @@
-import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, query,
-  serverTimestamp, setDoc, where } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import type { Conversation } from './chatService';
+import { auth, db } from '../config/firebase';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
+  doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch }
+from 'firebase/firestore';
 
-export interface ChatPref {
-  muted: boolean;
-  restricted: boolean;
-  archived: boolean;
-  deletedAt?: number;
-  pinnedAt?: number;
-  accepted?: boolean;
+export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+const SEEN_KEY = 'animeverse_stories_seen';
+
+export interface Story {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorPhotoURL?: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  caption?: string;
+  createdAt: any;
 }
 
-export type ChatPrefMap = Record<string, ChatPref>;
+export interface StoryGroup {
+  authorId: string;
+  authorName: string;
+  authorPhotoURL?: string;
+  stories: Story[];
+}
 
-export const MAX_PINNED_CHATS = 3;
+export type NewStory = Omit<Story, 'id' | 'createdAt'>;
 
-const DEFAULT_PREF: ChatPref = { muted: false, restricted: false, archived: false };
+export const createStory = async (data: NewStory) => {
+  const caption = data.caption?.trim();
+  const payload: Record<string, any> = {
+    authorId: data.authorId,
+    authorName: data.authorName,
+    mediaUrl: data.mediaUrl,
+    mediaType: data.mediaType,
+    createdAt: serverTimestamp(),
+  };
+  if (data.authorPhotoURL) payload.authorPhotoURL = data.authorPhotoURL;
+  if (caption) payload.caption = caption.slice(0, 200);
+  const ref = await addDoc(collection(db, 'stories'), payload);
+  return ref.id;
+};
 
-const prefDocId = (me: string, convId: string) => `${me}_${convId}`;
+export const deleteStory = async (storyId: string) => {
+  await deleteDoc(doc(db, 'stories', storyId));
+  try {
+    const me = auth.currentUser?.uid;
+    if (!me) return;
+    const snap = await getDocs(
+      query(collection(db, 'storyViews'), where('storyId', '==', storyId), where('authorId', '==', me))
+    );
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error('story views cleanup failed:', e);
+  }
+};
 
-const parsePref = (data: any): ChatPref => ({
-  muted: data.muted === true,
-  restricted: data.restricted === true,
-  archived: data.archived === true,
-  deletedAt: typeof data.deletedAt === 'number' ? data.deletedAt : undefined,
-  pinnedAt: typeof data.pinnedAt === 'number' ? data.pinnedAt : undefined,
-  accepted: data.accepted === true ? true : undefined,
-});
+export const storyMillis = (story: Pick<Story, 'createdAt'>): number => {
+  const c = story.createdAt;
+  if (!c) return Date.now();
+  if (typeof c.toMillis === 'function') return c.toMillis();
+  if (typeof c.seconds === 'number') return c.seconds * 1000;
+  if (typeof c === 'number') return c;
+  return Date.now();
+};
 
-export const subscribeChatPrefs = (me: string, cb: (map: ChatPrefMap) => void): (() => void) => {
-  const q = query(collection(db, 'chatPrefs'), where('userId', '==', me));
+// ---------------------------------------------------------------
+// الاشتراك في القصص (الخام، بدون تصفية)
+// ---------------------------------------------------------------
+export const subscribeStories = (callback: (groups: StoryGroup[]) => void) => {
+  const since = Timestamp.fromMillis(Date.now() - STORY_TTL_MS);
+  const q = query(
+    collection(db, 'stories'),
+    where('createdAt', '>', since),
+    orderBy('createdAt', 'asc')
+  );
   return onSnapshot(
     q,
     (snap) => {
-      const map: ChatPrefMap = {};
+      const map = new Map<string, StoryGroup>();
       snap.forEach((d) => {
-        const data = d.data() as any;
-        if (!data?.convId) return;
-        map[data.convId] = parsePref(data);
+        const s = { id: d.id, ...d.data() } as Story;
+        let g = map.get(s.authorId);
+        if (!g) {
+          g = {
+            authorId: s.authorId,
+            authorName: s.authorName,
+            authorPhotoURL: s.authorPhotoURL,
+            stories: [],
+          };
+          map.set(s.authorId, g);
+        }
+        g.authorName = s.authorName;
+        g.authorPhotoURL = s.authorPhotoURL;
+        g.stories.push(s);
       });
-      cb(map);
+      const groups = Array.from(map.values()).sort(
+        (a, b) =>
+          storyMillis(b.stories[b.stories.length - 1]) -
+          storyMillis(a.stories[a.stories.length - 1])
+      );
+      callback(groups);
     },
     (err) => {
-      console.error('subscribeChatPrefs', err);
-      cb({});
+      console.error('Error fetching stories:', err);
+      callback([]);
     }
   );
 };
 
-export const fetchChatPrefs = async (me: string): Promise<ChatPrefMap> => {
-  const snap = await getDocs(query(collection(db, 'chatPrefs'), where('userId', '==', me)));
-  const map: ChatPrefMap = {};
-  snap.forEach((d) => {
-    const data = d.data() as any;
-    if (!data?.convId) return;
-    map[data.convId] = parsePref(data);
-  });
-  return map;
-};
+// ---------------------------------------------------------------
+// دوال تصفية القصص (المنطق الجديد)
+// ---------------------------------------------------------------
 
-export const getChatPref = async (me: string, convId: string): Promise<ChatPref | undefined> => {
-  const snap = await getDocs(
-    query(collection(db, 'chatPrefs'), where('userId', '==', me), where('convId', '==', convId), limit(1))
-  );
-  if (snap.empty) return undefined;
-  return parsePref(snap.docs[0].data());
-};
+const VISITED_KEY = 'animeverse_visited_profiles';
+const INTERACTED_KEY = 'animeverse_interacted_profiles';
 
-export const setChatPref = async (
-  me: string,
-  convId: string,
-  patch: Partial<ChatPref>,
-  current?: ChatPref
-): Promise<void> => {
-  const next: ChatPref = { ...DEFAULT_PREF, ...(current || {}), ...patch };
-  if (!('pinnedAt' in patch) && (patch.archived === true || patch.deletedAt !== undefined)) {
-    next.pinnedAt = undefined;
-  }
-  const id = prefDocId(me, convId);
-
-  const isDefault =
-    !next.muted &&
-    !next.restricted &&
-    !next.archived &&
-    next.deletedAt === undefined &&
-    next.pinnedAt === undefined &&
-    !next.accepted;
-  if (isDefault) {
-    await deleteDoc(doc(db, 'chatPrefs', id));
-    return;
-  }
-
-  const data: Record<string, unknown> = {
-    userId: me,
-    convId,
-    muted: next.muted,
-    restricted: next.restricted,
-    archived: next.archived,
-    updatedAt: serverTimestamp(),
-  };
-  if (next.deletedAt !== undefined) data.deletedAt = Math.floor(next.deletedAt);
-  if (next.pinnedAt !== undefined) data.pinnedAt = Math.floor(next.pinnedAt);
-  if (next.accepted) data.accepted = true;
-
-  await setDoc(doc(db, 'chatPrefs', id), data);
-};
-
-export const setChatsPinned = async (me: string, convIds: string[], pin: boolean): Promise<void> => {
-  const fresh = await fetchChatPrefs(me);
-
-  if (pin) {
-    const pinnedNow = Object.values(fresh).filter((p) => p.pinnedAt !== undefined).length;
-    const toAdd = Array.from(new Set(convIds)).filter((id) => fresh[id]?.pinnedAt === undefined);
-    if (toAdd.length === 0) return;
-    if (pinnedNow + toAdd.length > MAX_PINNED_CHATS) throw new Error('PIN_LIMIT');
-    const base = Date.now();
-    await Promise.all(toAdd.map((id, i) => setChatPref(me, id, { pinnedAt: base + i }, fresh[id])));
-    return;
-  }
-
-  const toRemove = Array.from(new Set(convIds)).filter((id) => fresh[id]?.pinnedAt !== undefined);
-  await Promise.all(toRemove.map((id) => setChatPref(me, id, { pinnedAt: undefined }, fresh[id])));
-};
-
-export const acceptMessageRequest = async (me: string, convId: string, current?: ChatPref): Promise<void> => {
-  const cur = current ?? (await getChatPref(me, convId));
-  await setChatPref(me, convId, { accepted: true }, cur);
-};
-
-export interface FollowRelations {
-  following: Set<string>;
-  followers: Set<string>;
+interface InteractionRecord {
+  postCount: number;
+  lastInteraction: number;
 }
 
-export const subscribeFollowRelations = (me: string, cb: (rel: FollowRelations) => void): (() => void) => {
-  let following: Set<string> | null = null;
-  let followers: Set<string> | null = null;
-  const emit = () => {
-    if (following && followers) cb({ following, followers });
-  };
-
-  const unsubA = onSnapshot(
-    query(collection(db, 'follows'), where('followerId', '==', me), limit(1000)),
-    (snap) => {
-      following = new Set(snap.docs.map((d) => d.data().followingId as string));
-      emit();
-    },
-    (e) => {
-      console.error('follow relations (following) error:', e);
-      if (!following) following = new Set();
-      emit();
-    }
-  );
-  const unsubB = onSnapshot(
-    query(collection(db, 'follows'), where('followingId', '==', me), limit(1000)),
-    (snap) => {
-      followers = new Set(snap.docs.map((d) => d.data().followerId as string));
-      emit();
-    },
-    (e) => {
-      console.error('follow relations (followers) error:', e);
-      if (!followers) followers = new Set();
-      emit();
-    }
-  );
-  return () => {
-    unsubA();
-    unsubB();
-  };
+const readVisited = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(VISITED_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
 };
 
-const lastMessageMs = (c: Conversation): number => c.lastMessageAt?.toMillis?.() ?? Date.now();
+const writeVisited = (set: Set<string>) => {
+  try {
+    localStorage.setItem(VISITED_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
 
-export const isDeletedForMe = (c: Conversation, pref?: ChatPref): boolean =>
-  !!pref?.deletedAt && lastMessageMs(c) <= pref.deletedAt;
+const readInteracted = (): Record<string, InteractionRecord> => {
+  try {
+    const raw = localStorage.getItem(INTERACTED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
-/**
- * هل هذه المحادثة "طلب مراسلة" عندي؟
- * - المجموعات ليست طلبات.
- * - المحادثات التي بدأتها أنا ليست طلبات.
- * - المحادثات القديمة (بلا starterId) تعتبر قائمة (وليست طلبات).
- * - إذا قبلت الطلب أو رددت (accepted) تنتقل إلى الوارد.
- * - إذا كانت هناك متابعة متبادلة (أنا أتابعه وهو يتابعني) تنتقل إلى الوارد.
- * - خلاف ذلك، تبقى طلبًا.
- */
-export const isMessageRequest = (
-  c: Conversation,
+const writeInteracted = (map: Record<string, InteractionRecord>) => {
+  try {
+    localStorage.setItem(INTERACTED_KEY, JSON.stringify(map));
+  } catch {}
+};
+
+/** تسجيل زيارة لملف شخصي (لإظهار قصته دائمًا بعد الزيارة) */
+export const markProfileVisited = (uid: string): void => {
+  const set = readVisited();
+  if (set.has(uid)) return;
+  set.add(uid);
+  writeVisited(set);
+};
+
+/** تسجيل تفاعل مع منشور أو ريلز (إعجاب، تعليق، إعادة نشر) */
+export const markPostInteraction = (authorUid: string): void => {
+  const map = readInteracted();
+  const prev = map[authorUid] || { postCount: 0, lastInteraction: 0 };
+  map[authorUid] = {
+    postCount: prev.postCount + 1,
+    lastInteraction: Date.now(),
+  };
+  writeInteracted(map);
+};
+
+/** هل يجب إظهار قصة هذا المستخدم؟ */
+export const shouldShowStory = (
+  authorId: string,
   me: string,
-  pref: ChatPref | undefined,
-  rel: FollowRelations,
-  myAccountType: 'public' | 'private'
+  rel: { following: Set<string>; followers: Set<string> }
 ): boolean => {
-  if (c.type === 'group') return false;
-  if (!c.starterId) return false;
-  if (c.starterId === me) return false;
-  if (pref?.accepted) return false;
-
-  const other = c.otherUid;
-  if (!other) return false;
-
-  // المتابعة المتبادلة -> الوارد
-  const iFollowThem = rel.following.has(other);
-  const theyFollowMe = rel.followers.has(other);
-  if (iFollowThem && theyFollowMe) return false;
-
-  // إذا كنت أتابعهم (أحادياً) -> يبقى طلبًا حتى يتابعني أو أرد
-  // إذا كان حسابي عامًا وهم يتابعونني -> يبقى طلبًا حتى أتابعهم أو أرد
-  return true;
+  if (authorId === me) return true;
+  if (rel.following.has(authorId)) return true;
+  if (readVisited().has(authorId)) return true;
+  const interactions = readInteracted()[authorId];
+  if (interactions && interactions.postCount >= 4) return true;
+  return false;
 };
 
-export const isInMainList = (c: Conversation, pref?: ChatPref): boolean =>
-  !pref?.archived && !isDeletedForMe(c, pref);
+/** تصفية مجموعات القصص بناءً على شروط الظهور */
+export const filterVisibleStories = (
+  groups: StoryGroup[],
+  me: string,
+  rel: { following: Set<string>; followers: Set<string> },
+  authorAccountTypes: Record<string, 'public' | 'private'>,
+  meFollowsAuthors: Set<string>
+): StoryGroup[] => {
+  return groups.filter((g) => {
+    if (g.authorId === me) return true;
+    const accountType = authorAccountTypes[g.authorId] || 'public';
+    if (accountType === 'private') {
+      // الحساب الخاص: القصص مخفية عن غير المتابعين المقبولين
+      return meFollowsAuthors.has(g.authorId);
+    }
+    return shouldShowStory(g.authorId, me, rel);
+  });
+};
 
-export const isInArchive = (c: Conversation, pref?: ChatPref): boolean =>
-  !!pref?.archived && !isDeletedForMe(c, pref);
+const readSeen = (): Record<string, number> => {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+export const markStorySeen = (authorId: string, millis: number) => {
+  try {
+    const seen = readSeen();
+    if ((seen[authorId] || 0) >= millis) return;
+    seen[authorId] = millis;
+    localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+  } catch {}
+};
+
+export const hasSeenAll = (group: StoryGroup): boolean => {
+  const last = group.stories[group.stories.length - 1];
+  if (!last) return true;
+  return (readSeen()[group.authorId] || 0) >= storyMillis(last);
+};
+
+// ---------- مشاهدات القصص والتفاعل ----------
+export interface StoryView {
+  id: string;
+  storyId: string;
+  authorId: string;
+  viewerId: string;
+  liked: boolean;
+  reply?: string;
+  createdAt: any;
+  updatedAt?: any;
+}
+
+export interface StoryViewRecord {
+  liked: boolean;
+  reply?: string;
+}
+
+const viewRef = (storyId: string, viewerId: string) => doc(db, 'storyViews', `${storyId}_${viewerId}`);
+
+export const recordStoryView = async (story: Story, viewerId: string): Promise<StoryViewRecord> => {
+  if (story.authorId === viewerId) return { liked: false };
+  const ref = viewRef(story.id, viewerId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const d = snap.data() as any;
+    return { liked: !!d.liked, reply: typeof d.reply === 'string' ? d.reply : undefined };
+  }
+  await setDoc(ref, {
+    storyId: story.id,
+    authorId: story.authorId,
+    viewerId,
+    liked: false,
+    createdAt: serverTimestamp(),
+  });
+  return { liked: false };
+};
+
+export const setStoryLiked = async (story: Story, viewerId: string, liked: boolean): Promise<void> => {
+  await updateDoc(viewRef(story.id, viewerId), { liked, updatedAt: serverTimestamp() });
+};
+
+export const sendStoryReply = async (story: Story, viewerId: string, text: string): Promise<void> => {
+  const reply = text.trim().slice(0, 200);
+  if (!reply) return;
+  await updateDoc(viewRef(story.id, viewerId), { reply, updatedAt: serverTimestamp() });
+};
+
+export const subscribeStoryViews = (
+  story: Pick<Story, 'id' | 'authorId'>,
+  callback: (views: StoryView[]) => void,
+  onError?: (e: unknown) => void
+) => {
+  const q = query(
+    collection(db, 'storyViews'),
+    where('storyId', '==', story.id),
+    where('authorId', '==', story.authorId)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as StoryView));
+      const ms = (v: StoryView) => v.createdAt?.toMillis?.() ?? Date.now();
+      items.sort((a, b) => ms(b) - ms(a));
+      callback(items);
+    },
+    onError
+  );
+};
