@@ -17,7 +17,6 @@ import type { UserProfile } from '../types';
 import { isValidUsername } from '../utils/username';
 
 const USERS_COLLECTION = 'users';
-// حجز أسماء المستخدمين: وثيقة لكل اسم، معرّفها هو الاسم نفسه، وتحمل uid صاحبه
 const USERNAMES_COLLECTION = 'usernames';
 
 const removeUndefined = <T extends Record<string, unknown>>(obj: T): T =>
@@ -29,7 +28,6 @@ const takenError = () => {
   return e;
 };
 
-// اسم تلقائي لمن لم يختر اسماً (مثل حسابات Google): نجرّب أطوالاً أكبر عند التعارض
 const pickAutoUsername = async (uid: string): Promise<string> => {
   const base = uid.toLowerCase().replace(/[^a-z0-9]/g, '');
   for (const n of [8, 12, 16, 20, 24]) {
@@ -56,7 +54,6 @@ export const createUserProfile = async (
   const username =
     requested && isValidUsername(requested) ? requested : await pickAutoUsername(uid);
 
-  // إن كان الاسم محجوزاً لغيرك نرفض، وإن كان محجوزاً لك لا نحجزه مرة ثانية
   const claimRef = doc(db, USERNAMES_COLLECTION, username);
   const claimSnap = await getDoc(claimRef);
   let needsClaim = true;
@@ -78,6 +75,7 @@ export const createUserProfile = async (
     role: 'user',
     accountType: 'public',
     isVerified: false,
+    isEmailVerified: false,
     isBanned: false,
     followersCount: 0,
     followingCount: 0,
@@ -88,7 +86,6 @@ export const createUserProfile = async (
     updatedAt: now,
   };
 
-  // حجز الاسم وحفظ الملف الشخصي في عملية واحدة: إما ينجحان معاً أو يفشلان معاً
   const batch = writeBatch(db);
   if (needsClaim) {
     batch.set(claimRef, { uid, createdAt: serverTimestamp() });
@@ -97,7 +94,6 @@ export const createUserProfile = async (
   try {
     await batch.commit();
   } catch (e: any) {
-    // فشل بسبب سباق: شخص آخر حجز الاسم قبلنا بلحظة
     if (needsClaim && e?.code === 'permission-denied') {
       const again = await getDoc(claimRef).catch(() => null);
       if (again && again.exists() && again.data().uid !== uid) throw takenError();
@@ -105,7 +101,6 @@ export const createUserProfile = async (
     throw e;
   }
 
-  // الإيميل يُحفظ في مجموعة خاصة حسب قواعد Firestore
   if (data.email) {
     try {
       await setDoc(doc(db, 'userPrivate', uid), {
@@ -126,7 +121,6 @@ export const updateUserProfile = async (
   const clean = removeUndefined(updates);
   const userRef = doc(db, USERS_COLLECTION, uid);
 
-  // لا تغيير في اسم المستخدم: تحديث عادي
   if (typeof clean.username !== 'string') {
     await updateDoc(userRef, { ...clean, updatedAt: serverTimestamp() });
     return;
@@ -147,7 +141,6 @@ export const updateUserProfile = async (
     throw e;
   }
 
-  // تغيير الاسم: نحجز الجديد ونحرّر القديم ونحدّث الملف في عملية واحدة
   const newRef = doc(db, USERNAMES_COLLECTION, newName);
   const newSnap = await getDoc(newRef);
   if (newSnap.exists() && newSnap.data().uid !== uid) throw takenError();
@@ -174,7 +167,6 @@ export const updateUserProfile = async (
   }
 };
 
-// للحسابات القديمة التي لم يكن لاسمها حجز: يُحجز الاسم لصاحبه عند أول دخول
 export const ensureUsernameClaim = async (uid: string, username: string): Promise<void> => {
   const uname = (username || '').trim().toLowerCase();
   if (uname !== username || !isValidUsername(uname)) return;
@@ -191,11 +183,9 @@ export const checkUsernameAvailable = async (
   const uname = username.trim().toLowerCase();
   if (!isValidUsername(uname)) return false;
 
-  // 1) الحجز الرسمي
   const claim = await getDoc(doc(db, USERNAMES_COLLECTION, uname));
   if (claim.exists() && claim.data().uid !== excludeUid) return false;
 
-  // 2) حسابات قديمة لم يُحجز اسمها بعد
   const q = query(
     collection(db, USERS_COLLECTION),
     where('username', '==', uname)
