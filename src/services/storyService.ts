@@ -1,11 +1,14 @@
 import { auth, db } from '../config/firebase';
-import {
-  collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
-  doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch,
-} from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
+  doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch }
+from 'firebase/firestore';
 
 export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const SEEN_KEY = 'animeverse_stories_seen';
+
+// مفاتيح التخزين المحلي لتصفية القصص
+const VISITED_KEY = 'animeverse_visited_profiles';
+const INTERACTED_KEY = 'animeverse_interacted_profiles';
 
 export interface Story {
   id: string;
@@ -29,7 +32,6 @@ export type NewStory = Omit<Story, 'id' | 'createdAt'>;
 
 export const createStory = async (data: NewStory) => {
   const caption = data.caption?.trim();
-  // قواعد Firestore تقبل هذه الحقول فقط، ولا تقبل undefined
   const payload: Record<string, any> = {
     authorId: data.authorId,
     authorName: data.authorName,
@@ -45,7 +47,6 @@ export const createStory = async (data: NewStory) => {
 
 export const deleteStory = async (storyId: string) => {
   await deleteDoc(doc(db, 'stories', storyId));
-  // تنظيف سجلات المشاهدة (يستطيع صاحب القصة حذفها فقط، وفشل الحذف لا يمنع حذف القصة)
   try {
     const me = auth.currentUser?.uid;
     if (!me) return;
@@ -62,7 +63,6 @@ export const deleteStory = async (storyId: string) => {
   }
 };
 
-// يعيد وقت إنشاء القصة بالميلي ثانية (createdAt يكون null لحظة الإرسال المحلي)
 export const storyMillis = (story: Pick<Story, 'createdAt'>): number => {
   const c = story.createdAt;
   if (!c) return Date.now();
@@ -72,7 +72,6 @@ export const storyMillis = (story: Pick<Story, 'createdAt'>): number => {
   return Date.now();
 };
 
-// القصص الأقدم من 24 ساعة تختفي من الواجهة
 export const subscribeStories = (callback: (groups: StoryGroup[]) => void) => {
   const since = Timestamp.fromMillis(Date.now() - STORY_TTL_MS);
   const q = query(
@@ -114,6 +113,96 @@ export const subscribeStories = (callback: (groups: StoryGroup[]) => void) => {
   );
 };
 
+// ---------------------------------------------------------------
+// دوال تتبع التفاعل والزيارة (لمنطق القصص الجديد)
+// ---------------------------------------------------------------
+
+const readVisited = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(VISITED_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const writeVisited = (set: Set<string>) => {
+  try {
+    localStorage.setItem(VISITED_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+const readInteracted = (): Record<string, { postCount: number; lastInteraction: number }> => {
+  try {
+    const raw = localStorage.getItem(INTERACTED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeInteracted = (map: Record<string, { postCount: number; lastInteraction: number }>) => {
+  try {
+    localStorage.setItem(INTERACTED_KEY, JSON.stringify(map));
+  } catch {}
+};
+
+/** تسجيل زيارة لملف شخصي (لإظهار قصته دائمًا بعد الزيارة) */
+export const markProfileVisited = (uid: string): void => {
+  const set = readVisited();
+  if (set.has(uid)) return;
+  set.add(uid);
+  writeVisited(set);
+};
+
+/** تسجيل تفاعل مع منشور أو ريلز (إعجاب، تعليق، إعادة نشر) */
+export const markPostInteraction = (authorUid: string): void => {
+  const map = readInteracted();
+  const prev = map[authorUid] || { postCount: 0, lastInteraction: 0 };
+  map[authorUid] = {
+    postCount: prev.postCount + 1,
+    lastInteraction: Date.now(),
+  };
+  writeInteracted(map);
+};
+
+/** هل يجب إظهار قصة هذا المستخدم؟ */
+export const shouldShowStory = (
+  authorId: string,
+  me: string,
+  rel: { following: Set<string>; followers: Set<string> }
+): boolean => {
+  if (authorId === me) return true;
+  if (rel.following.has(authorId)) return true;
+  if (readVisited().has(authorId)) return true;
+  const interactions = readInteracted()[authorId];
+  if (interactions && interactions.postCount >= 4) return true;
+  return false;
+};
+
+/** تصفية مجموعات القصص بناءً على شروط الظهور */
+export const filterVisibleStories = (
+  groups: StoryGroup[],
+  me: string,
+  rel: { following: Set<string>; followers: Set<string> },
+  authorAccountTypes: Record<string, 'public' | 'private'>,
+  meFollowsAuthors: Set<string>
+): StoryGroup[] => {
+  return groups.filter((g) => {
+    if (g.authorId === me) return true;
+    const accountType = authorAccountTypes[g.authorId] || 'public';
+    if (accountType === 'private') {
+      // الحساب الخاص: القصص مخفية عن غير المتابعين المقبولين
+      return meFollowsAuthors.has(g.authorId);
+    }
+    return shouldShowStory(g.authorId, me, rel);
+  });
+};
+
 const readSeen = (): Record<string, number> => {
   try {
     return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
@@ -128,9 +217,7 @@ export const markStorySeen = (authorId: string, millis: number) => {
     if ((seen[authorId] || 0) >= millis) return;
     seen[authorId] = millis;
     localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 };
 
 export const hasSeenAll = (group: StoryGroup): boolean => {
@@ -140,7 +227,6 @@ export const hasSeenAll = (group: StoryGroup): boolean => {
 };
 
 // ---------- مشاهدات القصص والتفاعل ----------
-// وثيقة واحدة لكل مشاهد: storyViews/{storyId}_{viewerId}
 export interface StoryView {
   id: string;
   storyId: string;
@@ -159,7 +245,6 @@ export interface StoryViewRecord {
 
 const viewRef = (storyId: string, viewerId: string) => doc(db, 'storyViews', `${storyId}_${viewerId}`);
 
-// يسجّل مشاهدة المستخدم للقصة مرة واحدة فقط، ويعيد حالته الحالية (إعجاب/رد سابق)
 export const recordStoryView = async (story: Story, viewerId: string): Promise<StoryViewRecord> => {
   if (story.authorId === viewerId) return { liked: false };
   const ref = viewRef(story.id, viewerId);
@@ -182,14 +267,12 @@ export const setStoryLiked = async (story: Story, viewerId: string, liked: boole
   await updateDoc(viewRef(story.id, viewerId), { liked, updatedAt: serverTimestamp() });
 };
 
-// يحفظ آخر رد للمشاهد (يستبدل الرد السابق). الرد ظاهر لصاحب القصة والمشاهد فقط.
 export const sendStoryReply = async (story: Story, viewerId: string, text: string): Promise<void> => {
   const reply = text.trim().slice(0, 200);
   if (!reply) return;
   await updateDoc(viewRef(story.id, viewerId), { reply, updatedAt: serverTimestamp() });
 };
 
-// قائمة المشاهدين لصاحب القصة (الشرط الثاني ضروري لتقبله قواعد Firestore)
 export const subscribeStoryViews = (
   story: Pick<Story, 'id' | 'authorId'>,
   callback: (views: StoryView[]) => void,
