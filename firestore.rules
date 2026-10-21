@@ -717,7 +717,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد) ----------
+    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد / أرشفة / حذف عندي) ----------
     match /chatPrefs/{prefId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -728,12 +728,16 @@ service cloud.firestore {
           'convId',
           'muted',
           'restricted',
+          'archived',
+          'deletedAt',
           'updatedAt'
         ])
         && validText(request.resource.data.convId, 1, 200)
         && prefId == request.resource.data.userId + '_' + request.resource.data.convId
         && request.resource.data.muted is bool
         && request.resource.data.restricted is bool
+        && (!('archived' in request.resource.data) || request.resource.data.archived is bool)
+        && (!('deletedAt' in request.resource.data) || request.resource.data.deletedAt is int)
         && request.resource.data.updatedAt == request.time;
 
       allow delete: if signedIn()
