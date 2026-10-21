@@ -16,11 +16,19 @@ import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
 import type { UserProfile } from '../types';
 
+type Counts = { followers: number; following: number; posts: number };
+
+// آخر عدّادات معروفة لكل مستخدم: تظهر فوراً عند العودة للصفحة بدل الأصفار
+const countsCache = new Map<string, Counts>();
+
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
   const { t } = useI18n();
-  const [counts, setCounts] = useState({ followers: 0, following: 0, posts: 0 });
+  // null = لم تصل القيم بعد (نعرض "—" بدل الصفر)
+  const [counts, setCounts] = useState<Counts | null>(() =>
+    user?.uid ? countsCache.get(user.uid) ?? null : null
+  );
   const [requests, setRequests] = useState<UserProfile[]>([]);
   const [copied, setCopied] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -31,6 +39,11 @@ const Profile: React.FC = () => {
     if (!user) return;
     getFollowCounts(user.uid).then(setCounts).catch(console.error);
   }, [user]);
+
+  // نحفظ آخر قيمة في الذاكرة كلما تغيرت
+  useEffect(() => {
+    if (user && counts) countsCache.set(user.uid, counts);
+  }, [user, counts]);
 
   useEffect(() => {
     if (!user) return;
@@ -101,7 +114,7 @@ const Profile: React.FC = () => {
   const handleAccept = async (followerId: string) => {
     try {
       await acceptRequest(followerId, user.uid);
-      setCounts((c) => ({ ...c, followers: c.followers + 1 }));
+      setCounts((c) => (c ? { ...c, followers: c.followers + 1 } : c));
     } catch (e) {
       console.error(e);
       alert(t('common.error'));
@@ -149,11 +162,15 @@ const Profile: React.FC = () => {
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.posts')}</div>
           </div>
           <div>
-            <div className="text-lg font-black text-white">{counts.followers}</div>
+            <div className="text-lg font-black text-white tabular-nums">
+              {counts ? counts.followers : '—'}
+            </div>
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.followers')}</div>
           </div>
           <div>
-            <div className="text-lg font-black text-white">{counts.following}</div>
+            <div className="text-lg font-black text-white tabular-nums">
+              {counts ? counts.following : '—'}
+            </div>
             <div className="text-[10px] text-slate-500 font-bold">{t('profile.following')}</div>
           </div>
         </div>
