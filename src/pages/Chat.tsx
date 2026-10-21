@@ -30,7 +30,7 @@ import { setChatPref, subscribeChatPrefs } from '../services/chatPrefsService';
 import type { ChatPrefMap } from '../services/chatPrefsService';
 
 type VoicePayload = Extract<ChatPayload, { k: 'v' }>;
-type MediaPayload = Extract<ChatPayload, { k: 'm' }>;
+type MediaPayload = Extract<ChatPayload, { k: 'm' }> & { c?: string }; // c = نص مكتوب مع الصورة/الفيديو
 
 const MAX_VIDEO_MB = 9;
 const MAX_ATTACH_PER_PICK = 5;
@@ -197,25 +197,34 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
   if (isVideo) {
     if (!src) {
       return (
-        <button onClick={load} className="relative w-56 h-40 rounded-xl bg-black/40 flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition">
-          <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}</span>
-          <span className="text-[11px] opacity-80">{failed ? t('chat.mediaError') : `${t('chat.video')} • ${formatBytes(payload.size)}`}</span>
-        </button>
+        <div className="w-56">
+          <button onClick={load} className="relative w-56 h-40 rounded-xl bg-black/40 flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition">
+            <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}</span>
+            <span className="text-[11px] opacity-80">{failed ? t('chat.mediaError') : `${t('chat.video')} • ${formatBytes(payload.size)}`}</span>
+          </button>
+          {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
+        </div>
       );
     }
     return (
-      <div className="relative w-56">
-        <video src={src} controls playsInline className="w-56 max-h-72 rounded-xl bg-black" />
-        <button onClick={() => onOpen(src, 'video')} className="absolute top-2 end-2 p-1.5 rounded-full bg-black/60 text-white"><Maximize2 className="w-3.5 h-3.5" /></button>
+      <div className="w-56">
+        <div className="relative w-56">
+          <video src={src} controls playsInline className="w-56 max-h-72 rounded-xl bg-black" />
+          <button onClick={() => onOpen(src, 'video')} className="absolute top-2 end-2 p-1.5 rounded-full bg-black/60 text-white"><Maximize2 className="w-3.5 h-3.5" /></button>
+        </div>
+        {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
       </div>
     );
   }
   const ratio = Math.min(1.8, Math.max(0.6, payload.w && payload.h ? payload.w / payload.h : 4 / 3));
   return (
-    <div className="relative w-56 rounded-xl overflow-hidden bg-black/30" style={{ aspectRatio: String(ratio) }}>
-      {src ? (<img src={src} alt="" draggable={false} onClick={() => onOpen(src, 'image')} className="w-full h-full object-cover cursor-pointer" />) :
-       failed ? (<button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80"><RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}</button>) :
-       (<div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>)}
+    <div className="w-56">
+      <div className="relative w-56 rounded-xl overflow-hidden bg-black/30" style={{ aspectRatio: String(ratio) }}>
+        {src ? (<img src={src} alt="" draggable={false} onClick={() => onOpen(src, 'image')} className="w-full h-full object-cover cursor-pointer" />) :
+         failed ? (<button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80"><RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}</button>) :
+         (<div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>)}
+      </div>
+      {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
     </div>
   );
 };
@@ -427,6 +436,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const [prefs, setPrefs] = useState<ChatPrefMap>({});
   const [blockedIds, setBlockedIds] = useState<Set<string>>(() => new Set());
   const [reporting, setReporting] = useState(false);
+  const [pending, setPending] = useState<{ file: File; url: string }[]>([]);
+  const [caption, setCaption] = useState('');
+  const [sendingPending, setSendingPending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const purgedRef = useRef<Set<string>>(new Set());
 
@@ -486,7 +498,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const matchIds = useMemo(() => {
     if (!searchOpen || !q) return [] as string[];
     return visibleMessages
-      .filter((m) => { const p = plain[m.id]; return !!p && p.k === 't' && p.v.toLowerCase().includes(q); })
+      .filter((m) => { const p = plain[m.id]; return !!p && ((p.k === 't' && p.v.toLowerCase().includes(q)) || (p.k === 'm' && !!(p as MediaPayload).c && (p as MediaPayload).c!.toLowerCase().includes(q))); })
       .map((m) => m.id);
   }, [searchOpen, q, visibleMessages, plain]);
   const matchSet = useMemo(() => new Set(matchIds), [matchIds]);
@@ -620,7 +632,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     }
   };
 
-  const sendOneMedia = async (file: File): Promise<boolean> => {
+  const sendOneMedia = async (file: File, cap?: string): Promise<boolean> => {
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
     if (!isImage && !isVideo) { setError(t('chat.mediaType')); return false; }
@@ -635,6 +647,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       rememberMedia(url, blob); setBusy(false);
       const payload: MediaPayload = { k: 'm', url, key: enc.key, iv: enc.iv, mime, size: blob.size };
       if (w && h) { payload.w = w; payload.h = h; }
+      if (cap) payload.c = cap.slice(0, 1000);
       return await doSend(payload);
     } catch (e: any) { console.error(e); setError(`${t('chat.sendFailed')} (${e?.message || ''})`.trim()); setBusy(false); return false; }
   };
@@ -643,8 +656,38 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     const files: File[] = Array.from(e.target.files || []).slice(0, MAX_ATTACH_PER_PICK);
     e.target.value = '';
     if (!files.length || busy) return;
-    for (const f of files) { const ok = await sendOneMedia(f); if (!ok) break; }
+    const okFiles: File[] = [];
+    for (const f of files) {
+      const isImg = f.type.startsWith('image/');
+      const isVid = f.type.startsWith('video/');
+      if (!isImg && !isVid) { setError(t('chat.mediaType')); continue; }
+      if (isVid && f.size > MAX_VIDEO_MB * 1024 * 1024) { setError(t('chat.videoTooBig', { mb: MAX_VIDEO_MB })); continue; }
+      okFiles.push(f);
+    }
+    if (!okFiles.length) return;
+    // نفتح شاشة المعاينة ليكتب المستخدم نصاً مع الصورة/الفيديو قبل الإرسال
+    setCaption('');
+    setPending(okFiles.map((f) => ({ file: f, url: URL.createObjectURL(f) })));
+  };
+
+  const closePending = () => {
+    pending.forEach((x) => URL.revokeObjectURL(x.url));
+    setPending([]);
+    setCaption('');
+  };
+
+  const sendPending = async () => {
+    if (!pending.length || sendingPending) return;
+    const items = pending;
+    const cap = caption.trim();
+    setSendingPending(true);
+    for (let i = 0; i < items.length; i++) {
+      const ok = await sendOneMedia(items[i].file, i === 0 && cap ? cap : undefined);
+      if (!ok) break;
+    }
     setProgress(null);
+    setSendingPending(false);
+    closePending();
   };
 
   // ---- التسجيل الصوتي (يعمل في الفردي والمجموعات) ----
@@ -962,6 +1005,43 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           )}
         </div>
       </div>
+
+      {/* معاينة قبل الإرسال مع كتابة نص */}
+      {pending.length > 0 && (
+        <div className="fixed inset-0 z-[125] bg-black/95 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <div className="flex items-center justify-between px-4 py-3">
+            <button onClick={closePending} disabled={sendingPending} className="p-2 rounded-full bg-white/10 text-white disabled:opacity-50"><X className="w-5 h-5" /></button>
+            <span className="text-sm font-bold text-white">{pending.length > 1 ? `${pending.length}` : ''}</span>
+            <span className="w-9" />
+          </div>
+          <div className="flex-1 min-h-0 flex items-center gap-3 overflow-x-auto px-4 snap-x snap-mandatory">
+            {pending.map((x) => (
+              <div key={x.url} className="snap-center shrink-0 w-full h-full flex items-center justify-center">
+                {x.file.type.startsWith('video/')
+                  ? <video src={x.url} controls playsInline className="max-w-full max-h-full rounded-xl" />
+                  : <img src={x.url} alt="" draggable={false} className="max-w-full max-h-full object-contain rounded-xl" />}
+              </div>
+            ))}
+          </div>
+          {sendingPending && progress !== null && (
+            <div className="px-4 pt-3"><div className="h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all" style={{ width: `${progress}%` }} /></div></div>
+          )}
+          <div className="flex items-center gap-2 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            <input
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendPending()}
+              maxLength={1000}
+              disabled={sendingPending}
+              placeholder={lang === 'ar' ? 'أضف نصاً...' : lang === 'fr' ? 'Ajouter un texte...' : 'Add a caption...'}
+              className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+            />
+            <button onClick={sendPending} disabled={sendingPending} className="btn-primary p-3 rounded-full disabled:opacity-50">
+              {sendingPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* معاينة الوسائط مع سهم رجوع للدردشة */}
       {viewer && (
