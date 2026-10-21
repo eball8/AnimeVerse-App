@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Volume2, VolumeX, Loader2, Heart, Eye, Send } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from './Avatar';
@@ -11,6 +14,7 @@ import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 import DeleteButton from './DeleteButton';
 import { useConfirm } from './ConfirmDialog';
+import { sendDirect, convIdOf } from '../services/chatService';
 
 interface Props {
   groups: StoryGroup[];
@@ -21,6 +25,7 @@ interface Props {
 const IMAGE_MS = 5000;
 
 const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
+  const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const { t, lang } = useI18n();
   const confirm = useConfirm();
@@ -89,7 +94,6 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
     markStorySeen(story.authorId, storyMillis(story));
   }, [story?.id]);
 
-  // تسجيل المشاهدة مرة واحدة لكل مستخدم (لا تُحتسب مشاهدة صاحب القصة لقصته)
   useEffect(() => {
     setRec(null);
     if (!story || !user || story.authorId === user.uid) return;
@@ -104,7 +108,6 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
     };
   }, [story?.id, user?.uid]);
 
-  // قائمة المشاهدين تظهر لصاحب القصة فقط
   useEffect(() => {
     setViews([]);
     if (!story || !isOwner) return;
@@ -194,14 +197,42 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
     if (!v || !story || !user || !rec || sending) return;
     setSending(true);
     try {
+      // 1. حفظ الرد في شاشة مشاهدات القصة (حتى يراه صاحب القصة)
       await sendStoryReply(story, user.uid, v);
+      
+      // 2. إرسال رسالة دردشة حقيقية
+      const convSnap = await getDoc(doc(db, 'conversations', convIdOf(user.uid, story.authorId)));
+      const exists = convSnap.exists();
+      
+      const payload = { k: 't' as const, v: `رداً على قصتك: ${v}` };
+      await sendDirect(user.uid, story.authorId, payload, exists);
+
       setReplyText('');
       setSentMsg(true);
       setTimeout(() => setSentMsg(false), 2000);
-    } catch (e) {
+
+      // 3. إغلاق القصة والانتقال إلى المحادثة
+      onClose();
+      navigate(`/messages/${story.authorId}`);
+    } catch (e: any) {
       console.error(e);
+      if (e?.message === 'MESSAGES_CLOSED') {
+        alert(lang === 'ar' ? 'هذا المستخدم لا يستقبل رسائل جديدة.' : 'This user is not accepting new messages.');
+      } else {
+        alert(lang === 'ar' ? 'تعذّر إرسال الرد.' : 'Could not send reply.');
+      }
     } finally {
       setSending(false);
+    }
+  };
+
+  const openProfile = () => {
+    if (!story || !user) return;
+    onClose();
+    if (story.authorId === user.uid) {
+      navigate('/profile');
+    } else {
+      navigate(`/user/${story.authorId}`);
     }
   };
 
@@ -267,15 +298,17 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
         </div>
 
         <div className="flex items-center gap-3 mt-3 pointer-events-auto">
-          <img
-            src={author.photo || `https://api.dicebear.com/7.x/bottts/svg?seed=${group.authorId}`}
-            alt=""
-            className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900"
-          />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-white truncate">{author.name}</p>
-            <p className="text-[10px] text-white/70">{timeAgo(story.createdAt, lang)}</p>
-          </div>
+          <button type="button" onClick={openProfile} className="flex items-center gap-3 min-w-0 flex-1 text-start">
+            <img
+              src={author.photo || `https://api.dicebear.com/7.x/bottts/svg?seed=${group.authorId}`}
+              alt=""
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-white truncate hover:underline">{author.name}</p>
+              <p className="text-[10px] text-white/70">{timeAgo(story.createdAt, lang)}</p>
+            </div>
+          </button>
           {story.mediaType === 'video' && (
             <button onPointerDown={stop} onPointerUp={stop} onClick={() => setMuted((m) => !m)} className="p-2 text-white" aria-label={t('story.sound')}>
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -302,7 +335,6 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
         </div>
       )}
 
-      {/* شريط التفاعل السفلي */}
       {isOwner ? (
         <div className="absolute bottom-0 inset-x-0 z-10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+14px)] bg-gradient-to-t from-black/85 to-transparent flex justify-center">
           <button
@@ -325,7 +357,7 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
           <div className="flex items-center gap-2">
             <input
               value={replyText}
-              disabled={!rec}
+              disabled={!rec || sending}
               maxLength={200}
               onChange={(e) => setReplyText(e.target.value)}
               onFocus={() => setInputFocus(true)}
@@ -346,7 +378,6 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
         </div>
       )}
 
-      {/* قائمة المشاهدين (لصاحب القصة) */}
       {isOwner && sheetOpen && (
         <>
           <div className="absolute inset-0 z-20 bg-black/50" onClick={() => setSheetOpen(false)} />
