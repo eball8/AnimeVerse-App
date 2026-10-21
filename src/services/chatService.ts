@@ -1,9 +1,9 @@
-import {
-  addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query,
-  serverTimestamp, setDoc, updateDoc, where, arrayUnion, arrayRemove, FieldPath
-} from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy,
+  query, serverTimestamp, setDoc, updateDoc, where, arrayUnion, arrayRemove,
+  FieldPath } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { decryptJson, encryptJson, fromB64, getLocalKey, getSharedKey, toB64 } from './cryptoService';
+import { decryptJson, encryptJson, fromB64, getLocalKey, getSharedKey, toB64 }
+from './cryptoService';
 import type { LocalKey } from './cryptoService';
 import { acceptMessageRequest, getChatPref } from './chatPrefsService';
 
@@ -19,7 +19,7 @@ export type ChatPayload = PayloadBase & { f?: 1 };
 
 export interface Conversation {
   id: string;
-  otherUid: string; // للمحادثات الفردية فقط
+  otherUid: string;
   lastMessageAt: any;
   lastMessageBy?: string;
   reads?: Record<string, any>;
@@ -29,11 +29,8 @@ export interface Conversation {
   members?: string[];
   admins?: string[];
   photoURL?: string;
-  /** الرسائل المؤقتة: مدة بقاء الرسالة بالميلي ثانية (0 أو غير موجود = معطّلة) */
   disappearAfter?: number;
-  /** معرّفات الرسائل المثبّتة (الأحدث أولاً، حتى 3) */
   pinned?: string[];
-  /** من بدأ المحادثة الفردية (لتحديد طلبات المراسلة). غير موجود في المحادثات القديمة */
   starterId?: string;
 }
 
@@ -49,8 +46,8 @@ export interface RawMessage {
   createdAt: any;
   replyTo?: string;
   reactions?: Record<string, string[]>;
-  wraps?: Record<string, WrappedKey>; // رسائل المجموعات فقط
-  edited?: boolean; // الرسالة تم تعديلها
+  wraps?: Record<string, WrappedKey>;
+  edited?: boolean;
 }
 
 export interface PublicKeyInfo {
@@ -97,7 +94,6 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
   );
 };
 
-// هل في المحادثة رسائل جديدة لم أقرأها؟
 export const isUnread = (c: Conversation, me: string): boolean => {
   if (!c.lastMessageBy || c.lastMessageBy === me) return false;
   const last = c.lastMessageAt?.toMillis?.();
@@ -114,28 +110,18 @@ export const setConversationTheme = async (convId: string, theme: string): Promi
   await updateDoc(doc(db, 'conversations', convId), { theme });
 };
 
-// ---------------------------------------------------------------
-// الرسائل المؤقتة (حذف تلقائي بعد 24 ساعة)
-// الإعداد يُحفظ في وثيقة المحادثة فيراه الطرفان. الرسالة المنتهية تختفي من
-// الواجهة عند الجميع، ويحذفها مرسلها نفسه من قاعدة البيانات (القواعد لا تسمح
-// بالحذف إلا لصاحب الرسالة).
-// ---------------------------------------------------------------
 export const DISAPPEAR_24H_MS = 24 * 60 * 60 * 1000;
 
 export const setDisappearAfter = async (convId: string, ms: number): Promise<void> => {
   await updateDoc(doc(db, 'conversations', convId), { disappearAfter: Math.max(0, Math.floor(ms)) });
 };
 
-// ---------------------------------------------------------------
-// تثبيت الرسائل (نحفظ معرّفات الرسائل فقط، والمحتوى يبقى مشفّراً)
-// ---------------------------------------------------------------
 export const MAX_PINNED = 3;
 
 export const setPinnedMessages = async (convId: string, ids: string[]): Promise<void> => {
   await updateDoc(doc(db, 'conversations', convId), { pinned: ids.slice(0, MAX_PINNED) });
 };
 
-// هل انتهت مدة بقاء الرسالة؟ (الرسالة التي لم يصلها وقت الخادم بعد لا تُعتبر منتهية)
 export const isExpired = (m: Pick<RawMessage, 'createdAt'>, disappearAfter: number, now: number = Date.now()): boolean => {
   if (!disappearAfter || disappearAfter <= 0) return false;
   const created: number | undefined = m.createdAt?.toMillis?.();
@@ -143,9 +129,6 @@ export const isExpired = (m: Pick<RawMessage, 'createdAt'>, disappearAfter: numb
   return now - created >= disappearAfter;
 };
 
-// ---------------------------------------------------------------
-// مفاتيح التشفير العامة
-// ---------------------------------------------------------------
 export const getPublicKeyInfo = async (uid: string): Promise<PublicKeyInfo | null> => {
   const snap = await getDoc(doc(db, 'publicKeys', uid));
   if (!snap.exists()) return null;
@@ -162,9 +145,6 @@ const getPublicKeyInfoCached = async (uid: string): Promise<PublicKeyInfo | null
   return v;
 };
 
-// ---------------------------------------------------------------
-// الاشتراك في الرسائل
-// ---------------------------------------------------------------
 export const subscribeMessages = (
   convId: string,
   cb: (items: RawMessage[]) => void,
@@ -178,7 +158,6 @@ export const subscribeMessages = (
   );
 };
 
-// من بدأ المحادثة (نخزّنه مؤقتاً لتجنب قراءات متكررة)
 const starterCache = new Map<string, string | null>();
 const getStarterId = async (convId: string): Promise<string | null> => {
   if (starterCache.has(convId)) return starterCache.get(convId) ?? null;
@@ -189,45 +168,68 @@ const getStarterId = async (convId: string): Promise<string | null> => {
   return v;
 };
 
-// الحساب الخاص: لا يمكن مراسلته قبل قبول طلب المتابعة (أي وجود وثيقة follows/أنا_هو)
-const assertPrivateAccess = async (me: string, other: string, accountType?: string): Promise<void> => {
-  let type = accountType;
-  if (type === undefined) {
-    const snap = await getDoc(doc(db, 'users', other));
-    type = (snap.data() as { accountType?: string } | undefined)?.accountType;
-  }
-  if (type !== 'private') return;
-  const f = await getDoc(doc(db, 'follows', `${me}_${other}`));
-  if (!f.exists()) throw new Error('MESSAGES_CLOSED');
+// ---------------------------------------------------------------
+// منطق الخصوصية للمحادثات الجديدة (يُطبق فقط عند إنشاء محادثة لأول مرة)
+// ---------------------------------------------------------------
+export type MessagePrivacy = 'everyone' | 'following' | 'nobody';
+
+interface UserPrivacyDoc {
+  messagePrivacy?: MessagePrivacy;
+  accountType?: 'public' | 'private';
+}
+
+const getUserPrivacy = async (uid: string): Promise<UserPrivacyDoc> => {
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return {};
+  const d = snap.data() as any;
+  return {
+    messagePrivacy: (d.messagePrivacy as MessagePrivacy) || 'everyone',
+    accountType: (d.accountType as 'public' | 'private') || 'public',
+  };
 };
 
+const isFollowing = async (followerId: string, followingId: string): Promise<boolean> => {
+  const snap = await getDoc(doc(db, 'follows', `${followerId}_${followingId}`));
+  return snap.exists();
+};
+
+/**
+ * التحقق من إمكانية بدء محادثة جديدة لأول مرة بين me (المرسل) و other (المستقبل).
+ * - وضع "everyone": يُسمح دائمًا (تذهب إلى طلبات المراسلة إذا لم تكن هناك متابعة متبادلة).
+ * - وضع "following": يجب أن يكون المستقبل (other) يتابع المرسل (me).
+ * - وضع "nobody": يُمنع تمامًا.
+ * - المحادثات القائمة (existing) لا تستدعي هذه الدالة.
+ */
 const assertCanMessage = async (me: string, other: string): Promise<void> => {
-  const snap = await getDoc(doc(db, 'users', other));
-  const d = snap.data() as { messagePrivacy?: string; accountType?: string } | undefined;
-  const mode = d?.messagePrivacy;
+  const privacy = await getUserPrivacy(other);
+  const mode = privacy.messagePrivacy ?? 'everyone';
+
   if (mode === 'nobody') throw new Error('MESSAGES_CLOSED');
-  await assertPrivateAccess(me, other, d?.accountType ?? 'public');
+
   if (mode === 'following') {
-    const f = await getDoc(doc(db, 'follows', `${other}_${me}`));
-    if (!f.exists()) throw new Error('MESSAGES_CLOSED');
+    // الشرط يعتمد على المستقبل: يجب أن يكون المستقبل (other) يتابع المرسل (me)
+    const otherFollowsMe = await isFollowing(other, me);
+    if (!otherFollowsMe) throw new Error('MESSAGES_CLOSED');
   }
+
+  // وضع "everyone" يُسمح دائمًا ببدء المحادثة (حتى لو كان حساب المستقبل خاصًا)
+  // ما عدا إذا كان المستخدم محظورًا (يُفحص في مكان آخر حسب الحاجة)
 };
 
-// محادثة موجودة بدأتُها أنا: إن أصبح الطرف الآخر حساباً خاصاً ولم أعد أتابعه يُمنع الإرسال
-const existingChecked = new Map<string, number>();
+/**
+ * التحقق من استمرار محادثة قائمة.
+ * المحادثات القائمة تستمر بغض النظر عن تغيير الخصوصية أو إلغاء المتابعة.
+ */
 const assertExistingChatAllowed = async (me: string, other: string, convId: string): Promise<void> => {
-  const last = existingChecked.get(convId);
-  if (last && Date.now() - last < 60000) return;
-  const starter = await getStarterId(convId);
-  if (starter === me) await assertPrivateAccess(me, other);
-  existingChecked.set(convId, Date.now());
+  // لا قيود على المحادثات القائمة
 };
 
-// عندما أرد على محادثة بدأها غيري تُعتبر مقبولة وتنتقل من الطلبات إلى الوارد
-const acceptedThisSession = new Set<string>();
 const autoAcceptRequest = async (me: string, convId: string): Promise<void> => {
   const key = `${me}_${convId}`;
+  const acceptedThisSession = (autoAcceptRequest as any)._accepted || new Set<string>();
+  (autoAcceptRequest as any)._accepted = acceptedThisSession;
   if (acceptedThisSession.has(key)) return;
+
   const starter = await getStarterId(convId);
   if (starter && starter !== me) {
     const cur = await getChatPref(me, convId);
@@ -245,7 +247,6 @@ const touchConversation = async (convId: string, me: string): Promise<void> => {
 
 // ---------------------------------------------------------------
 // إرسال رسالة في محادثة فردية
-// otherUid = معرّف المستخدم الآخر (وليس معرّف المحادثة!)
 // ---------------------------------------------------------------
 export const sendDirect = async (
   me: string,
@@ -265,6 +266,7 @@ export const sendDirect = async (
   const convId = convIdOf(me, otherUid);
 
   if (!conversationAlreadyExists) {
+    // محادثة جديدة: نطبق قواعد الخصوصية
     await assertCanMessage(me, otherUid);
     await setDoc(doc(db, 'conversations', convId), {
       members: [me, otherUid].sort(),
@@ -276,6 +278,7 @@ export const sendDirect = async (
     });
     starterCache.set(convId, me);
   } else {
+    // محادثة قائمة: تستمر بغض النظر عن الخصوصية
     await assertExistingChatAllowed(me, otherUid, convId);
   }
 
@@ -299,9 +302,7 @@ export const sendDirect = async (
 };
 
 // ---------------------------------------------------------------
-// إرسال رسالة في مجموعة (تشفير حقيقي لكل عضو):
-// نولّد مفتاحاً عشوائياً للرسالة، ونشفّر المحتوى به، ثم نشفّر هذا المفتاح
-// لكل عضو بمفتاحه العام (ECDH). فقط الأعضاء يستطيعون القراءة.
+// إرسال رسالة في مجموعة (تشفير حقيقي لكل عضو)
 // ---------------------------------------------------------------
 const encryptForGroup = async (
   me: string,
@@ -323,9 +324,10 @@ const encryptForGroup = async (
   await Promise.all(
     Array.from(new Set([...members, me])).map(async (uid) => {
       try {
-        const info: PublicKeyInfo | null =
-          uid === me ? { keyId: local.keyId, publicKey: local.pub } : await getPublicKeyInfoCached(uid);
-        if (!info) return; // عضو لم يفعّل التشفير بعد: لن يستطيع قراءة الرسالة
+        const info: PublicKeyInfo | null = uid === me
+          ? { keyId: local.keyId, publicKey: local.pub }
+          : await getPublicKeyInfoCached(uid);
+        if (!info) return;
         const shared = await getSharedKey(local.privateKey, local.keyId, info.keyId, info.publicKey);
         const w = await encryptJson(shared, { k: mkB64 });
         wraps[uid] = { c: w.ciphertext, i: w.iv };
@@ -366,7 +368,7 @@ export const sendGroup = async (
 };
 
 // ---------------------------------------------------------------
-// تعديل رسالة نصية أرسلتها أنا (نعيد التشفير ونحدّث نفس الرسالة)
+// تعديل رسالة نصية أرسلتها أنا
 // ---------------------------------------------------------------
 export const editDirect = async (
   me: string,
@@ -458,9 +460,6 @@ export const removeMessage = async (convId: string, msgId: string): Promise<void
   await deleteDoc(doc(db, 'conversations', convId, 'messages', msgId));
 };
 
-// ---------------------------------------------------------------
-// التفاعل بالإيموجي (إضافة/إزالة تفاعلي أنا فقط)
-// ---------------------------------------------------------------
 export const toggleReaction = async (
   convId: string,
   msgId: string,
@@ -475,9 +474,6 @@ export const toggleReaction = async (
   );
 };
 
-// ---------------------------------------------------------------
-// إنشاء مجموعة
-// ---------------------------------------------------------------
 export const createGroup = async (me: string, groupName: string, memberUids: string[]): Promise<string> => {
   const allMembers = Array.from(new Set([me, ...memberUids]));
   const newGroupRef = doc(collection(db, 'conversations'));
@@ -494,9 +490,6 @@ export const createGroup = async (me: string, groupName: string, memberUids: str
   return newGroupRef.id;
 };
 
-// ---------------------------------------------------------------
-// الحظر (الوثيقة: blocks/{أنا}_{هو}، ولا يقرؤها إلا من قام بالحظر)
-// ---------------------------------------------------------------
 export const subscribeBlockedIds = (me: string, cb: (ids: Set<string>) => void) => {
   const q = query(collection(db, 'blocks'), where('blockerId', '==', me), limit(500));
   return onSnapshot(
@@ -518,9 +511,6 @@ export const unblockUser = async (me: string, other: string): Promise<void> => {
   await deleteDoc(doc(db, 'blocks', `${me}_${other}`));
 };
 
-// ---------------------------------------------------------------
-// الإبلاغ عن مستخدم (تصل البلاغات إلى لوحة الأدمن)
-// ---------------------------------------------------------------
 export type ReportKind = 'abuse' | 'spam';
 
 export const reportUser = async (me: string, targetUid: string, kind: ReportKind, reason: string): Promise<void> => {
