@@ -93,6 +93,14 @@ service cloud.firestore {
         : members[0];
     }
 
+    // ---------- دالة الخصوصية (الإصدار المصحح) ----------
+    function canMessageOther(otherUid) {
+      let otherData = get(/databases/$(database)/documents/users/$(otherUid)).data;
+      let privacy = otherData.get('messagePrivacy', 'everyone');
+      return privacy == 'everyone'
+        || (privacy == 'following' && exists(/databases/$(database)/documents/follows/$(otherUid + '_' + request.auth.uid)));
+    }
+
     // ---------- 1. ملفات المستخدمين العامة ----------
     match /users/{uid} {
       allow read: if signedIn();
@@ -301,14 +309,12 @@ service cloud.firestore {
             .affectedKeys().hasOnly(['likesCount'])
           && request.resource.data.likesCount >= 0
           && (
-            // إعجاب جديد: وثيقة الإعجاب لم تكن موجودة وتُنشأ الآن
             (
               request.resource.data.likesCount == resource.data.likesCount + 1
               && !exists(/databases/$(database)/documents/likes/$(postId + '_' + request.auth.uid))
               && existsAfter(/databases/$(database)/documents/likes/$(postId + '_' + request.auth.uid))
             )
             ||
-            // إلغاء إعجاب: وثيقة الإعجاب موجودة وتُحذف الآن
             (
               request.resource.data.likesCount == resource.data.likesCount - 1
               && exists(/databases/$(database)/documents/likes/$(postId + '_' + request.auth.uid))
@@ -621,6 +627,7 @@ service cloud.firestore {
             && request.resource.data.members[0] < request.resource.data.members[1]
             && convId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
             && !isBlockedBy(otherOf(request.resource.data.members))
+            && canMessageOther(otherOf(request.resource.data.members))
             // من بدأ المحادثة يجب أن يكون المرسل نفسه (يمنع تزوير طلبات المراسلة)
             && (!('starterId' in request.resource.data)
                 || request.resource.data.starterId == request.auth.uid)
