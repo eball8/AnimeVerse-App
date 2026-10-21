@@ -1,5 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, query,
-  serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { Conversation } from './chatService';
 
@@ -176,15 +175,6 @@ const lastMessageMs = (c: Conversation): number => c.lastMessageAt?.toMillis?.()
 export const isDeletedForMe = (c: Conversation, pref?: ChatPref): boolean =>
   !!pref?.deletedAt && lastMessageMs(c) <= pref.deletedAt;
 
-/**
- * هل هذه المحادثة "طلب مراسلة" عندي؟
- * - المجموعات ليست طلبات.
- * - المحادثات التي بدأتها أنا ليست طلبات.
- * - المحادثات القديمة (بلا starterId) تعتبر قائمة (وليست طلبات).
- * - إذا قبلت الطلب أو رددت (accepted) تنتقل إلى الوارد.
- * - إذا كانت هناك متابعة متبادلة (أنا أتابعه وهو يتابعني) تنتقل إلى الوارد.
- * - خلاف ذلك، تبقى طلبًا.
- */
 export const isMessageRequest = (
   c: Conversation,
   me: string,
@@ -200,12 +190,10 @@ export const isMessageRequest = (
   const other = c.otherUid;
   if (!other) return false;
 
-  // المتابعة المتبادلة -> الوارد
   const iFollowThem = rel.following.has(other);
   const theyFollowMe = rel.followers.has(other);
   if (iFollowThem && theyFollowMe) return false;
 
-  // أي حالة أخرى -> طلب مراسلة
   return true;
 };
 
