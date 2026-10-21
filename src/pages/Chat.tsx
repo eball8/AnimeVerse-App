@@ -3,8 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, ArrowLeft, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw,
   CornerUpLeft, Share2, Users, Plus, MoreVertical, Check, Copy, Maximize2, Palette,
-  Search, ChevronUp, ChevronDown, Timer, Ban
+  Search, ChevronUp, ChevronDown, Timer, Ban, Pin, PinOff, Pencil, Download
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { doc as fsDoc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -13,6 +17,8 @@ import E2EEGate from '../components/E2EEGate';
 import ChatOptionsSheet, { ReportSheet } from '../components/ChatOptionsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useUserBriefs } from '../services/userCache';
+import { notify } from '../services/notificationService';
+import { downloadMediaBlob, isNativeGallery } from '../services/galleryService';
 import { usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import type { VoiceResult } from '../hooks/useVoiceRecorder';
@@ -23,7 +29,8 @@ import { compressImage, formatBytes } from '../utils/media';
 import {
   convIdOf, decryptMessage, decryptGroupMessage, getPublicKeyInfo, removeMessage, sendDirect, sendGroup,
   subscribeMessages, subscribeConversations, toggleReaction, setConversationTheme, markConversationRead, isUnread,
-  isExpired, setDisappearAfter, DISAPPEAR_24H_MS, blockUser, unblockUser, subscribeBlockedIds, reportUser
+  isExpired, setDisappearAfter, DISAPPEAR_24H_MS, blockUser, unblockUser, subscribeBlockedIds, reportUser,
+  editDirect, editGroup, setPinnedMessages, MAX_PINNED
 } from '../services/chatService';
 import type { ChatPayload, PublicKeyInfo, RawMessage, Conversation, ReportKind } from '../services/chatService';
 import { setChatPref, subscribeChatPrefs } from '../services/chatPrefsService';
@@ -36,6 +43,77 @@ const MAX_VIDEO_MB = 9;
 const MAX_ATTACH_PER_PICK = 5;
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+// نص حسب اللغة (العربية / الإنجليزية / الفرنسية، وأي لغة أخرى تأخذ الإنجليزية)
+const pick = (lang: string, ar: string, en: string, fr?: string): string =>
+  lang === 'ar' ? ar : lang === 'fr' ? (fr ?? en) : en;
+
+// ---------------------------------------------------------------
+// الإشارة @username
+// ---------------------------------------------------------------
+const MENTION_SRC = '(^|\\s)@([a-zA-Z0-9_.]{3,30})';
+const extractMentions = (s: string): string[] => {
+  const re = new RegExp(MENTION_SRC, 'g');
+  const out = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) out.add(m[2].toLowerCase());
+  return Array.from(out);
+};
+
+const renderWithMentions = (s: string): React.ReactNode => {
+  const re = new RegExp(MENTION_SRC, 'g');
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const start = m.index + m[1].length;
+    if (start > last) nodes.push(s.slice(last, start));
+    nodes.push(<span key={key++} className="font-black underline decoration-white/40">@{m[2]}</span>);
+    last = start + 1 + m[2].length;
+  }
+  if (last < s.length) nodes.push(s.slice(last));
+  return nodes.length ? nodes : s;
+};
+
+// ---------------------------------------------------------------
+// تنزيل الصور/الفيديو إلى الهاتف
+// ---------------------------------------------------------------
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(new Error('read'));
+    r.readAsDataURL(blob);
+  });
+
+const extOfMime = (mime: string): string =>
+  mime.includes('png') ? 'png' : mime.includes('gif') ? 'gif' : mime.includes('webp') ? 'webp'
+    : mime.startsWith('video/') ? (mime.includes('webm') ? 'webm' : 'mp4') : 'jpg';
+
+const saveMediaToDevice = async (src: string, fallbackMime: string): Promise<void> => {
+  const res = await fetch(src);
+  const blob = await res.blob();
+  const mime = blob.type || fallbackMime;
+
+  if (Capacitor.isNativePlatform()) {
+    // 1) المعرض (إن كانت الإضافة الأصلية تدعمه)
+    if (isNativeGallery()) {
+      try { await downloadMediaBlob(blob, mime); return; }
+      catch (e) { console.error('gallery save failed, using Documents', e); }
+    }
+    // 2) مجلد Documents/AnimeVerse (يعمل دائماً)
+    const data = await blobToBase64(blob);
+    await Filesystem.writeFile({
+      path: `AnimeVerse/AnimeVerse_${Date.now()}.${extOfMime(mime)}`,
+      data,
+      directory: Directory.Documents,
+      recursive: true,
+    });
+    return;
+  }
+  await downloadMediaBlob(blob, mime);
+};
 
 // ---------------------------------------------------------------
 // الثيمات والخلفيات (تُحفظ في وثيقة المحادثة، فيراها الطرفان). اسم كل ثيم يُترجم بالمفتاح chatTheme.<id>
@@ -78,6 +156,18 @@ const previewOf = (p: ChatPayload | null | undefined, t: (k: string) => string):
 
 const mediaCache = new Map<string, string>();
 const rememberMedia = (url: string, blob: Blob) => { mediaCache.set(url, URL.createObjectURL(blob)); };
+
+// فك تشفير وسائط رسالة (أو أخذها من الذاكرة المؤقتة) وإرجاع رابطها
+const ensureMediaSrc = async (p: { url: string; key: string; iv: string; mime: string }): Promise<string> => {
+  const cached = mediaCache.get(p.url);
+  if (cached) return cached;
+  const res = await fetch(p.url);
+  if (!res.ok) throw new Error('fetch');
+  const blob = await decryptBlob(await res.arrayBuffer(), p.key, p.iv, p.mime);
+  const objectUrl = URL.createObjectURL(new Blob([blob], { type: p.mime }));
+  mediaCache.set(p.url, objectUrl);
+  return objectUrl;
+};
 
 // ---------------------------------------------------------------
 // وسائط مشفّرة (صور/فيديو)
@@ -202,7 +292,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
             <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}</span>
             <span className="text-[11px] opacity-80">{failed ? t('chat.mediaError') : `${t('chat.video')} • ${formatBytes(payload.size)}`}</span>
           </button>
-          {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
+          {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
         </div>
       );
     }
@@ -212,7 +302,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
           <video src={src} controls playsInline className="w-56 max-h-72 rounded-xl bg-black" />
           <button onClick={() => onOpen(src, 'video')} className="absolute top-2 end-2 p-1.5 rounded-full bg-black/60 text-white"><Maximize2 className="w-3.5 h-3.5" /></button>
         </div>
-        {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
+        {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
       </div>
     );
   }
@@ -224,7 +314,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
          failed ? (<button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80"><RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}</button>) :
          (<div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>)}
       </div>
-      {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{payload.c}</p> : null}
+      {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
     </div>
   );
 };
@@ -235,15 +325,21 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
 const MessageSheet: React.FC<{
   mine: boolean;
   canCopy: boolean;
+  canEdit: boolean;
+  canDownload: boolean;
+  pinned: boolean;
   myEmojis: string[];
   onReact: (emoji: string) => void;
   onReply: () => void;
   onForward: () => void;
   onCopy: () => void;
+  onEdit: () => void;
+  onPin: () => void;
+  onDownload: () => void;
   onDelete: () => void;
   onClose: () => void;
-}> = ({ mine, canCopy, myEmojis, onReact, onReply, onForward, onCopy, onDelete, onClose }) => {
-  const { t } = useI18n();
+}> = ({ mine, canCopy, canEdit, canDownload, pinned, myEmojis, onReact, onReply, onForward, onCopy, onEdit, onPin, onDownload, onDelete, onClose }) => {
+  const { t, lang } = useI18n();
   const [picker, setPicker] = useState(false);
   const [val, setVal] = useState('');
   const btn = 'w-full flex items-center gap-3 px-4 py-3 text-sm text-white hover:bg-white/5 active:bg-white/10 text-start';
@@ -277,6 +373,11 @@ const MessageSheet: React.FC<{
           <button onClick={onReply} className={btn}><CornerUpLeft className="w-4 h-4 text-slate-300" /> {t('chatUi.reply')}</button>
           <button onClick={onForward} className={btn}><Share2 className="w-4 h-4 text-slate-300" /> {t('chatUi.forward')}</button>
           {canCopy && <button onClick={onCopy} className={btn}><Copy className="w-4 h-4 text-slate-300" /> {t('chatUi.copy')}</button>}
+          {canEdit && <button onClick={onEdit} className={btn}><Pencil className="w-4 h-4 text-slate-300" /> {pick(lang, 'تعديل', 'Edit', 'Modifier')}</button>}
+          <button onClick={onPin} className={btn}>
+            {pinned ? <PinOff className="w-4 h-4 text-slate-300" /> : <Pin className="w-4 h-4 text-slate-300" />} {pinned ? pick(lang, 'إلغاء التثبيت', 'Unpin', 'Désépingler') : pick(lang, 'تثبيت', 'Pin', 'Épingler')}
+          </button>
+          {canDownload && <button onClick={onDownload} className={btn}><Download className="w-4 h-4 text-slate-300" /> {pick(lang, 'تنزيل', 'Download', 'Télécharger')}</button>}
           {mine && <button onClick={onDelete} className={`${btn} !text-red-400`}><Trash2 className="w-4 h-4" /> {t('chatUi.delete')}</button>}
         </div>
       </div>
@@ -439,6 +540,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const [pending, setPending] = useState<{ file: File; url: string }[]>([]);
   const [caption, setCaption] = useState('');
   const [sendingPending, setSendingPending] = useState(false);
+  const [editing, setEditing] = useState<RawMessage | null>(null);
+  const [pinIdx, setPinIdx] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [mentionDismissed, setMentionDismissed] = useState('');
+  const decSigRef = useRef<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
   const purgedRef = useRef<Set<string>>(new Set());
 
@@ -542,7 +648,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   // ---- الرسائل ----
   useEffect(() => {
     if (isGroup === undefined) return;
-    setMessages([]); setPlain({});
+    setMessages([]); setPlain({}); decSigRef.current = {};
     return subscribeMessages(convId, setMessages, (e) => console.error('messages error:', e));
   }, [isGroup, convId]);
 
@@ -553,8 +659,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     (async () => {
       const next: Record<string, ChatPayload | null> = {};
       for (const m of messages) {
-        if (m.id in plainRef.current) continue;
+        if (m.id in plainRef.current && decSigRef.current[m.id] === m.iv) continue;
         next[m.id] = isGroup ? await decryptGroupMessage(me, local, m) : await decryptMessage(me, local, theirs ?? null, m);
+        decSigRef.current[m.id] = m.iv;
       }
       if (!off && Object.keys(next).length) setPlain((p) => ({ ...p, ...next }));
     })();
@@ -610,10 +717,128 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     } finally { setBusy(false); }
   };
 
+  // ---- الإشارة: نرسل إشعاراً لكل عضو ذُكر باسم المستخدم ----
+  const notifyMentions = async (v: string) => {
+    const names = extractMentions(v).slice(0, 5);
+    if (!names.length) return;
+    const members = new Set<string>(isGroup ? (conv?.members || []) : [other]);
+    for (const n of names) {
+      try {
+        const snap = await getDoc(fsDoc(db, 'usernames', n));
+        const uid = snap.exists() ? String((snap.data() as any).uid || '') : '';
+        if (!uid || uid === me || !members.has(uid)) continue;
+        const where = isGroup ? pick(lang, 'في مجموعة', 'in a group', 'dans un groupe') : pick(lang, 'في رسالة', 'in a message', 'dans un message');
+        await notify(uid, 'mention' as any, `${pick(lang, 'أشار إليك', 'mentioned you', 'vous a mentionné')} ${where}: ${v.slice(0, 120)}`, isGroup ? other : me);
+      } catch (e) { console.error('mention notify failed:', e); }
+    }
+  };
+
   const sendText = async () => {
     const v = text.trim();
     if (!v || busy) return;
-    if (await doSend({ k: 't', v: v.slice(0, 1500) })) setText('');
+    if (await doSend({ k: 't', v: v.slice(0, 1500) })) {
+      setText('');
+      notifyMentions(v).catch(console.error);
+    }
+  };
+
+  // ---- تعديل رسالة نصية ----
+  const cancelEdit = () => { setEditing(null); setText(''); };
+
+  const startEdit = (m: RawMessage) => {
+    const p = plain[m.id];
+    if (!p || p.k !== 't' || m.senderId !== me) return;
+    setReplyTo(null);
+    setEditing(m);
+    setText(p.v);
+    setError('');
+  };
+
+  const saveEdit = async () => {
+    const v = text.trim();
+    if (!editing || !v || busy) return;
+    const p = plain[editing.id];
+    if (!p || p.k !== 't') { cancelEdit(); return; }
+    if (v === p.v) { cancelEdit(); return; }
+    setBusy(true); setError('');
+    try {
+      const payload: ChatPayload = { ...p, v: v.slice(0, 1500) };
+      if (isGroup) await editGroup(me, other, conv?.members || [], editing, payload);
+      else await editDirect(me, other, editing, payload);
+      setPlain((prev) => ({ ...prev, [editing.id]: payload }));
+      setEditing(null);
+      setText('');
+      notifyMentions(v).catch(console.error);
+    } catch (e: any) {
+      console.error(e);
+      const c = String(e?.message || '');
+      if (e?.code === 'permission-denied') setError(t('chatUi.permissionDenied'));
+      else if (c === 'KEY_CHANGED' || c === 'NO_LOCAL_KEY') setError(pick(lang, 'تعذّر التعديل بسبب تغيّر مفتاح التشفير', 'Cannot edit: the encryption key changed', 'Modification impossible : la clé de chiffrement a changé'));
+      else setError(pick(lang, 'فشل تعديل الرسالة', 'Failed to edit the message', 'Échec de la modification'));
+    } finally { setBusy(false); }
+  };
+
+  // ---- تثبيت الرسائل ----
+  const pinnedIds = conv?.pinned || [];
+  const pinnedVisible = pinnedIds.filter((id) => visibleMessages.some((m) => m.id === id));
+  const pinSafe = pinnedVisible.length ? pinIdx % pinnedVisible.length : 0;
+  const pinnedCurrentId: string | undefined = pinnedVisible[pinSafe];
+
+  const togglePin = async (m: RawMessage) => {
+    if (!conv) { setError(t('chatUi.needConv')); return; }
+    const isPinned = pinnedIds.includes(m.id);
+    const next = isPinned ? pinnedIds.filter((x) => x !== m.id) : [m.id, ...pinnedIds].slice(0, MAX_PINNED);
+    try {
+      await setPinnedMessages(convId, next);
+      setPinIdx(0);
+      flash(isPinned ? pick(lang, 'تم إلغاء التثبيت', 'Unpinned', 'Désépinglé') : pick(lang, 'تم تثبيت الرسالة 📌', 'Message pinned 📌', 'Message épinglé 📌'));
+    } catch (e) {
+      console.error(e);
+      setError(pick(lang, 'فشل تثبيت الرسالة', 'Failed to pin the message', 'Échec de l’épinglage'));
+    }
+  };
+
+  const goToPinned = () => {
+    if (!pinnedCurrentId) return;
+    document.getElementById(`msg-${pinnedCurrentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPinIdx((i) => i + 1);
+  };
+
+  // ---- تنزيل الصور/الفيديو ----
+  const downloadSrc = async (src: string, fallbackMime: string) => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await saveMediaToDevice(src, fallbackMime);
+      flash(pick(lang, 'تم الحفظ ✓', 'Saved ✓', 'Enregistré ✓'));
+    } catch (e) {
+      console.error(e);
+      setError(pick(lang, 'فشل التنزيل', 'Download failed', 'Échec du téléchargement'));
+    } finally { setDownloading(false); }
+  };
+
+  const downloadMessageMedia = async (m: RawMessage) => {
+    const p = plain[m.id];
+    if (!p || p.k !== 'm') return;
+    try {
+      const src = await ensureMediaSrc(p);
+      await downloadSrc(src, p.mime);
+    } catch (e) {
+      console.error(e);
+      setError(pick(lang, 'فشل التنزيل', 'Download failed', 'Échec du téléchargement'));
+    }
+  };
+
+  // ---- اقتراحات الإشارة (@) ----
+  const mentionMatch = /(^|\s)@([a-zA-Z0-9_.]*)$/.exec(text);
+  const mentionQuery = mentionMatch ? mentionMatch[2].toLowerCase() : null;
+  const mentionOptions = mentionQuery === null || mentionDismissed === text ? [] : memberUids
+    .filter((u) => u !== me)
+    .map((u) => briefs[u])
+    .filter((b): b is NonNullable<typeof b> => !!b && !!b.username && b.username.toLowerCase().startsWith(mentionQuery))
+    .slice(0, 5);
+  const pickMention = (username: string) => {
+    setText((cur) => cur.replace(/@([a-zA-Z0-9_.]*)$/, `@${username} `));
   };
 
   const sendVoice = async (r: VoiceResult | null) => {
@@ -687,6 +912,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     }
     setProgress(null);
     setSendingPending(false);
+    if (cap) notifyMentions(cap).catch(console.error);
     closePending();
   };
 
@@ -897,6 +1123,27 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           </div>
         )}
 
+        {/* شريط الرسالة المثبّتة */}
+        {pinnedCurrentId && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 shrink-0 chat-bar">
+            <Pin className="w-4 h-4 text-primary-400 shrink-0" />
+            <button type="button" onClick={goToPinned} className="flex-1 min-w-0 text-start">
+              <p className="text-[10px] text-primary-400 font-bold">
+                {pick(lang, 'رسالة مثبّتة', 'Pinned message', 'Message épinglé')}{pinnedVisible.length > 1 ? ` ${pinSafe + 1}/${pinnedVisible.length}` : ''}
+              </p>
+              <p className="text-xs text-slate-200 truncate">{previewOf(plain[pinnedCurrentId], t)}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => { const m = messages.find((x) => x.id === pinnedCurrentId); if (m) togglePin(m); }}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300"
+              aria-label={pick(lang, 'إلغاء التثبيت', 'Unpin', 'Désépingler')}
+            >
+              <PinOff className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* الرسائل */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-2">
           {visibleMessages.map((m) => {
@@ -930,10 +1177,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     )}
                     {p === undefined ? (<Loader2 className="w-4 h-4 animate-spin" />)
                       : p === null ? (<span className="text-xs opacity-70">{t('chat.undecryptable')}</span>)
-                      : p.k === 't' ? (<p className="whitespace-pre-wrap">{p.v}</p>)
+                      : p.k === 't' ? (<p className="whitespace-pre-wrap">{renderWithMentions(p.v)}</p>)
                       : p.k === 'm' ? (<MediaBubble payload={p} onOpen={(src, type) => setViewer({ src, type })} />)
                       : p.k === 'v' ? (<VoiceBubble payload={p} />) : null}
-                    <div className={`flex items-center justify-end gap-3 mt-1 ${isMedia ? 'px-1.5 pb-0.5' : ''}`}>
+                    <div className={`flex items-center justify-end gap-2 mt-1 ${isMedia ? 'px-1.5 pb-0.5' : ''}`}>
+                      {pinnedIds.includes(m.id) && <Pin className="w-3 h-3 opacity-70" />}
+                      {m.edited && <span className="text-[10px] opacity-60">{pick(lang, 'معدّلة', 'edited', 'modifié')}</span>}
                       <span className="text-[10px] opacity-60">{time}</span>
                     </div>
                   </div>
@@ -971,6 +1220,28 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
               <button onClick={() => setReplyTo(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
           )}
+          {editing && (
+            <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2 border-s-2 border-amber-400">
+              <div className="min-w-0">
+                <p className="text-[10px] text-amber-300 font-bold mb-0.5 flex items-center gap-1"><Pencil className="w-3 h-3" /> {pick(lang, 'تعديل الرسالة', 'Editing message', 'Modification du message')}</p>
+                <p className="text-xs text-slate-300 truncate">{previewOf(plain[editing.id], t)}</p>
+              </div>
+              <button onClick={cancelEdit} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+          )}
+          {mentionOptions.length > 0 && (
+            <div className="mb-2 rounded-2xl bg-dark-900 border border-white/10 overflow-hidden divide-y divide-white/5">
+              {mentionOptions.map((b) => (
+                <button key={b.uid} type="button" onClick={() => pickMention(b.username as string)} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 active:bg-white/10 text-start">
+                  <Avatar src={b.photoURL} seed={b.uid} name={b.displayName} className="w-8 h-8 rounded-full object-cover" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-white truncate">{b.displayName}</span>
+                    <span className="block text-[11px] text-slate-400 truncate">@{b.username}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           {progress !== null && (
             <div className="mb-2"><div className="flex items-center justify-between text-[11px] text-slate-400 mb-1"><span>{t('chat.uploading')}</span><span className="tabular-nums">{progress}%</span></div><div className="h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all" style={{ width: `${progress}%` }} /></div></div>
           )}
@@ -994,9 +1265,11 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendText()} maxLength={1500} placeholder={t('chat.placeholder')} className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
-              <button onClick={() => fileRef.current?.click()} disabled={busy} className="p-3 rounded-full bg-white/5 border border-white/10 text-slate-300 active:scale-90 transition disabled:opacity-50"><Paperclip className="w-4 h-4" /></button>
-              {text.trim() ? (
+              <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { if (editing) saveEdit(); else sendText(); } else if (e.key === 'Escape') { if (editing) cancelEdit(); else setMentionDismissed(text); } }} maxLength={1500} placeholder={t('chat.placeholder')} className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-dark-900 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+              {!editing && <button onClick={() => fileRef.current?.click()} disabled={busy} className="p-3 rounded-full bg-white/5 border border-white/10 text-slate-300 active:scale-90 transition disabled:opacity-50"><Paperclip className="w-4 h-4" /></button>}
+              {editing ? (
+                <button onClick={saveEdit} disabled={busy || !text.trim()} className="btn-primary p-3 rounded-full disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}</button>
+              ) : text.trim() ? (
                 <button onClick={sendText} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
               ) : (
                 <button onClick={startRec} disabled={busy} className="btn-primary p-3 rounded-full disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>
@@ -1054,6 +1327,15 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           >
             <BackIcon className="w-5 h-5" />
           </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); downloadSrc(viewer.src, viewer.type === 'video' ? 'video/mp4' : 'image/jpeg'); }}
+            disabled={downloading}
+            className="absolute end-4 p-2.5 rounded-full bg-white/15 text-white z-10 disabled:opacity-50"
+            style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+            aria-label={pick(lang, 'تنزيل', 'Download', 'Télécharger')}
+          >
+            {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+          </button>
           {viewer.type === 'image'
             ? <img src={viewer.src} alt="" draggable={false} onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full object-contain" />
             : <video src={viewer.src} controls autoPlay playsInline onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full" />}
@@ -1064,6 +1346,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         <MessageSheet
           mine={activeMsg.senderId === me}
           canCopy={plain[activeMsg.id]?.k === 't'}
+          canEdit={activeMsg.senderId === me && plain[activeMsg.id]?.k === 't'}
+          canDownload={plain[activeMsg.id]?.k === 'm'}
+          pinned={pinnedIds.includes(activeMsg.id)}
           myEmojis={(Object.entries(activeMsg.reactions || {}) as [string, string[]][]).filter(([, u]) => u?.includes(me)).map(([e]) => e)}
           onReact={(emoji) => { react(activeMsg, emoji); setActiveMsg(null); }}
           onReply={() => { setReplyTo(activeMsg); setActiveMsg(null); }}
@@ -1073,6 +1358,9 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
             if (p && p.k === 't') navigator.clipboard?.writeText(p.v).then(() => flash(t('chatUi.copied'))).catch(() => {});
             setActiveMsg(null);
           }}
+          onEdit={() => { startEdit(activeMsg); setActiveMsg(null); }}
+          onPin={() => { togglePin(activeMsg); setActiveMsg(null); }}
+          onDownload={() => { const m = activeMsg; setActiveMsg(null); downloadMessageMedia(m); }}
           onDelete={async () => {
             const id = activeMsg.id; setActiveMsg(null);
             if (await confirm({ title: t('chatUi.deleteMsgTitle') })) removeMessage(convId, id).catch(console.error);
