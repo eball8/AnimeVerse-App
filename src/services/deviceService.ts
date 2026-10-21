@@ -47,7 +47,6 @@ const DeviceIdNative = registerPlugin<{ get(): Promise<{ id: string }> }>(
   'DeviceId'
 );
 
-// معرّف الجهاز الثابت (من نظام أندرويد) محفوظ في الذاكرة بعد التهيئة.
 let nativeDeviceId: string | null = null;
 
 const readLocalId = (): string | null => {
@@ -59,11 +58,6 @@ const readLocalId = (): string | null => {
   }
 };
 
-/**
- * يجب استدعاؤها مرة واحدة عند بدء التطبيق (قبل أي تحقق).
- * داخل تطبيق الأندرويد: المعرّف مشتق من ANDROID_ID فيبقى ثابتاً بعد
- * مسح البيانات أو إعادة التثبيت، ويتغير فقط بعد إعادة ضبط المصنع أو بهاتف جديد.
- */
 export const initDeviceId = async (): Promise<void> => {
   if (nativeDeviceId) return;
   if (!Capacitor.isNativePlatform()) return;
@@ -76,10 +70,6 @@ export const initDeviceId = async (): Promise<void> => {
   }
 };
 
-/**
- * معرّف الجهاز: ثابت عبر مسح البيانات وإعادة التثبيت على أندرويد.
- * (على الويب أو عند تعذر المعرّف الأصلي يُستخدم معرّف محلي.)
- */
 export const getDeviceId = (): string => {
   if (nativeDeviceId) return nativeDeviceId;
 
@@ -96,10 +86,6 @@ export const getDeviceId = (): string => {
   }
 };
 
-/**
- * ترحيل الأجهزة المسجلة سابقاً بمعرّف عشوائي إلى المعرّف الثابت،
- * حتى لا يظهر جهاز المستخدم الحالي كجهاز جديد بعد التحديث.
- */
 const migrateLegacyDevice = async (
   uid: string,
   newId: string
@@ -127,9 +113,6 @@ const migrateLegacyDevice = async (
   return true;
 };
 
-/**
- * الحصول على اسم مختصر للجهاز دون جمع معلومات إضافية.
- */
 export const deviceLabel = (): string => {
   const userAgent =
     typeof navigator !== 'undefined'
@@ -166,12 +149,6 @@ const getPlatform = (): 'android' | 'web' => {
   return /Android/i.test(userAgent) ? 'android' : 'web';
 };
 
-/**
- * التحقق من الجهاز بعد نجاح تسجيل الدخول.
- *
- * الجهاز الأول يُسجّل دون إشعار.
- * الجهاز الجديد يُسجّل ويُرسل إشعارًا أمنيًا.
- */
 export const checkDevice = async (
   uid: string
 ): Promise<void> => {
@@ -268,7 +245,6 @@ export const checkDevice = async (
       await notifySecurity(uid, 'new_device', label);
     }
   } catch (error) {
-    // فشل التحقق لا يمنع تسجيل الدخول إلى التطبيق.
     console.error('Device verification failed:', error);
   }
 };
