@@ -2,7 +2,7 @@ import { db } from '../config/firebase';
 import {
   collection, serverTimestamp, query, orderBy, onSnapshot, where, limit,
   doc, writeBatch, increment, getDocs, getDoc, setDoc, updateDoc, deleteDoc, startAfter,
-  documentId, getCountFromServer,
+  documentId,
 } from 'firebase/firestore';
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
@@ -82,6 +82,9 @@ export const createPost = async (
   postData: Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount' | 'mentions'>
 ) => {
   try {
+    // إعادة النشر لا تُحسب ضمن منشورات المستخدم
+    const isRepost = !!postData.repostOfId;
+
     // Firestore يرفض القيم undefined، فنحذف الحقول الفارغة قبل الإرسال
     const clean = Object.fromEntries(
       Object.entries(postData).filter(([, v]) => v !== undefined && v !== '')
@@ -104,19 +107,21 @@ export const createPost = async (
     if (allMentions.length) payload.mentions = allMentions;
     if (collab.length) payload.collaborators = collab;
 
-    // نشر المنشور + زيادة عدّاد المستخدم في عملية واحدة (Atomic)
+    // نشر المنشور + زيادة عدّاد المستخدم في عملية واحدة (Atomic). إعادة النشر لا تزيد العدّاد.
     const newRef = doc(collection(db, 'posts'));
     try {
       const batch = writeBatch(db);
       batch.set(newRef, payload);
-      batch.update(doc(db, 'users', postData.authorId), { postsCount: increment(1) });
+      if (!isRepost) {
+        batch.update(doc(db, 'users', postData.authorId), { postsCount: increment(1) });
+      }
       await batch.commit();
     } catch (e: any) {
       if (e?.code !== 'permission-denied') throw e;
       // قواعد Firestore الجديدة لم تُنشر بعد: ننشر المنشور بدون تحديث العدّاد
       await setDoc(newRef, payload);
     }
-    announcePostsChanged(postData.authorId, 1);
+    if (!isRepost) announcePostsChanged(postData.authorId, 1);
 
     // إشعار كل شخص تمت الإشارة إليه أو إضافته كمتعاون
     mentionIds.forEach((uid) => notify(uid, 'comment', 'أشار إليك في منشور', newRef.id));
@@ -288,13 +293,17 @@ export const getMentionedPosts = async (uid: string, max = 100): Promise<Post[]>
 };
 
 // حذف منشور/ريلز + إنقاص عدّاد صاحبه في عملية واحدة (Atomic Decrement)
+// حذف إعادة نشر لا ينقص العدّاد (لأنها لم تُحسب أصلاً)
 export const deletePost = async (postId: string): Promise<void> => {
   const ref = doc(db, 'posts', postId);
   let authorId: string | undefined;
+  let isRepost = false;
   try {
     const snap = await getDoc(ref);
     if (!snap.exists()) return;
-    authorId = (snap.data() as { authorId?: string }).authorId;
+    const data = snap.data() as { authorId?: string; repostOfId?: string };
+    authorId = data.authorId;
+    isRepost = !!data.repostOfId;
   } catch (e) {
     console.error('delete: read failed', e);
   }
@@ -302,24 +311,26 @@ export const deletePost = async (postId: string): Promise<void> => {
   try {
     const batch = writeBatch(db);
     batch.delete(ref);
-    if (authorId) batch.update(doc(db, 'users', authorId), { postsCount: increment(-1) });
+    if (authorId && !isRepost) {
+      batch.update(doc(db, 'users', authorId), { postsCount: increment(-1) });
+    }
     await batch.commit();
   } catch (e: any) {
     if (e?.code !== 'permission-denied') throw e;
     // العدّاد وصل 0 أو القواعد الجديدة غير منشورة: نحذف المنشور وحده
     await deleteDoc(ref);
   }
-  if (authorId) announcePostsChanged(authorId, -1);
+  if (authorId && !isRepost) announcePostsChanged(authorId, -1);
 };
 
 // مزامنة العدّاد المخزّن مع العدد الفعلي (تصحيح الأرقام القديمة غير المتطابقة)
+// العدد الفعلي = منشوراتي وريلزي فقط، بدون ما أعدت نشره
 export const reconcilePostsCount = async (uid: string): Promise<number> => {
-  const actual = (
-    await getCountFromServer(query(collection(db, 'posts'), where('authorId', '==', uid)))
-  ).data().count;
+  const snap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), limit(2000)));
+  const actual = snap.docs.filter((d) => !(d.data() as { repostOfId?: string }).repostOfId).length;
   try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    const stored = (snap.data() as { postsCount?: number } | undefined)?.postsCount;
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    const stored = (userSnap.data() as { postsCount?: number } | undefined)?.postsCount;
     if (stored !== actual) await updateDoc(doc(db, 'users', uid), { postsCount: actual });
   } catch (e) {
     console.error('postsCount reconcile failed:', e);
