@@ -28,6 +28,10 @@ const ar: Dict = {
   'archive.empty': 'لا توجد محادثات مؤرشفة.',
   'archive.unarchive': 'إلغاء الأرشفة',
   'archive.settingsRow': 'الأرشيف',
+  'msgSearch.placeholder': 'البحث في المحادثات والأصدقاء',
+  'msgSearch.people': 'أشخاص',
+  'msgSearch.noResults': 'لا توجد نتائج.',
+  'msgSearch.clear': 'مسح البحث',
 };
 
 const en: Dict = {
@@ -56,6 +60,10 @@ const en: Dict = {
   'archive.empty': 'No archived chats.',
   'archive.unarchive': 'Unarchive',
   'archive.settingsRow': 'Archive',
+  'msgSearch.placeholder': 'Search chats and friends',
+  'msgSearch.people': 'People',
+  'msgSearch.noResults': 'No results.',
+  'msgSearch.clear': 'Clear search',
 };
 
 const fr: Dict = {
@@ -84,6 +92,10 @@ const fr: Dict = {
   'archive.empty': 'Aucune discussion archivée.',
   'archive.unarchive': 'Désarchiver',
   'archive.settingsRow': 'Archives',
+  'msgSearch.placeholder': 'Rechercher des discussions et des amis',
+  'msgSearch.people': 'Personnes',
+  'msgSearch.noResults': 'Aucun résultat.',
+  'msgSearch.clear': 'Effacer la recherche',
 };
 
 const es: Dict = {
@@ -112,6 +124,10 @@ const es: Dict = {
   'archive.empty': 'No hay chats archivados.',
   'archive.unarchive': 'Desarchivar',
   'archive.settingsRow': 'Archivo',
+  'msgSearch.placeholder': 'Buscar chats y amigos',
+  'msgSearch.people': 'Personas',
+  'msgSearch.noResults': 'Sin resultados.',
+  'msgSearch.clear': 'Borrar búsqueda',
 };
 
 const pack: Record<Lang, Dict> = { ar, en, fr, es };
