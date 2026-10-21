@@ -25,6 +25,7 @@ const Search: React.FC = () => {
     e.preventDefault();
     const q = term.trim();
     if (q.length < 2 || loading) return;
+    
     setLoading(true);
     try {
       const [u, p] = await Promise.all([searchUsers(q), searchPosts(q)]);
@@ -64,6 +65,9 @@ const Search: React.FC = () => {
               onClick={() => {
                 setTerm('');
                 setSearched(false);
+                setUsers([]);
+                setPosts([]);
+                setVideos([]);
               }}
               className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
             >
