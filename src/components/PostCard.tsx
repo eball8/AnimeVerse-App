@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
@@ -14,6 +14,7 @@ import { timeAgo } from '../utils/timeAgo';
 import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/links';
 import { useI18n } from '../i18n/I18nContext';
 import { useAuth } from '../context/AuthContext';
+import { isFeedActive, registerFeedPlayer, reportFeedRatio, useMediaLock } from '../utils/mediaManager';
 
 interface Props {
   post: Post;
@@ -127,8 +128,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
   const navigate = useNavigate();
   const boxRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const userPaused = useRef(false);
-  const inView = useRef(false);
+  const playerId = useId();
   const [muted, setGlobalMuted] = useGlobalMute();
   const [ratio, setRatio] = useState<number>(0.8);
   const [letterbox, setLetterbox] = useState(false);
@@ -147,7 +147,30 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
     setLetterbox(raw < MIN_RATIO - 0.01 || raw > MAX_RATIO + 0.01);
   };
 
-  // تحميل مبكر + تشغيل تلقائي عند ظهور الفيديو، وإيقاف عند الخروج
+  // تسجيل الفيديو لدى مدير الوسائط: فيديو واحد فقط يعمل، ويتوقف فوراً عند الإخفاء أو الـ Unmount
+  useEffect(() => {
+    if (!isVideo || !post.mediaUrl) return;
+    const v = videoRef.current;
+    const off = registerFeedPlayer(playerId, {
+      box: () => boxRef.current,
+      play: () => {
+        videoRef.current?.play().catch(() => undefined);
+      },
+      pause: () => {
+        videoRef.current?.pause();
+      },
+    });
+    return () => {
+      off();
+      if (v) {
+        v.pause();
+        v.removeAttribute('src');
+        v.load();
+      }
+    };
+  }, [isVideo, post.mediaUrl, playerId]);
+
+  // تحميل مبكر + إبلاغ مدير الوسائط بنسبة ظهور الفيديو
   useEffect(() => {
     if (!isVideo || !boxRef.current) return;
     const el = boxRef.current;
@@ -156,20 +179,8 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
       { rootMargin: '900px 0px' }
     );
     const playIO = new IntersectionObserver(
-      (es) => {
-        es.forEach((e) => {
-          const v = videoRef.current;
-          if (!v) return;
-          inView.current = e.intersectionRatio >= 0.6;
-          if (inView.current) {
-            if (!userPaused.current) v.play().catch(() => undefined);
-          } else {
-            v.pause();
-            if (e.intersectionRatio < 0.1) userPaused.current = false;
-          }
-        });
-      },
-      { threshold: [0, 0.1, 0.6, 0.9] }
+      (es) => es.forEach((e) => reportFeedRatio(playerId, e.intersectionRatio)),
+      { threshold: [0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1] }
     );
     nearIO.observe(el);
     playIO.observe(el);
@@ -177,22 +188,17 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
       nearIO.disconnect();
       playIO.disconnect();
     };
-  }, [isVideo]);
+  }, [isVideo, playerId]);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.muted = muted;
   }, [muted, near]);
 
-  const togglePlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) {
-      userPaused.current = false;
-      v.play().catch(() => undefined);
-    } else {
-      userPaused.current = true;
-      v.pause();
-    }
+  // النقر على أي فيديو يفتح شاشة الريلز مباشرة (مثل انستغرام)
+  const openReels = () => {
+    if (!post.id) return;
+    videoRef.current?.pause();
+    navigate(`/reels/${post.id}`);
   };
 
   const likeBurst = () => {
@@ -200,7 +206,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
     if (!liked) onDoubleLike();
   };
 
-  const onTap = useTap(isVideo ? togglePlay : null, likeBurst);
+  const onTap = useTap(isVideo && post.id ? openReels : null, likeBurst);
 
   useEffect(() => {
     if (!burst) return;
@@ -259,8 +265,8 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             preload={near ? 'metadata' : 'none'}
             onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
             onCanPlay={() => {
-              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان ظاهراً
-              if (inView.current && !userPaused.current) videoRef.current?.play().catch(() => undefined);
+              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان هو الفعّال
+              if (isFeedActive(playerId)) videoRef.current?.play().catch(() => undefined);
             }}
             onPlay={() => setPaused(false)}
             onPause={() => setPaused(true)}
@@ -283,7 +289,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                navigate(`/reels/${post.id}`);
+                openReels();
               }}
               className="absolute top-3 end-3 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm text-white flex items-center justify-center active:scale-90 transition"
               aria-label={openReelsLabel}
@@ -359,6 +365,9 @@ const PostCard: React.FC<Props> = ({
   const [expanded, setExpanded] = useState(false);
   // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
   const [localContent, setLocalContent] = useState<string | null>(null);
+
+  // أي نافذة منبثقة مفتوحة = إيقاف كل الفيديوهات
+  useMediaLock(menuOpen || editing);
 
   useEffect(() => {
     setLocalContent(null);
