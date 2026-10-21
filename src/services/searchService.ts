@@ -36,7 +36,7 @@ export const searchUsers = async (term: string): Promise<UserProfile[]> => {
       .filter((u) => {
         if (!u.username || !u.displayName) return false;
         if (u.isBanned || u.isDeactivated) return false;
-        if (u.isEmailVerified === false) return false;
+        if (u.isEmailVerified !== true) return false;
         return true;
       })
       .slice(0, MAX_USERS);
