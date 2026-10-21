@@ -1,10 +1,13 @@
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
+// إعدادات شخصية لكل محادثة (لا يراها الطرف الآخر)
 export interface ChatPref {
   muted: boolean;
   restricted: boolean;
+  /** المحادثة مؤرشفة: تختفي من قائمة الرسائل وتظهر في الأرشيف */
   archived: boolean;
+  /** وقت حذف المحادثة عندي (ميلي ثانية). كل ما قبله مخفي عندي فقط، والطرف الآخر لا يتأثر. 0 = غير محذوفة */
   deletedAt: number;
 }
 
@@ -61,14 +64,22 @@ export const setChatPref = async (
   });
 };
 
+// ---------------------------------------------------------------
+// حالة ظهور المحادثة في القائمة
+// ---------------------------------------------------------------
+
+/** وقت آخر رسالة بالميلي ثانية (الرسالة التي لم يصلها وقت الخادم بعد تُعتبر الآن) */
 export const lastMessageMs = (c: { lastMessageAt?: any }): number =>
   c.lastMessageAt?.toMillis?.() ?? Date.now();
 
+/** هل حذفتُ هذه المحادثة ولم تصل بعدها رسالة جديدة؟ */
 export const isDeletedForMe = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
   !!pref?.deletedAt && lastMessageMs(c) <= pref.deletedAt;
 
+/** المحادثات التي تظهر في قائمة الرسائل الرئيسية */
 export const isInMainList = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
   !pref?.archived && !isDeletedForMe(c, pref);
 
+/** المحادثات التي تظهر في الأرشيف */
 export const isInArchive = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
   !!pref?.archived && !isDeletedForMe(c, pref);
