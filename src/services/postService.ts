@@ -22,6 +22,12 @@ export interface Post {
   repostOfAuthorId?: string;
   mentions?: string[];
   collaborators?: string[];
+  /** السماح للآخرين باستخدام صوت الفيديو / عمل ريمكس (للفيديو فقط) */
+  allowAudio?: boolean;
+  /** معرّف المنشور الأصلي الذي أُخذ صوته (ريمكس) */
+  audioSourceId?: string;
+  /** رابط الصوت المستعار (هو رابط فيديو المنشور الأصلي) */
+  audioUrl?: string;
   likesCount: number;
   commentsCount: number;
   createdAt: any;
