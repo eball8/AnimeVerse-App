@@ -1,29 +1,19 @@
-import {
-  collection, deleteDoc, doc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, where,
-} from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, query,
+  serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { Conversation } from './chatService';
 
-// ---------------------------------------------------------------
-// إعدادات المحادثة الشخصية (تخصّك أنت فقط ولا يراها الطرف الآخر):
-// كتم / تقييد / أرشفة / حذف عندي / تثبيت / قبول طلب المراسلة
-// المسار: chatPrefs/{userId}_{convId}
-// ---------------------------------------------------------------
 export interface ChatPref {
   muted: boolean;
   restricted: boolean;
   archived: boolean;
-  /** وقت "حذف المحادثة عندي" بالميلي ثانية؛ تظهر المحادثة من جديد إذا وصلت رسالة بعده */
   deletedAt?: number;
-  /** وقت تثبيت المحادثة بالميلي ثانية (غير موجود = غير مثبتة). الحد الأقصى 3 محادثات مثبتة */
   pinnedAt?: number;
-  /** true = قبلتُ طلب المراسلة (أو رددتُ على المحادثة) فتبقى في الوارد */
   accepted?: boolean;
 }
 
 export type ChatPrefMap = Record<string, ChatPref>;
 
-/** الحد الأقصى للمحادثات المثبتة في أعلى القائمة */
 export const MAX_PINNED_CHATS = 3;
 
 const DEFAULT_PREF: ChatPref = { muted: false, restricted: false, archived: false };
@@ -39,7 +29,6 @@ const parsePref = (data: any): ChatPref => ({
   accepted: data.accepted === true ? true : undefined,
 });
 
-/** الاشتراك في كل إعدادات محادثات المستخدم. يعيد دالة إلغاء الاشتراك. */
 export const subscribeChatPrefs = (me: string, cb: (map: ChatPrefMap) => void): (() => void) => {
   const q = query(collection(db, 'chatPrefs'), where('userId', '==', me));
   return onSnapshot(
@@ -60,7 +49,6 @@ export const subscribeChatPrefs = (me: string, cb: (map: ChatPrefMap) => void): 
   );
 };
 
-/** قراءة طازجة (مرة واحدة) لكل إعدادات محادثاتي */
 export const fetchChatPrefs = async (me: string): Promise<ChatPrefMap> => {
   const snap = await getDocs(query(collection(db, 'chatPrefs'), where('userId', '==', me)));
   const map: ChatPrefMap = {};
@@ -72,10 +60,6 @@ export const fetchChatPrefs = async (me: string): Promise<ChatPrefMap> => {
   return map;
 };
 
-/**
- * قراءة إعدادات محادثة واحدة.
- * نستخدم استعلاماً (وليس getDoc) لأن القراءة المباشرة لوثيقة غير موجودة تُرفض بالقواعد.
- */
 export const getChatPref = async (me: string, convId: string): Promise<ChatPref | undefined> => {
   const snap = await getDocs(
     query(collection(db, 'chatPrefs'), where('userId', '==', me), where('convId', '==', convId), limit(1))
@@ -84,11 +68,6 @@ export const getChatPref = async (me: string, convId: string): Promise<ChatPref 
   return parsePref(snap.docs[0].data());
 };
 
-/**
- * تعديل إعدادات محادثة. تُدمج القيم الجديدة مع القيم الحالية (current)
- * لأن قواعد Firestore تشترط وجود muted و restricted في كل كتابة.
- * أرشفة المحادثة أو حذفها عندي تُلغي تثبيتها تلقائياً.
- */
 export const setChatPref = async (
   me: string,
   convId: string,
@@ -101,7 +80,6 @@ export const setChatPref = async (
   }
   const id = prefDocId(me, convId);
 
-  // إن عادت كل القيم لوضعها الافتراضي نحذف المستند للتنظيف
   const isDefault =
     !next.muted &&
     !next.restricted &&
@@ -129,11 +107,6 @@ export const setChatPref = async (
   await setDoc(doc(db, 'chatPrefs', id), data);
 };
 
-// ---------------------------------------------------------------
-// تثبيت المحادثات (حد أقصى 3). نقرأ الحالة الطازجة من الخادم قبل الحفظ
-// حتى لا يتجاوز المستخدم الحد من جهازين مختلفين.
-// يرمي Error('PIN_LIMIT') عند تجاوز الحد.
-// ---------------------------------------------------------------
 export const setChatsPinned = async (me: string, convIds: string[], pin: boolean): Promise<void> => {
   const fresh = await fetchChatPrefs(me);
 
@@ -151,24 +124,16 @@ export const setChatsPinned = async (me: string, convIds: string[], pin: boolean
   await Promise.all(toRemove.map((id) => setChatPref(me, id, { pinnedAt: undefined }, fresh[id])));
 };
 
-// ---------------------------------------------------------------
-// طلبات المراسلة
-// ---------------------------------------------------------------
-
-/** قبول طلب مراسلة: تنتقل المحادثة إلى الوارد */
 export const acceptMessageRequest = async (me: string, convId: string, current?: ChatPref): Promise<void> => {
   const cur = current ?? (await getChatPref(me, convId));
   await setChatPref(me, convId, { accepted: true }, cur);
 };
 
 export interface FollowRelations {
-  /** من أتابعهم أنا */
   following: Set<string>;
-  /** من يتابعونني */
   followers: Set<string>;
 }
 
-/** الاشتراك المباشر في علاقات المتابعة (من أتابعه ومن يتابعني) */
 export const subscribeFollowRelations = (me: string, cb: (rel: FollowRelations) => void): (() => void) => {
   let following: Set<string> | null = null;
   let followers: Set<string> | null = null;
@@ -208,17 +173,17 @@ export const subscribeFollowRelations = (me: string, cb: (rel: FollowRelations) 
 
 const lastMessageMs = (c: Conversation): number => c.lastMessageAt?.toMillis?.() ?? Date.now();
 
-/** هل المحادثة محذوفة عندي (ولم تصل رسالة جديدة بعد الحذف)؟ */
 export const isDeletedForMe = (c: Conversation, pref?: ChatPref): boolean =>
   !!pref?.deletedAt && lastMessageMs(c) <= pref.deletedAt;
 
 /**
  * هل هذه المحادثة "طلب مراسلة" عندي؟
- * - المجموعات والمحادثات التي بدأتُها أنا والمحادثات القديمة (بلا starterId) ليست طلبات.
- * - إن قبلتُ الطلب أو رددتُ على المحادثة (accepted) تنتقل إلى الوارد.
- * - إن كنتُ أتابع المرسل تذهب إلى الوارد.
- * - حسابي عام: إن كان المرسل يتابعني تذهب إلى الوارد؛ وإن لم يكن أحدنا يتابع الآخر فهي طلب.
- * - حسابي خاص: حتى لو كان المرسل يتابعني (بعد قبول طلبه) تبقى طلباً حتى أرد أو أتابعه.
+ * - المجموعات ليست طلبات.
+ * - المحادثات التي بدأتها أنا ليست طلبات.
+ * - المحادثات القديمة (بلا starterId) تعتبر قائمة (وليست طلبات).
+ * - إذا قبلت الطلب أو رددت (accepted) تنتقل إلى الوارد.
+ * - إذا كانت هناك متابعة متبادلة (أنا أتابعه وهو يتابعني) تنتقل إلى الوارد.
+ * - خلاف ذلك، تبقى طلبًا.
  */
 export const isMessageRequest = (
   c: Conversation,
@@ -228,19 +193,24 @@ export const isMessageRequest = (
   myAccountType: 'public' | 'private'
 ): boolean => {
   if (c.type === 'group') return false;
-  if (!c.starterId || c.starterId === me) return false;
+  if (!c.starterId) return false;
+  if (c.starterId === me) return false;
   if (pref?.accepted) return false;
+
   const other = c.otherUid;
   if (!other) return false;
-  if (rel.following.has(other)) return false;
-  if (myAccountType !== 'private' && rel.followers.has(other)) return false;
+
+  // المتابعة المتبادلة -> الوارد
+  const iFollowThem = rel.following.has(other);
+  const theyFollowMe = rel.followers.has(other);
+  if (iFollowThem && theyFollowMe) return false;
+
+  // أي حالة أخرى -> طلب مراسلة
   return true;
 };
 
-/** تظهر في قائمة الرسائل (الوارد أو الطلبات): غير مؤرشفة وغير محذوفة */
 export const isInMainList = (c: Conversation, pref?: ChatPref): boolean =>
   !pref?.archived && !isDeletedForMe(c, pref);
 
-/** تظهر في الأرشيف: مؤرشفة وغير محذوفة */
 export const isInArchive = (c: Conversation, pref?: ChatPref): boolean =>
   !!pref?.archived && !isDeletedForMe(c, pref);
