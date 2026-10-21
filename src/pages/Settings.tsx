@@ -21,8 +21,8 @@ import {
 } from '../services/cryptoService';
 import type { E2EEInit } from '../services/cryptoService';
 import {
-  TRUST_DAYS, addEmailPassword, authErrorText, changePassword, getPlayerPref, hasProvider,
-  isCurrentTrusted, loadDevices, removeDevice, sendProblemReport, setPlayerPref,
+  TRUST_DAYS, addEmailPassword, authErrorText, changePassword, getPlayerPref, getProviderEmail, hasProvider,
+  syncPrivateEmail, isCurrentTrusted, loadDevices, removeDevice, sendProblemReport, setPlayerPref,
 } from '../services/settingsService';
 import type { DeviceItem, PlayerPref } from '../services/settingsService';
 import { clearMyFriendActivity } from '../services/postService';
@@ -143,12 +143,24 @@ const TrustBanner: React.FC<{ loaded: boolean; trusted: boolean; failed: boolean
 // ---------- البيانات الشخصية ----------
 const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
-  const { user, profile, resendVerification, refreshProfile } = useAuth();
+  const { user, profile, resendVerification, refreshProfile, refreshUser } = useAuth();
   const { lang, t } = useI18n();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // تحديث بيانات الحساب من السيرفر عند فتح الصفحة حتى يظهر أي بريد أُضيف حديثاً
+  useEffect(() => {
+    syncPrivateEmail()
+      .then(() => refreshUser())
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!user) return null;
+  const googleEmail = hasProvider(user, 'google.com') ? getProviderEmail(user, 'google.com') : null;
+  const loginEmail = hasProvider(user, 'password')
+    ? getProviderEmail(user, 'password') || user.email
+    : null;
   const created = (profile?.createdAt as any)?.toDate?.() as Date | undefined;
   const age = profile?.birthDate ? calcAge(profile.birthDate) : profile?.age;
 
@@ -195,7 +207,15 @@ const PersonalSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </div>
 
       <div className="card divide-y divide-white/5">
-        <InfoRow label={t('sx.email')} value={<span dir="ltr">{user.email || '—'}</span>} />
+        <InfoRow label={t('sx.email')} value={<span dir="ltr">{user.email || loginEmail || googleEmail || '—'}</span>} />
+        <InfoRow
+          label={t('sc.google')}
+          value={googleEmail ? <span dir="ltr">{googleEmail}</span> : <span className="text-slate-500">{t('sc.notAdded')}</span>}
+        />
+        <InfoRow
+          label={t('sc.emailPw')}
+          value={loginEmail ? <span dir="ltr">{loginEmail}</span> : <span className="text-slate-500">{t('sc.notAdded')}</span>}
+        />
         <InfoRow
           label={t('sx.emailStatus')}
           value={
