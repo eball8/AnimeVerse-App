@@ -192,6 +192,7 @@ export default ChatOptionsSheet;
 // ---------------------------------------------------------------
 // نافذة الإبلاغ
 // ---------------------------------------------------------------
+// storeLabel: النص الذي يصل لوحة الإدارة (ثابت بالعربية ليبقى موحّداً مهما كانت لغة المُبلِّغ)
 const REPORT_REASONS: { id: string; storeLabel: string; kind: ReportKind }[] = [
   { id: 'abuse', storeLabel: 'إساءة أو تحرّش', kind: 'abuse' },
   { id: 'spam', storeLabel: 'رسائل مزعجة (سبام)', kind: 'spam' },
