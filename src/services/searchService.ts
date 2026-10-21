@@ -5,7 +5,7 @@ import type { Post } from './postService';
 
 const MAX_USERS = 5;
 const MAX_POSTS = 5;
-const SCAN_LATEST = 40; // Firestore بلا بحث نصي كامل، فنفحص أحدث 40 منشوراً فقط
+const SCAN_LATEST = 40;
 
 export const searchUsers = async (term: string): Promise<UserProfile[]> => {
   const raw = term.trim().replace(/^@/, '');
@@ -13,14 +13,17 @@ export const searchUsers = async (term: string): Promise<UserProfile[]> => {
   const lower = raw.toLowerCase();
   const end = '\uf8ff';
   const col = collection(db, 'users');
+  
   const [byUsername, byName] = await Promise.all([
-    getDocs(query(col, where('username', '>=', lower), where('username', '<=', lower + end), limit(MAX_USERS))),
-    getDocs(query(col, where('displayName', '>=', raw), where('displayName', '<=', raw + end), limit(MAX_USERS))),
+    getDocs(query(col, where('isEmailVerified', '==', true), where('username', '>=', lower), where('username', '<=', lower + end), limit(MAX_USERS))),
+    getDocs(query(col, where('isEmailVerified', '==', true), where('displayName', '>=', raw), where('displayName', '<=', raw + end), limit(MAX_USERS))),
   ]);
+  
   const map = new Map<string, UserProfile>();
   [...byUsername.docs, ...byName.docs].forEach((d) => {
     if (!map.has(d.id)) map.set(d.id, { uid: d.id, ...(d.data() as any) } as UserProfile);
   });
+  
   return Array.from(map.values())
     .filter((u) => !u.isBanned && !u.isDeactivated)
     .slice(0, MAX_USERS);
