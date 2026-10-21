@@ -10,6 +10,7 @@ import Home from './pages/Home';
 import Explore from './pages/Explore';
 import Search from './pages/Search';
 import Messages from './pages/Messages';
+import ArchivePage from './pages/Archive';
 import Chat from './pages/Chat';
 import Reels from './pages/Reels';
 import PostView from './pages/PostView';
@@ -79,6 +80,7 @@ const App: React.FC = () => {
                 <Route path="community" element={<Community />} />
                 <Route path="messages" element={<Messages />} />
                 <Route path="messages/:uid" element={<Chat />} />
+                <Route path="archive" element={<ArchivePage />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="edit-profile" element={<EditProfile />} />
                 <Route path="user/:uid" element={<UserProfilePage />} />
