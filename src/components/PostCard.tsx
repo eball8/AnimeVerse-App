@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { doc, updateDoc } from 'firebase/firestore';
 import {
-  Heart, MessageCircle, Share2, Link2, Check, Repeat2, Clapperboard,
-  MoreHorizontal, Pencil, Trash2, X, Loader2,
+  Heart, MessageCircle, Send, Link2, Check, Repeat2, Clapperboard,
+  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2,
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import type { Post } from '../services/postService';
@@ -42,7 +42,7 @@ const TARGETS: { id: string; label: string; bg: string; glyph: string; href: (u:
     label: 'WhatsApp',
     bg: 'bg-[#25D366]',
     glyph: 'W',
-    href: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t} ${u}`)}`,
+    href: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t}${u}`)}`,
   },
   {
     id: 'tg',
@@ -67,6 +67,281 @@ const TARGETS: { id: string; label: string; bg: string; glyph: string; href: (u:
   },
 ];
 
+/* ------------------------------------------------------------------
+   حالة كتم الصوت مشتركة بين كل المنشورات (مثل انستغرام):
+   تضغط زر الصوت مرة فتعمل كل الفيديوهات التالية بصوت.
+------------------------------------------------------------------ */
+let globalMuted = true;
+const muteListeners = new Set<() => void>();
+const useGlobalMute = (): [boolean, (v: boolean) => void] => {
+  const [muted, setMuted] = useState(globalMuted);
+  useEffect(() => {
+    const fn = () => setMuted(globalMuted);
+    muteListeners.add(fn);
+    return () => {
+      muteListeners.delete(fn);
+    };
+  }, []);
+  const set = useCallback((v: boolean) => {
+    globalMuted = v;
+    muteListeners.forEach((f) => f());
+  }, []);
+  return [muted, set];
+};
+
+/* نقرة واحدة / نقرتان سريعتان (دبل تاب) */
+const useTap = (onSingle: (() => void) | null, onDouble: () => void) => {
+  const last = useRef(0);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return () => {
+    const now = Date.now();
+    if (now - last.current < 300) {
+      window.clearTimeout(timer.current);
+      last.current = 0;
+      onDouble();
+    } else {
+      last.current = now;
+      if (onSingle) timer.current = window.setTimeout(onSingle, 280);
+    }
+  };
+};
+
+// نسبة العرض/الارتفاع المسموحة في الفيد (مثل انستغرام: من 4:5 إلى 1.91:1)
+const MIN_RATIO = 0.8;
+const MAX_RATIO = 1.91;
+const clampRatio = (r: number) => Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));
+
+interface MediaProps {
+  post: Post;
+  isVideo: boolean;
+  content: string;
+  liked: boolean;
+  onDoubleLike: () => void;
+  openReelsLabel: string;
+  mediaAlt: string;
+}
+
+/* ---------- الوسائط: بعرض الشاشة كاملاً ---------- */
+const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoubleLike, openReelsLabel, mediaAlt }) => {
+  const navigate = useNavigate();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const userPaused = useRef(false);
+  const inView = useRef(false);
+  const [muted, setGlobalMuted] = useGlobalMute();
+  const [ratio, setRatio] = useState<number>(0.8);
+  const [letterbox, setLetterbox] = useState(false);
+  const [near, setNear] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [burst, setBurst] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const poster = isVideo ? videoThumb(post.mediaUrl) : undefined;
+
+  const applyRatio = (w: number, h: number) => {
+    if (!w || !h) return;
+    const raw = w / h;
+    setRatio(clampRatio(raw));
+    setLetterbox(raw < MIN_RATIO - 0.01 || raw > MAX_RATIO + 0.01);
+  };
+
+  // تحميل مبكر + تشغيل تلقائي عند ظهور الفيديو، وإيقاف عند الخروج
+  useEffect(() => {
+    if (!isVideo || !boxRef.current) return;
+    const el = boxRef.current;
+    const nearIO = new IntersectionObserver(
+      (es) => es.forEach((e) => e.isIntersecting && setNear(true)),
+      { rootMargin: '900px 0px' }
+    );
+    const playIO = new IntersectionObserver(
+      (es) => {
+        es.forEach((e) => {
+          const v = videoRef.current;
+          if (!v) return;
+          inView.current = e.intersectionRatio >= 0.6;
+          if (inView.current) {
+            if (!userPaused.current) v.play().catch(() => undefined);
+          } else {
+            v.pause();
+            if (e.intersectionRatio < 0.1) userPaused.current = false;
+          }
+        });
+      },
+      { threshold: [0, 0.1, 0.6, 0.9] }
+    );
+    nearIO.observe(el);
+    playIO.observe(el);
+    return () => {
+      nearIO.disconnect();
+      playIO.disconnect();
+    };
+  }, [isVideo]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted, near]);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      userPaused.current = false;
+      v.play().catch(() => undefined);
+    } else {
+      userPaused.current = true;
+      v.pause();
+    }
+  };
+
+  const likeBurst = () => {
+    setBurst((n) => n + 1);
+    if (!liked) onDoubleLike();
+  };
+
+  const onTap = useTap(isVideo ? togglePlay : null, likeBurst);
+
+  useEffect(() => {
+    if (!burst) return;
+    const id = window.setTimeout(() => setBurst(0), 800);
+    return () => window.clearTimeout(id);
+  }, [burst]);
+
+  /* منشور نصي فقط: لوحة ملونة بخط كبير */
+  if (!post.mediaUrl) {
+    if (!content) return null;
+    const long = content.length > 220;
+    return (
+      <div
+        onClick={onTap}
+        className="relative w-full min-h-[260px] px-7 py-12 flex items-center justify-center bg-gradient-to-br from-primary-600/30 via-dark-900 to-accent-500/30 select-none"
+      >
+        <p
+          dir="auto"
+          className={`break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
+            long ? 'text-base text-start' : 'text-2xl text-center'
+          }`}
+        >
+          {content}
+        </p>
+        {burst > 0 && <HeartBurst k={burst} />}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={boxRef}
+      onClick={onTap}
+      className="relative w-full overflow-hidden bg-black select-none"
+      style={{ aspectRatio: String(ratio) }}
+    >
+      {/* خلفية ضبابية عند الصور/الفيديوهات الأطول أو الأعرض من المسموح */}
+      {letterbox && (poster || !isVideo) && (
+        <img
+          src={isVideo ? poster : post.mediaUrl}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-60"
+        />
+      )}
+
+      {isVideo ? (
+        <>
+          <video
+            ref={videoRef}
+            src={near ? post.mediaUrl : undefined}
+            poster={poster}
+            loop
+            muted={muted}
+            playsInline
+            preload={near ? 'metadata' : 'none'}
+            onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+            onCanPlay={() => {
+              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان ظاهراً
+              if (inView.current && !userPaused.current) videoRef.current?.play().catch(() => undefined);
+            }}
+            onPlay={() => setPaused(false)}
+            onPause={() => setPaused(true)}
+            onTimeUpdate={(e) => {
+              const v = e.currentTarget;
+              if (v.duration) setProgress(v.currentTime / v.duration);
+            }}
+            className={`relative w-full h-full ${letterbox ? 'object-contain' : 'object-cover'}`}
+          />
+
+          {paused && (
+            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                <Play className="w-8 h-8 fill-white text-white ms-1" />
+              </span>
+            </span>
+          )}
+
+          {post.id && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/reels/${post.id}`);
+              }}
+              className="absolute top-3 end-3 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm text-white flex items-center justify-center active:scale-90 transition"
+              aria-label={openReelsLabel}
+            >
+              <Clapperboard className="w-[18px] h-[18px]" />
+            </button>
+          )}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setGlobalMuted(!muted);
+            }}
+            className="absolute bottom-4 end-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm text-white flex items-center justify-center active:scale-90 transition"
+            aria-label="mute"
+          >
+            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+
+          <div className="absolute inset-x-0 bottom-0 h-[3px]" style={{ background: 'rgba(255,255,255,0.22)' }}>
+            <div className="h-full" style={{ width: `${progress * 100}%`, background: '#fff' }} />
+          </div>
+        </>
+      ) : imgFailed ? (
+        <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-xs">{mediaAlt}</div>
+      ) : (
+        <img
+          src={post.mediaUrl}
+          alt={mediaAlt}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={(e) => applyRatio(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+          onError={() => setImgFailed(true)}
+          className={`relative w-full h-full ${letterbox ? 'object-contain' : 'object-cover'}`}
+        />
+      )}
+
+      {burst > 0 && <HeartBurst k={burst} />}
+    </div>
+  );
+};
+
+const HeartBurst: React.FC<{ k: number }> = ({ k }) => (
+  <span key={k} className="absolute inset-0 flex items-center justify-center pointer-events-none">
+    <Heart
+      className="w-28 h-28 animate-heart-pop"
+      style={{ color: '#fff', fill: '#fff', filter: 'drop-shadow(0 6px 24px rgba(0,0,0,.45))' }}
+    />
+  </span>
+);
+
+const fmtCount = (n: number) => {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  return n.toLocaleString();
+};
+
 const PostCard: React.FC<Props> = ({
   post, liked, canDelete, authorName, authorPhoto, repostName, onLike, onComment, onDelete,
 }) => {
@@ -80,6 +355,8 @@ const PostCard: React.FC<Props> = ({
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [popLike, setPopLike] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
   const [localContent, setLocalContent] = useState<string | null>(null);
 
@@ -93,6 +370,9 @@ const PostCard: React.FC<Props> = ({
   const isOwner = !!user && post.authorId === user.uid;
   const canEdit = isOwner && !!post.id;
   const shareText = (content || authorName).slice(0, 100);
+  // النص يظهر تحت الصورة كتعليق؛ المنشور النصي فقط يظهر داخل اللوحة الملونة
+  const caption = post.mediaUrl ? content : '';
+  const longCaption = caption.length > 120 || caption.split('\n').length > 2;
 
   const doFlash = () => {
     setFlash(true);
@@ -107,6 +387,14 @@ const PostCard: React.FC<Props> = ({
     if (!url) return;
     const r = await shareLink(url, authorName);
     if (r === 'copied') doFlash();
+  };
+
+  const likeNow = () => {
+    if (!liked) {
+      setPopLike(true);
+      setTimeout(() => setPopLike(false), 400);
+    }
+    onLike(post);
   };
 
   const startEdit = () => {
@@ -141,87 +429,111 @@ const PostCard: React.FC<Props> = ({
     'w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-slate-200 bg-white/5 active:bg-white/10 transition';
 
   return (
-    <div className="card p-4 space-y-3">
+    <div className="border-b border-white/10 pb-3">
       {repostName && (
-        <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+        <p className="px-3 pt-2.5 text-[11px] text-slate-400 flex items-center gap-1.5">
           <Repeat2 className="w-3.5 h-3.5" /> {t('post.repostedFrom', { name: repostName })}
         </p>
       )}
 
-      <div className="flex items-center gap-3">
+      {/* رأس المنشور */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
         <button onClick={() => navigate(`/user/${post.authorId}`)} className="shrink-0">
-          <Avatar
-            src={authorPhoto}
-            seed={post.authorId}
-            name={authorName}
-            className="w-10 h-10 rounded-full object-cover bg-dark-900 ring-1 ring-white/10"
-          />
+          <span className="block p-[2px] rounded-full bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400">
+            <span className="block p-[2px] rounded-full bg-dark-950">
+              <Avatar
+                src={authorPhoto}
+                seed={post.authorId}
+                name={authorName}
+                className="w-9 h-9 rounded-full object-cover bg-dark-900"
+              />
+            </span>
+          </span>
         </button>
-        <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-bold text-white truncate">{authorName}</h4>
-          <p className="text-[10px] text-slate-500">{timeAgo(post.createdAt, lang)}</p>
-        </div>
+        <button onClick={() => navigate(`/user/${post.authorId}`)} className="flex-1 min-w-0 text-start">
+          <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
+          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{timeAgo(post.createdAt, lang)}</p>
+        </button>
         {post.id && (
           <button
             onClick={() => setMenuOpen(true)}
             aria-label={t('postCard.menu')}
             title={t('postCard.menu')}
-            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition"
+            className="shrink-0 w-9 h-9 -me-1 rounded-full flex items-center justify-center text-slate-200 active:bg-white/10 transition"
           >
-            <MoreHorizontal className="w-5 h-5" />
+            <MoreHorizontal className="w-6 h-6" />
           </button>
         )}
       </div>
 
-      {content && <p className="text-sm text-slate-200 break-words whitespace-pre-wrap">{content}</p>}
+      {/* الوسائط بعرض الشاشة */}
+      <PostMedia
+        post={post}
+        isVideo={isVideo}
+        content={content}
+        liked={liked}
+        onDoubleLike={likeNow}
+        openReelsLabel={t('postCard.openReels')}
+        mediaAlt={t('postCard.media')}
+      />
 
-      {post.mediaUrl && (
-        <div className="rounded-2xl overflow-hidden bg-black border border-white/5 relative">
-          {isVideo ? (
-            <>
-              <video
-                src={post.mediaUrl}
-                poster={videoThumb(post.mediaUrl)}
-                controls
-                playsInline
-                preload="none"
-                className="w-full max-h-[400px] object-contain"
-              />
-              {post.id && (
-                <button
-                  onClick={() => navigate(`/reels/${post.id}`)}
-                  className="absolute top-2 end-2 p-1.5 rounded-lg bg-black/60 text-white"
-                  aria-label={t('postCard.openReels')}
-                >
-                  <Clapperboard className="w-4 h-4" />
-                </button>
-              )}
-            </>
-          ) : (
-            <img src={post.mediaUrl} alt={t('postCard.media')} loading="lazy" className="w-full max-h-[400px] object-cover" />
-          )}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between pt-2 border-t border-white/5">
+      {/* شريط الأزرار */}
+      <div className="flex items-center gap-4 px-3 pt-3">
         <button
-          onClick={() => onLike(post)}
-          className={`flex items-center gap-1.5 transition ${liked ? 'text-red-400' : 'text-slate-400'}`}
+          onClick={likeNow}
+          aria-label="like"
+          className={`active:scale-90 transition ${liked ? 'text-red-400' : 'text-white'} ${popLike ? 'animate-like-pop' : ''}`}
         >
-          <Heart className={`w-5 h-5 ${liked ? 'fill-red-400' : ''}`} />
-          <span className="text-xs">{post.likesCount}</span>
+          <Heart className={`w-7 h-7 ${liked ? 'fill-red-400' : ''}`} strokeWidth={liked ? 2 : 1.8} />
         </button>
-        <button onClick={() => onComment(post)} className="flex items-center gap-1.5 text-slate-400">
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-xs">{post.commentsCount}</span>
+        <button onClick={() => onComment(post)} aria-label={t('comments.title')} className="text-white active:scale-90 transition">
+          <MessageCircle className="w-7 h-7" strokeWidth={1.8} />
         </button>
-        <button onClick={onCopy} className="flex items-center gap-1.5 text-slate-400" aria-label={t('common.copyLink')}>
-          {flash ? <Check className="w-5 h-5 text-emerald-400" /> : <Link2 className="w-5 h-5" />}
+        <button onClick={onShare} aria-label={t('common.share')} className="text-white active:scale-90 transition">
+          <Send className="w-[26px] h-[26px] rtl:-scale-x-100" strokeWidth={1.8} />
         </button>
-        <button onClick={onShare} className="flex items-center gap-1.5 text-slate-400" aria-label={t('common.share')}>
-          <Share2 className="w-5 h-5" />
+        <button
+          onClick={onCopy}
+          aria-label={t('common.copyLink')}
+          className="ms-auto text-white active:scale-90 transition"
+        >
+          {flash ? <Check className="w-6 h-6 text-emerald-400" /> : <Link2 className="w-6 h-6" strokeWidth={1.8} />}
         </button>
       </div>
+
+      {/* عدد الإعجابات */}
+      {post.likesCount > 0 && (
+        <p className="px-3 mt-2 text-[13.5px] font-extrabold text-white">
+          {t('postCard.likes', { count: fmtCount(post.likesCount) })}
+        </p>
+      )}
+
+      {/* النص المرافق */}
+      {caption && (
+        <p
+          dir="auto"
+          className={`px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
+            expanded ? '' : 'line-clamp-2'
+          }`}
+        >
+          <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
+            {authorName}
+          </button>
+          {caption}
+        </p>
+      )}
+      {caption && longCaption && !expanded && (
+        <button onClick={() => setExpanded(true)} className="px-3 text-[13px] text-slate-500 font-semibold">
+          {t('postCard.more')}
+        </button>
+      )}
+
+      {/* التعليقات */}
+      <button onClick={() => onComment(post)} className="block px-3 mt-1.5 text-[13px] text-slate-500 text-start">
+        {post.commentsCount > 0
+          ? t('postCard.viewComments', { count: fmtCount(post.commentsCount) })
+          : t('postCard.addComment')}
+      </button>
 
       {/* قائمة الثلاث نقاط */}
       {menuOpen && (
