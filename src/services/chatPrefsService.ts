@@ -1,10 +1,11 @@
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-// إعدادات شخصية لكل محادثة (لا يراها الطرف الآخر)
 export interface ChatPref {
   muted: boolean;
   restricted: boolean;
+  archived: boolean;
+  deletedAt: number;
 }
 
 export type ChatPrefMap = Record<string, ChatPref>;
@@ -18,8 +19,17 @@ export const subscribeChatPrefs = (uid: string, cb: (m: ChatPrefMap) => void) =>
     (snap) => {
       const out: ChatPrefMap = {};
       snap.forEach((d) => {
-        const x = d.data() as { convId?: string; muted?: boolean; restricted?: boolean };
-        if (x.convId) out[x.convId] = { muted: !!x.muted, restricted: !!x.restricted };
+        const x = d.data() as {
+          convId?: string; muted?: boolean; restricted?: boolean; archived?: boolean; deletedAt?: number;
+        };
+        if (x.convId) {
+          out[x.convId] = {
+            muted: !!x.muted,
+            restricted: !!x.restricted,
+            archived: !!x.archived,
+            deletedAt: typeof x.deletedAt === 'number' ? x.deletedAt : 0,
+          };
+        }
       });
       cb(out);
     },
@@ -36,6 +46,8 @@ export const setChatPref = async (
   const next: ChatPref = {
     muted: current?.muted ?? false,
     restricted: current?.restricted ?? false,
+    archived: current?.archived ?? false,
+    deletedAt: current?.deletedAt ?? 0,
     ...patch,
   };
   await setDoc(doc(db, 'chatPrefs', prefId(uid, convId)), {
@@ -43,6 +55,20 @@ export const setChatPref = async (
     convId,
     muted: next.muted,
     restricted: next.restricted,
+    archived: next.archived,
+    deletedAt: Math.floor(next.deletedAt),
     updatedAt: serverTimestamp(),
   });
 };
+
+export const lastMessageMs = (c: { lastMessageAt?: any }): number =>
+  c.lastMessageAt?.toMillis?.() ?? Date.now();
+
+export const isDeletedForMe = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
+  !!pref?.deletedAt && lastMessageMs(c) <= pref.deletedAt;
+
+export const isInMainList = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
+  !pref?.archived && !isDeletedForMe(c, pref);
+
+export const isInArchive = (c: { lastMessageAt?: any }, pref?: ChatPref): boolean =>
+  !!pref?.archived && !isDeletedForMe(c, pref);
