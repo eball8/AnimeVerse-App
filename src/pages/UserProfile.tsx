@@ -17,6 +17,7 @@ import Avatar from '../components/Avatar';
 import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
 import { recordProfileView } from '../services/profileInsightsService';
+import { markProfileVisited } from '../services/storyService'; // ← أضفنا هذا السطر
 
 const UserProfilePage: React.FC = () => {
   const { uid } = useParams<{ uid: string }>();
@@ -31,7 +32,6 @@ const UserProfilePage: React.FC = () => {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  // عدّاد المنشورات اللحظي: يتغير فوراً عند نشر منشور أو حذفه
   const posts = usePostsCount(uid, false);
 
   useEffect(() => {
@@ -47,7 +47,6 @@ const UserProfilePage: React.FC = () => {
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', uid));
-        // الحساب المعطّل يظهر كأنه غير موجود
         if (!snap.exists() || (snap.data() as any).isDeactivated === true) {
           if (!cancelled) setP(null);
           return;
@@ -59,8 +58,13 @@ const UserProfilePage: React.FC = () => {
           setP(prof);
           setCounts(c);
           setState(s);
-          // تسجيل الزيارة لإحصائيات صاحب الحساب (مرة واحدة يومياً لكل زائر)
-          if (user) recordProfileView(uid, user.uid);
+          
+          if (user) {
+            // تسجيل الزيارة لإحصائيات صاحب الحساب
+            recordProfileView(uid, user.uid);
+            // تسجيل زيارة الملف الشخصي لإظهار القصة دائماً بعد الزيارة
+            markProfileVisited(uid);
+          }
         }
       } catch (e) {
         console.error(e);
