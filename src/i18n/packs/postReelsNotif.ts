@@ -16,6 +16,10 @@ const ar: Dict = {
   'postCard.placeholder': 'اكتب شيئاً...',
   'postCard.media': 'وسائط المنشور',
   'postCard.openReels': 'فتح في الريلز',
+  'postCard.likes': '{count} إعجاب',
+  'postCard.viewComments': 'عرض كل {count} تعليق',
+  'postCard.addComment': 'أضف تعليقاً...',
+  'postCard.more': 'المزيد',
 
   // Reels
   'reelsUi.create': 'إنشاء ريلز أو قصة',
@@ -61,6 +65,10 @@ const en: Dict = {
   'postCard.placeholder': 'Write something...',
   'postCard.media': 'Post media',
   'postCard.openReels': 'Open in Reels',
+  'postCard.likes': '{count} likes',
+  'postCard.viewComments': 'View all {count} comments',
+  'postCard.addComment': 'Add a comment...',
+  'postCard.more': 'more',
 
   'reelsUi.create': 'Create reel or story',
   'reelsUi.follow': 'Follow',
@@ -104,6 +112,10 @@ const fr: Dict = {
   'postCard.placeholder': 'Écrivez quelque chose...',
   'postCard.media': 'Média de la publication',
   'postCard.openReels': 'Ouvrir dans Reels',
+  'postCard.likes': '{count} j’aime',
+  'postCard.viewComments': 'Voir les {count} commentaires',
+  'postCard.addComment': 'Ajouter un commentaire...',
+  'postCard.more': 'plus',
 
   'reelsUi.create': 'Créer un reel ou une story',
   'reelsUi.follow': 'Suivre',
@@ -147,6 +159,10 @@ const es: Dict = {
   'postCard.placeholder': 'Escribe algo...',
   'postCard.media': 'Contenido de la publicación',
   'postCard.openReels': 'Abrir en Reels',
+  'postCard.likes': '{count} me gusta',
+  'postCard.viewComments': 'Ver los {count} comentarios',
+  'postCard.addComment': 'Añade un comentario...',
+  'postCard.more': 'más',
 
   'reelsUi.create': 'Crear reel o historia',
   'reelsUi.follow': 'Seguir',
