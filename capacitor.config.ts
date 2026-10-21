@@ -7,7 +7,12 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     cleartext: false,
-    allowNavigation: ['*'],
+    // المواقع المسموح بفتحها داخل نافذة التطبيق نفسها فقط.
+    // أي موقع آخر (روابط المنشورات، سيرفرات المشاهدة، الإعلانات...) يُفتح في المتصفح الخارجي.
+    allowNavigation: [
+      'accounts.google.com',
+      '*.firebaseapp.com',
+    ],
   },
   android: {
     allowMixedContent: false,
