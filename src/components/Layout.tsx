@@ -30,7 +30,7 @@ const Layout: React.FC = () => {
   const inChat = /^\/messages\/[^/]+/.test(pathname);
   // شاشة الريلز: ملء الشاشة بدون الهيدر العام (الشعار/الإشعارات/الرسائل/البحث)
   const isReels = /^\/reels(\/|$)/.test(pathname);
-  // شاشة صندوق الرسائل: هيدر نظيف (اسم المستخدم فقط) بلا أيقونات إشعارات ولا بحث ولا رسائل
+  // شاشة صندوق الرسائل: اسم المستخدم + أيقونة إدارة المحادثات (☰) + أيقونة الإشعارات
   const isInbox = pathname === '/messages';
   // شاشة الملف الشخصي الرئيسية: هنا فقط يظهر زر ☰
   const isProfileHome = pathname === '/profile';
@@ -131,6 +131,17 @@ const Layout: React.FC = () => {
 
   const iconBtn = 'relative p-2 text-slate-300 active:scale-90 transition-transform';
 
+  const notificationsLink = (
+    <NavLink to="/notifications" className={iconBtn} aria-label={t('header.notifications')}>
+      <Bell className="w-5 h-5" />
+      {unread > 0 && (
+        <span className="absolute top-0 end-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
+          {unread > 9 ? '9+' : unread}
+        </span>
+      )}
+    </NavLink>
+  );
+
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col relative overflow-x-hidden">
       {/* Header: يختفي بالكامل في شاشة الريلز وداخل المحادثة */}
@@ -150,16 +161,18 @@ const Layout: React.FC = () => {
                 AnimeVerse
               </h1>
             )}
+
+            {/* صندوق الرسائل: زر ☰ (تضعه شاشة الرسائل هنا عبر Portal) + أيقونة الإشعارات */}
+            {user && isInbox && (
+              <div className="flex items-center gap-1">
+                <div id="inbox-header-slot" className="flex items-center" />
+                {notificationsLink}
+              </div>
+            )}
+
             {user && !isInbox && (
               <div className="flex items-center gap-1">
-                <NavLink to="/notifications" className={iconBtn} aria-label={t('header.notifications')}>
-                  <Bell className="w-5 h-5" />
-                  {unread > 0 && (
-                    <span className="absolute top-0 end-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
-                      {unread > 9 ? '9+' : unread}
-                    </span>
-                  )}
-                </NavLink>
+                {notificationsLink}
                 <NavLink to="/messages" className={iconBtn} aria-label={t('header.messages')}>
                   <MessageCircle className="w-5 h-5" />
                   {unreadChats && <span className="absolute top-1 end-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-dark-950" />}
