@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Lock, Loader2, Search, Plus, Users, X, Trash2 } from 'lucide-react';
+import { MessageCircle, Lock, Loader2, Search, Plus, Users, X, Trash2, List, Archive, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
+import { useConfirm } from '../components/ConfirmDialog';
 import StoryViewer from '../components/StoryViewer';
 import { subscribeConversations, createGroup, isUnread } from '../services/chatService';
 import type { Conversation } from '../services/chatService';
+import { setChatPref, subscribeChatPrefs, isInMainList } from '../services/chatPrefsService';
+import type { ChatPrefMap } from '../services/chatPrefsService';
 import { subscribeStories, hasSeenAll } from '../services/storyService';
 import type { StoryGroup } from '../services/storyService';
 import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
@@ -167,7 +170,6 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
   const ordered = mine ? [mine, ...others] : others;
   const noteCandidates = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
   const briefs = useUserBriefs(noteCandidates);
-  // نعرض فقط أصحاب الملاحظات الذين لهم حساب حقيقي (نحذف الأيقونة الوهمية/الروبوت)
   const noteOnlyUids = noteCandidates.filter((uid) => !!briefs[uid]);
   const online = usePresence([...others.map((g) => g.authorId), ...noteOnlyUids], showActivity);
 
@@ -211,7 +213,7 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
           );
         })}
 
-        {/* أصحاب ملاحظات فقط (بدون قصة) */}
+        {/* أصحاب ملاحظات فقط */}
         {noteOnlyUids.map((uid) => {
           const b = briefs[uid];
           return (
@@ -240,15 +242,33 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
 // ==========================================
 // قائمة المحادثات (فردية + مجموعات)
 // ==========================================
-const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me, showActivity }) => {
+const ConversationList: React.FC<{
+  me: string;
+  showActivity: boolean;
+  prefs: ChatPrefMap;
+  selectMode: boolean;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onStartSelect: (id: string) => void;
+}> = ({ me, showActivity, prefs, selectMode, selected, onToggle, onStartSelect }) => {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
-  const [items, setItems] = useState<Conversation[] | null>(null);
+  const [all, setAll] = useState<Conversation[] | null>(null);
+  const holdRef = useRef<number | null>(null);
+  const heldRef = useRef(false);
+  const items = all === null ? null : all.filter((c) => isInMainList(c, prefs[c.id]));
   const directUids = (items || []).filter((c) => c.type !== 'group').map((c) => c.otherUid);
   const briefs = useUserBriefs(directUids);
   const presence = usePresenceInfo(directUids, showActivity);
 
-  useEffect(() => subscribeConversations(me, setItems), [me]);
+  useEffect(() => subscribeConversations(me, setAll), [me]);
+
+  const clearHold = () => { if (holdRef.current !== null) { window.clearTimeout(holdRef.current); holdRef.current = null; } };
+  const startHold = (id: string) => {
+    heldRef.current = false;
+    clearHold();
+    holdRef.current = window.setTimeout(() => { heldRef.current = true; onStartSelect(id); }, 550);
+  };
 
   if (items === null) return <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 animate-spin text-primary-500" /></div>;
 
@@ -270,9 +290,30 @@ const ConversationList: React.FC<{ me: string; showActivity: boolean }> = ({ me,
         const unread = isUnread(c, me);
         const info = isGroup ? undefined : presence[c.otherUid];
         const status = formatPresence(info, lang);
+        const checked = selected.has(c.id);
+
+        const onClick = () => {
+          if (heldRef.current) { heldRef.current = false; return; }
+          if (selectMode) onToggle(c.id);
+          else navigate(`/messages/${targetUid}`);
+        };
 
         return (
-          <button key={c.id} onClick={() => navigate(`/messages/${targetUid}`)} className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start hover:bg-white/10 transition ${unread ? 'bg-primary-500/10 border-primary-500/30' : 'bg-white/5 border-white/10'}`}>
+          <button
+            key={c.id}
+            onClick={onClick}
+            onTouchStart={() => { if (!selectMode) startHold(c.id); }}
+            onTouchEnd={clearHold}
+            onTouchMove={clearHold}
+            onTouchCancel={clearHold}
+            onContextMenu={(e) => { e.preventDefault(); if (!selectMode) onStartSelect(c.id); }}
+            className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start hover:bg-white/10 transition select-none ${checked ? 'bg-primary-500/15 border-primary-500/50' : unread ? 'bg-primary-500/10 border-primary-500/30' : 'bg-white/5 border-white/10'}`}
+          >
+            {selectMode && (
+              <span className={`w-6 h-6 rounded-md border-2 shrink-0 flex items-center justify-center ${checked ? 'bg-primary-500 border-primary-500' : 'border-slate-400'}`}>
+                {checked && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+              </span>
+            )}
             <div className="relative shrink-0">
               {isGroup ? (
                 <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center border border-white/10"><Users className="w-6 h-6 text-slate-400" /></div>
@@ -307,21 +348,103 @@ const Messages: React.FC = () => {
   const { user, profile } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [prefs, setPrefs] = useState<ChatPrefMap>({});
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState('');
   const showActivity = (profile as any)?.showActivity !== false;
+  const me = user?.uid;
 
-  // ملاحظة: الهيدر العلوي (اسم المستخدم + بحث + إشعارات + رسائل) يأتي من Layout،
-  // لذلك هذه الشاشة نظيفة بلا شعار ولا زر ☰ ولا أزرار مكررة.
+  useEffect(() => (me ? subscribeChatPrefs(me, setPrefs) : undefined), [me]);
+
+  const flash = (msg: string) => { setToast(msg); window.setTimeout(() => setToast(''), 2200); };
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  const startSelect = (id: string) => { setSelectMode(true); setSelected(new Set([id])); };
+  const toggle = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const archiveSelected = async () => {
+    if (!me || selected.size === 0 || busy) return;
+    setBusy(true);
+    try {
+      await Promise.all(Array.from(selected).map((id) => setChatPref(me, id, { archived: true }, prefs[id])));
+      exitSelect();
+      flash(t('msgManage.archivedToast'));
+    } catch (e) {
+      console.error(e);
+      flash(t('msgManage.fail'));
+    } finally { setBusy(false); }
+  };
+
+  const deleteSelected = async () => {
+    if (!me || selected.size === 0 || busy) return;
+    const ok = await confirm({
+      title: t('msgManage.deleteTitle', { n: selected.size }),
+      message: t('msgManage.deleteMsg'),
+      confirmLabel: t('msgManage.deleteConfirm'),
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const at = Date.now();
+      await Promise.all(Array.from(selected).map((id) => setChatPref(me, id, { deletedAt: at, archived: false }, prefs[id])));
+      exitSelect();
+      flash(t('msgManage.deletedToast'));
+    } catch (e) {
+      console.error(e);
+      flash(t('msgManage.fail'));
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="px-4 py-4 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-base font-black text-white">{t('chat.title')}</h2>
-        <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title={t('msgUi.createGroup')} aria-label={t('msgUi.createGroup')}><Users className="w-5 h-5" /></button>
-      </div>
+      {selectMode ? (
+        <div className="flex items-center justify-between mb-1 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button onClick={exitSelect} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" aria-label={t('msgManage.cancel')} title={t('msgManage.cancel')}><X className="w-5 h-5" /></button>
+            <h2 className="text-base font-black text-white truncate">{t('msgManage.selectedCount', { n: selected.size })}</h2>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={archiveSelected} disabled={selected.size === 0 || busy} className="px-3 py-2 bg-white/5 rounded-full text-slate-200 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40"><Archive className="w-4 h-4" /> {t('msgManage.archiveSel')}</button>
+            <button onClick={deleteSelected} disabled={selected.size === 0 || busy} className="px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-full text-red-400 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40"><Trash2 className="w-4 h-4" /> {t('msgManage.deleteSel')}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelectMode(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title={t('msgManage.select')} aria-label={t('msgManage.select')}><List className="w-5 h-5" /></button>
+            <h2 className="text-base font-black text-white">{t('chat.title')}</h2>
+          </div>
+          <button onClick={() => setShowCreateGroup(true)} className="p-2 bg-white/5 rounded-full text-slate-300 hover:text-white transition" title={t('msgUi.createGroup')} aria-label={t('msgUi.createGroup')}><Users className="w-5 h-5" /></button>
+        </div>
+      )}
 
       {user && <StoriesNotesBar me={user.uid} showActivity={showActivity} />}
 
-      {user && (<E2EEGate><ConversationList me={user.uid} showActivity={showActivity} /></E2EEGate>)}
+      {user && (
+        <E2EEGate>
+          <ConversationList
+            me={user.uid}
+            showActivity={showActivity}
+            prefs={prefs}
+            selectMode={selectMode}
+            selected={selected}
+            onToggle={toggle}
+            onStartSelect={startSelect}
+          />
+        </E2EEGate>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[130] px-4 py-2 rounded-full bg-dark-800 border border-white/15 text-xs font-bold text-white shadow-lg">{toast}</div>
+      )}
 
       {showCreateGroup && user && (
         <CreateGroupModal
