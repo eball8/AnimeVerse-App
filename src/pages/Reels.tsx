@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Heart, MessageCircle, Repeat2, Share2, Link2, Volume2, VolumeX, Loader2, Clapperboard,
-  Plus, Users, MoreVertical, Trash2,
+  Plus, Users, MoreVertical, Trash2, ArrowLeft,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ import { copyText, reelLink, shareLink, videoThumb } from '../utils/links';
 import Avatar from '../components/Avatar';
 import CommentsSheet from '../components/CommentsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
+import { useMediaBlocked, useMediaLock } from '../utils/mediaManager';
 
 type Tab = 'reels' | 'friends';
 
@@ -64,6 +65,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   const heartId = useRef(0);
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const { post, active, near, muted, liked } = p;
+  const blocked = useMediaBlocked();
 
   useEffect(() => {
     const el = ref.current;
@@ -78,11 +80,23 @@ const ReelItem: React.FC<ItemProps> = (p) => {
     return () => io.disconnect();
   }, [p.index, p.onVisible, p.root]);
 
+  // إيقاف الفيديو وتحرير الموارد عند الخروج من الشاشة (Unmount) أو عند إخفاء العنصر
+  useEffect(() => {
+    const v = vref.current;
+    return () => {
+      if (v) {
+        v.pause();
+        v.removeAttribute('src');
+        v.load();
+      }
+    };
+  }, [near]);
+
   useEffect(() => {
     const v = vref.current;
     if (!v) return;
     v.muted = muted;
-    if (active) {
+    if (active && !blocked) {
       v.play().catch(() => {
         // المتصفح منع التشغيل بالصوت: نشغّله بدون صوت ونُظهر زر الكتم
         if (!v.muted) {
@@ -92,7 +106,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
         }
       });
     } else v.pause();
-  }, [active, near, muted]);
+  }, [active, near, muted, blocked]);
 
   useEffect(
     () => () => {
@@ -152,7 +166,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           loop
           playsInline
           muted={muted}
-          autoPlay={active}
+          autoPlay={active && !blocked}
           preload={active ? 'auto' : 'metadata'}
           className="w-full h-full object-contain"
         />
@@ -269,6 +283,9 @@ const Reels: React.FC = () => {
   const repostBusy = useRef<Set<string>>(new Set());
   const followBusy = useRef<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // قائمة الخيارات المنبثقة = إيقاف الفيديو (التعليقات تقفل الوسائط بنفسها)
+  useMediaLock(!!menuPost);
 
   const likerIds = Object.values(likers).reduce<string[]>((a, b) => a.concat(b), []);
   const briefs = useUserBriefs([
@@ -569,11 +586,20 @@ const Reels: React.FC = () => {
           style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.6rem)' }}
         >
           <div className="relative flex items-center justify-center px-3 h-10">
+            {id && (
+              <button
+                onClick={() => navigate(-1)}
+                aria-label={t('common.back')}
+                className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={() => navigate('/create-post')}
               aria-label={t('reelsUi.create')}
               title={t('reelsUi.create')}
-              className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition"
+              className={`pointer-events-auto absolute ${id ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition`}
             >
               <Plus className="w-5 h-5" />
             </button>
