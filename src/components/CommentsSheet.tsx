@@ -12,6 +12,7 @@ import { timeAgo } from '../utils/timeAgo';
 import Avatar from './Avatar';
 import DeleteButton from './DeleteButton';
 import { useConfirm } from './ConfirmDialog';
+import { useMediaLock } from '../utils/mediaManager';
 
 interface Props {
   post: Post;
@@ -29,6 +30,9 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const briefs = useUserBriefs(comments.map((c) => c.authorId));
+
+  // فتح التعليقات = إيقاف كل الفيديوهات في الخلفية
+  useMediaLock();
 
   useEffect(() => {
     if (!post.id) return;
