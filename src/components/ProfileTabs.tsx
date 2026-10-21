@@ -122,8 +122,8 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
 
   const open = (p: Post) => {
     if (!p.id) return;
-    // الريلز تُفتح في شاشة الريلز، وبقية المنشورات في عارض كبير بنمط انستغرام
-    if (active === 'reels') navigate(`/reels/${p.id}`);
+    // أي فيديو (في أي تبويب) يُفتح مباشرة في شاشة الريلز، والصور/النصوص في عارض كبير بنمط انستغرام
+    if (p.mediaType === 'video' && p.mediaUrl) navigate(`/reels/${p.id}`);
     else setViewer({ id: p.id });
   };
 
