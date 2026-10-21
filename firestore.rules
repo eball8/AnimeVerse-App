@@ -621,6 +621,9 @@ service cloud.firestore {
             && request.resource.data.members[0] < request.resource.data.members[1]
             && convId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
             && !isBlockedBy(otherOf(request.resource.data.members))
+            // من بدأ المحادثة يجب أن يكون المرسل نفسه (يمنع تزوير طلبات المراسلة)
+            && (!('starterId' in request.resource.data)
+                || request.resource.data.starterId == request.auth.uid)
           )
           ||
           (
@@ -717,7 +720,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد / أرشفة / حذف عندي) ----------
+    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد / أرشفة / حذف عندي / تثبيت / قبول الطلب) ----------
     match /chatPrefs/{prefId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -730,6 +733,8 @@ service cloud.firestore {
           'restricted',
           'archived',
           'deletedAt',
+          'pinnedAt',
+          'accepted',
           'updatedAt'
         ])
         && validText(request.resource.data.convId, 1, 200)
@@ -738,6 +743,8 @@ service cloud.firestore {
         && request.resource.data.restricted is bool
         && (!('archived' in request.resource.data) || request.resource.data.archived is bool)
         && (!('deletedAt' in request.resource.data) || request.resource.data.deletedAt is int)
+        && (!('pinnedAt' in request.resource.data) || request.resource.data.pinnedAt is int)
+        && (!('accepted' in request.resource.data) || request.resource.data.accepted is bool)
         && request.resource.data.updatedAt == request.time;
 
       allow delete: if signedIn()
