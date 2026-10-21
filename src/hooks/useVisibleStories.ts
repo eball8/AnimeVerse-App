@@ -46,8 +46,6 @@ export const useVisibleStories = (options: UseVisibleStoriesOptions = {}) => {
       const authorIds = Array.from(new Set(allGroups.map((g) => g.authorId)));
       const types: Record<string, 'public' | 'private'> = {};
 
-      // جلب أنواع الحسابات (public/private)
-      // يمكن استعلام 10 مستخدمين في كل مرة
       for (let i = 0; i < authorIds.length; i += 10) {
         const chunk = authorIds.slice(i, i + 10);
         try {
@@ -64,10 +62,8 @@ export const useVisibleStories = (options: UseVisibleStoriesOptions = {}) => {
       }
 
       if (cancelled) return;
-
       setAuthorAccountTypes(types);
 
-      // التحقق من متابعة أنا لكل مؤلف
       const follows = new Set<string>();
       for (const authorId of authorIds) {
         if (authorId === me) continue;
@@ -78,7 +74,6 @@ export const useVisibleStories = (options: UseVisibleStoriesOptions = {}) => {
       }
 
       if (cancelled) return;
-
       setMeFollowsAuthors(follows);
       setLoading(false);
     })();
