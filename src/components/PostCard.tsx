@@ -5,7 +5,7 @@ import { Browser } from '@capacitor/browser';
 import { doc, updateDoc } from 'firebase/firestore';
 import {
   Heart, MessageCircle, Send, Link2, Check, Repeat2, Clapperboard,
-  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2,
+  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2,
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import type { Post } from '../services/postService';
@@ -15,6 +15,7 @@ import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/li
 import { useI18n } from '../i18n/I18nContext';
 import { useAuth } from '../context/AuthContext';
 import { isFeedActive, registerFeedPlayer, reportFeedRatio, useMediaLock } from '../utils/mediaManager';
+import { useSyncedAudio } from '../utils/syncedAudio';
 
 interface Props {
   post: Post;
@@ -190,9 +191,13 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
     };
   }, [isVideo, playerId]);
 
+  // فيديو بصوت مستعار (ريمكس): يُكتم الفيديو دائماً ويُشغَّل الصوت المستعار بدلاً منه
+  const borrowedAudio = isVideo ? post.audioUrl : undefined;
+  useSyncedAudio(videoRef, borrowedAudio, muted, isVideo && near);
+
   useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = muted;
-  }, [muted, near]);
+    if (videoRef.current) videoRef.current.muted = muted || !!borrowedAudio;
+  }, [muted, near, borrowedAudio]);
 
   // النقر على أي فيديو يفتح شاشة الريلز مباشرة (مثل انستغرام)
   const openReels = () => {
@@ -260,7 +265,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             src={near ? post.mediaUrl : undefined}
             poster={poster}
             loop
-            muted={muted}
+            muted={muted || !!borrowedAudio}
             playsInline
             preload={near ? 'metadata' : 'none'}
             onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
@@ -365,6 +370,9 @@ const PostCard: React.FC<Props> = ({
   const [expanded, setExpanded] = useState(false);
   // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
   const [localContent, setLocalContent] = useState<string | null>(null);
+  // إعداد السماح بالصوت بعد تغييره من القائمة (صفحة المنشور لا تتحدث لحظياً)
+  const [localAllowAudio, setLocalAllowAudio] = useState<boolean | null>(null);
+  const [audioBusy, setAudioBusy] = useState(false);
 
   // أي نافذة منبثقة مفتوحة = إيقاف كل الفيديوهات
   useMediaLock(menuOpen || editing);
@@ -373,11 +381,18 @@ const PostCard: React.FC<Props> = ({
     setLocalContent(null);
   }, [post.content]);
 
+  useEffect(() => {
+    setLocalAllowAudio(null);
+  }, [post.allowAudio]);
+
   const content = localContent ?? post.content;
   const isVideo = post.mediaType === 'video';
   const url = post.id ? (isVideo ? reelLink(post.id) : postLink(post.id)) : '';
   const isOwner = !!user && post.authorId === user.uid;
   const canEdit = isOwner && !!post.id;
+  // الصوت يخص الفيديوهات الأصلية فقط (ليس إعادة النشر ولا الفيديو ذو الصوت المستعار)
+  const ownsAudio = isVideo && !!post.mediaUrl && !!post.id && !post.repostOfId && !post.audioSourceId;
+  const audioAllowed = ownsAudio && (localAllowAudio ?? post.allowAudio) === true;
   const shareText = (content || authorName).slice(0, 100);
   // النص يظهر تحت الصورة كتعليق؛ المنشور النصي فقط يظهر داخل اللوحة الملونة
   const caption = post.mediaUrl ? content : '';
@@ -404,6 +419,28 @@ const PostCard: React.FC<Props> = ({
       setTimeout(() => setPopLike(false), 400);
     }
     onLike(post);
+  };
+
+  const useAudio = () => {
+    if (!post.id || !audioAllowed) return;
+    setMenuOpen(false);
+    navigate(`/create-post?audio=${post.id}`);
+  };
+
+  const toggleAllowAudio = async () => {
+    if (!post.id || !isOwner || !ownsAudio || audioBusy) return;
+    const next = !audioAllowed;
+    setAudioBusy(true);
+    setErr('');
+    try {
+      await updateDoc(doc(db, 'posts', post.id), { allowAudio: next });
+      setLocalAllowAudio(next);
+    } catch (e) {
+      console.error(e);
+      setErr(t('audio.saveFail'));
+    } finally {
+      setAudioBusy(false);
+    }
   };
 
   const startEdit = () => {
@@ -563,6 +600,37 @@ const PostCard: React.FC<Props> = ({
                 <Pencil className="w-5 h-5 text-primary-400" /> {t('postCard.edit')}
               </button>
             )}
+
+            {audioAllowed && (
+              <button onClick={useAudio} className={menuRow}>
+                <Music2 className="w-5 h-5 text-primary-400" /> {t('audio.use')}
+              </button>
+            )}
+
+            {isOwner && ownsAudio && (
+              <button
+                onClick={toggleAllowAudio}
+                disabled={audioBusy}
+                role="switch"
+                aria-checked={audioAllowed}
+                className={`${menuRow} disabled:opacity-60`}
+              >
+                <Music2 className="w-5 h-5 text-primary-400" />
+                <span className="flex-1 text-start">{t('audio.allowShort')}</span>
+                <span
+                  className={`relative w-10 h-[22px] rounded-full shrink-0 transition-colors ${
+                    audioAllowed ? 'bg-primary-500' : 'bg-white/20'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-all ${
+                      audioAllowed ? 'start-[20px]' : 'start-[2px]'
+                    }`}
+                  />
+                </span>
+              </button>
+            )}
+            {err && !editing && <p className="text-[11px] text-red-400 px-1">{err}</p>}
 
             <button
               onClick={async () => {
