@@ -1,7 +1,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, isUnverifiedPasswordUser } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { I18nProvider } from './i18n/I18nContext';
 import Layout from './components/Layout';
@@ -43,6 +43,7 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
+  if (isUnverifiedPasswordUser(user)) return <Navigate to="/verify-email" replace />;
   return children;
 };
 
