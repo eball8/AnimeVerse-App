@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   X, User, Search, Bell, BellOff, Timer, Palette, Image as ImageIcon, EyeOff, Flag, Ban, Loader2,
+  Archive, ArchiveRestore, Trash2,
 } from 'lucide-react';
+import { convIdOf } from '../services/chatService';
 import type { ReportKind } from '../services/chatService';
+import { setChatPref, subscribeChatPrefs } from '../services/chatPrefsService';
+import type { ChatPref } from '../services/chatPrefsService';
+import { useAuth } from '../context/AuthContext';
+import { useConfirm } from './ConfirmDialog';
 import { useI18n } from '../i18n/I18nContext';
 
 // ---------------------------------------------------------------
@@ -62,6 +69,53 @@ export interface ChatOptionsSheetProps {
 
 const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const { uid: routeUid } = useParams<{ uid: string }>();
+  const navigate = useNavigate();
+  const confirm = useConfirm();
+  const me = user?.uid || '';
+  const convId = routeUid ? (p.isGroup ? routeUid : convIdOf(me, routeUid)) : '';
+  const [pref, setPref] = useState<ChatPref | undefined>(undefined);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (!me || !convId) return;
+    return subscribeChatPrefs(me, (m) => setPref(m[convId]));
+  }, [me, convId]);
+
+  const archived = !!pref?.archived;
+
+  const toggleArchive = async () => {
+    if (!me || !convId) return;
+    setErr('');
+    try {
+      await setChatPref(me, convId, { archived: !archived }, pref);
+      if (!archived) navigate('/messages'); else p.onClose();
+    } catch (e) {
+      console.error(e);
+      setErr(t('msgManage.fail'));
+    }
+  };
+
+  const deleteChat = async () => {
+    if (!me || !convId) return;
+    setErr('');
+    const ok = await confirm({
+      title: t('chatManage.deleteTitle', { name: p.name }),
+      message: t('chatManage.deleteMsg'),
+      confirmLabel: t('msgManage.deleteConfirm'),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await setChatPref(me, convId, { deletedAt: Date.now(), archived: false }, pref);
+      navigate('/messages');
+    } catch (e) {
+      console.error(e);
+      setErr(t('msgManage.fail'));
+    }
+  };
+
   return (
   <div className="fixed inset-0 z-[115] bg-black/60 flex items-end justify-center" onClick={p.onClose}>
     <div
@@ -96,6 +150,12 @@ const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
         />
         <Row icon={Palette} label={t('opt.theme')} sub={t('opt.themeSub')} onClick={p.onTheme} />
         <Row icon={ImageIcon} label={t('opt.media')} sub={t('opt.mediaSub')} onClick={p.onMedia} />
+        <Row
+          icon={archived ? ArchiveRestore : Archive}
+          label={archived ? t('opt.unarchive') : t('opt.archive')}
+          sub={archived ? t('opt.unarchiveSub') : t('opt.archiveSub')}
+          onClick={toggleArchive}
+        />
       </div>
 
       {!p.isGroup && (
@@ -117,6 +177,11 @@ const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
           />
         </div>
       )}
+
+      <div className="divide-y divide-white/5 border-t border-white/10 mt-2">
+        <Row icon={Trash2} label={t('opt.deleteChat')} sub={t('opt.deleteChatSub')} onClick={deleteChat} danger />
+      </div>
+      {err && <p className="text-xs text-red-400 px-5 pt-3">{err}</p>}
     </div>
   </div>
   );
