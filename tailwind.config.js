@@ -35,11 +35,25 @@ export default {
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',
         'slide-up': 'slideUp 0.3s ease-out',
+        'heart-pop': 'heartPop 0.8s ease-out forwards',
+        'like-pop': 'likePop 0.35s ease-out',
       },
       keyframes: {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        heartPop: {
+          '0%': { transform: 'scale(0.3)', opacity: '0' },
+          '15%': { transform: 'scale(1.25)', opacity: '1' },
+          '30%': { transform: 'scale(0.95)', opacity: '1' },
+          '70%': { transform: 'scale(1)', opacity: '1' },
+          '100%': { transform: 'scale(1.15)', opacity: '0' },
+        },
+        likePop: {
+          '0%': { transform: 'scale(1)' },
+          '40%': { transform: 'scale(1.35)' },
+          '100%': { transform: 'scale(1)' },
         },
         slideUp: {
           '0%': { transform: 'translateY(20px)', opacity: '0' },
