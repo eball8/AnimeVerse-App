@@ -19,7 +19,7 @@ const VerifyEmail: React.FC = () => {
       if (auth.currentUser) {
         await auth.currentUser.reload();
         if (auth.currentUser.emailVerified) {
-          refreshUser();
+          await refreshUser();
           navigate('/');
         } else {
           setError(t('af.errNotVerified'));
