@@ -67,8 +67,8 @@ const PostView: React.FC = () => {
   };
 
   return (
-    <div className="px-4 py-6 space-y-4">
-      <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/10 text-slate-300" aria-label={t('common.back')}>
+    <div className="py-3">
+      <button onClick={() => navigate(-1)} className="mx-3 mb-1 p-2 rounded-xl hover:bg-white/10 text-slate-300" aria-label={t('common.back')}>
         <ArrowRight className="w-5 h-5 rtl:rotate-0 ltr:rotate-180" />
       </button>
 
