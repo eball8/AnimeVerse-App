@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { tr } from '../i18n/staticT';
 
 export interface GalleryMedia {
@@ -27,6 +28,7 @@ interface GalleryNativePlugin {
     thumbSize?: number;
   }): Promise<{ medias: GalleryMedia[]; hasMore: boolean }>;
   copyToCache(options: { uri: string }): Promise<{ path: string; mime: string; size: number }>;
+  saveToGallery(options: { path: string; mime: string; name: string }): Promise<{ uri: string }>;
 }
 
 const Gallery = registerPlugin<GalleryNativePlugin>('Gallery');
@@ -83,4 +85,37 @@ export const formatDuration = (ms: number): string => {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+// ---------------------------------------------------------------
+// تنزيل صورة/فيديو إلى المعرض (أندرويد) أو كتنزيل عادي في المتصفح
+// ---------------------------------------------------------------
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(new Error('read'));
+    r.readAsDataURL(blob);
+  });
+
+export const downloadMediaBlob = async (blob: Blob, mime: string): Promise<void> => {
+  const isVideo = mime.startsWith('video/');
+  const ext = mime.includes('png') ? 'png' : mime.includes('gif') ? 'gif' : mime.includes('webp') ? 'webp' : isVideo ? (mime.includes('webm') ? 'webm' : 'mp4') : 'jpg';
+  const name = `AnimeVerse_${Date.now()}.${ext}`;
+
+  if (isNativeGallery()) {
+    const data = await blobToBase64(blob);
+    const written = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache });
+    await Gallery.saveToGallery({ path: written.uri, mime, name });
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
