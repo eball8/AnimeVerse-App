@@ -29,13 +29,10 @@ export interface SignUpData {
   lastName: string;
   username: string;
   gender: Gender;
-  birthDate: string; // YYYY-MM-DD
+  birthDate: string;
 }
 
-// بيانات التسجيل المعلّقة: يستهلكها مستمع onIdTokenChanged عند إنشاء الملف
-// لتجنّب سباق كتابتين على مستند users/{uid}
 let pendingSignUpProfile: Partial<UserProfile> | null = null;
-// بوابة تُبقي المستمع ينتظر حتى ينتهي فحص اسم المستخدم (true = متاح)
 let signUpGate: Promise<boolean> | null = null;
 let openSignUpGate: (ok: boolean) => void = () => undefined;
 
@@ -56,13 +53,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// إضافة أندرويد صغيرة تسجّل الدخول بحساب غوغل محدد مباشرة بدون قائمة الحسابات
 const GoogleHint = registerPlugin<{ signIn(opts: { email: string }): Promise<{ idToken: string }> }>('GoogleHint');
-
-// المالك الأساسي للتطبيق يُعرَف باسم المستخدم المحجوز فقط (بدون أي إيميل في الكود أو القواعد)
 const OWNER_USERNAME = 'animeverse_official';
 
-// نتأكد أن حجز الاسم داخل Firestore يعود لنفس حساب الدخول الحالي (نفس منطق القواعد)
 const verifyOwner = async (fbUser: User, username: string | undefined): Promise<boolean> => {
   if (!username || username.toLowerCase() !== OWNER_USERNAME) return false;
   if (!fbUser.emailVerified) return false;
@@ -74,7 +67,6 @@ const verifyOwner = async (fbUser: User, username: string | undefined): Promise<
   }
 };
 
-// نحفظ آخر بروفايل على الجهاز ليفتح التطبيق فوراً بدون انتظار Firestore
 const PROFILE_CACHE_KEY = 'av_profile_cache';
 
 const readCachedProfile = (uid: string): UserProfile | null => {
@@ -113,25 +105,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // 1) اعرض البروفايل المحفوظ فوراً
       const cached = readCachedProfile(fbUser.uid);
       if (cached) {
-        // مؤقتاً من النسخة المحفوظة حتى لا تُغلق لوحة الأدمن عند فتح التطبيق (التحقق الحقيقي يأتي بعده)
         setIsOwnerAccount(cached.username === OWNER_USERNAME && fbUser.emailVerified);
         setProfile(cached);
         setLoading(false);
       }
 
-      // 2) حدّثه من Firestore بالخلفية
       try {
         let p = await getUserProfile(fbUser.uid);
         if (!p) {
-          // أثناء حذف الحساب لا نُنشئ ملفاً جديداً
           if (accountGuard.busy) return;
           if (signUpGate) {
             const ok = await signUpGate;
             signUpGate = null;
-            if (!ok) return; // تم التراجع عن الحساب
+            if (!ok) return;
           }
           const pending = pendingSignUpProfile;
           pendingSignUpProfile = null;
@@ -142,7 +130,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...(pending || {}),
           });
         }
-        // تسجيل الدخول يعيد تفعيل الحساب المعطّل تلقائياً
         if (p.isDeactivated && !accountGuard.busy) {
           try {
             await updateUserProfile(fbUser.uid, { isDeactivated: false });
@@ -151,7 +138,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error('Reactivation failed:', e);
           }
         }
-        // نتحقق من المالك قبل عرض البروفايل حتى لا يُحوَّل عن لوحة الأدمن للحظة
+        
+        if (p.isEmailVerified !== fbUser.emailVerified) {
+          try {
+            await updateUserProfile(fbUser.uid, { isEmailVerified: fbUser.emailVerified });
+            p = { ...p, isEmailVerified: fbUser.emailVerified };
+          } catch (e) {
+            console.error('Email verification sync failed:', e);
+          }
+        }
+
         setIsOwnerAccount(await verifyOwner(fbUser, p.username));
         setProfile(p);
         writeCachedProfile(p);
@@ -182,7 +178,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const lastName = d.lastName.trim();
     const displayName = `${firstName} ${lastName}`.trim();
 
-    // تجهيز بيانات الملف قبل إنشاء الحساب حتى يكتبها المستمع مرة واحدة
     pendingSignUpProfile = {
       firstName,
       lastName,
@@ -205,8 +200,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw e;
     }
 
-    // قواعد Firestore تشترط تسجيل الدخول للقراءة، لذلك نتحقق من اسم المستخدم هنا
-    // وإن كان محجوزاً نتراجع عن إنشاء الحساب بالكامل
     try {
       const free = await checkUsernameAvailable(username, cred.user.uid);
       if (!free) {
@@ -233,7 +226,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (Capacitor.isNativePlatform()) {
         let idToken: string | undefined;
         if (hintEmail && Capacitor.isPluginAvailable('GoogleHint')) {
-          // دخول مباشر بالحساب المحفوظ بدون قائمة الحسابات
           const r = await GoogleHint.signIn({ email: hintEmail });
           idToken = r.idToken;
         } else {
@@ -250,7 +242,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { signInWithPopup } = await import('firebase/auth');
         let provider = googleProvider;
         if (hintEmail) {
-          // login_hint يجعل غوغل يختار الحساب مباشرة بدون قائمة الحسابات
           provider = new GoogleAuthProvider();
           provider.setCustomParameters({ login_hint: hintEmail });
         }
@@ -265,7 +256,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
     } catch (error: any) {
-      // المستخدم تراجع بنفسه (12501 أو إغلاق النافذة): ليس خطأً
       const code = String(error?.code ?? '');
       const msg = String(error?.message ?? '');
       const cancelled =
@@ -309,7 +299,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(auth.currentUser ? { ...auth.currentUser } : null);
   };
 
-  // الأدمن = المالك (المعروف باسم المستخدم المحجوز) أو من منحه المالك دور admin
   const isAdmin = isOwnerAccount || profile?.role === 'admin';
   const isModerator = profile?.role === 'moderator' || isAdmin;
 
