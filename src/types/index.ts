@@ -14,12 +14,13 @@ export interface UserProfile {
   photoURL?: string;
   bio?: string;
   gender?: Gender;
-  birthDate?: string; // YYYY-MM-DD
+  birthDate?: string;
   pronouns?: string;
   age?: number;
   role: UserRole;
   accountType: AccountType;
   isVerified: boolean;
+  isEmailVerified?: boolean;
   isBanned: boolean;
   isDeactivated?: boolean;
   deactivatedAt?: Timestamp;
@@ -32,7 +33,6 @@ export interface UserProfile {
   updatedAt: Timestamp;
   lastUsernameChange?: Timestamp;
   lastDisplayNameChange?: Timestamp;
-  // إعدادات الخصوصية والنشاط
   showActivity?: boolean;
   showLikedReels?: boolean;
   messagePrivacy?: 'everyone' | 'following' | 'nobody';
