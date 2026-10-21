@@ -24,12 +24,19 @@ const PostView: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     getPostById(id)
-      .then(setPost)
+      .then((p) => {
+        // أي منشور فيديو (من إشعار/رابط/بحث) يُفتح في شاشة الريلز
+        if (p && p.mediaType === 'video' && p.mediaUrl) {
+          navigate(`/reels/${id}`, { replace: true });
+          return;
+        }
+        setPost(p);
+      })
       .catch((e) => {
         console.error(e);
         setPost(null);
       });
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     if (!user || !id) return;
