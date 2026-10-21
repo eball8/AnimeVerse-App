@@ -30,6 +30,8 @@ export interface Conversation {
   photoURL?: string;
   /** الرسائل المؤقتة: مدة بقاء الرسالة بالميلي ثانية (0 أو غير موجود = معطّلة) */
   disappearAfter?: number;
+  /** معرّفات الرسائل المثبّتة (الأحدث أولاً، حتى 3) */
+  pinned?: string[];
 }
 
 export interface WrappedKey { c: string; i: string; }
@@ -45,6 +47,7 @@ export interface RawMessage {
   replyTo?: string;
   reactions?: Record<string, string[]>;
   wraps?: Record<string, WrappedKey>; // رسائل المجموعات فقط
+  edited?: boolean; // الرسالة تم تعديلها
 }
 
 export interface PublicKeyInfo {
@@ -79,6 +82,7 @@ export const subscribeConversations = (me: string, cb: (items: Conversation[]) =
           admins: data.admins,
           photoURL: data.photoURL,
           disappearAfter: typeof data.disappearAfter === 'number' ? data.disappearAfter : 0,
+          pinned: Array.isArray(data.pinned) ? (data.pinned as string[]) : [],
         } as Conversation;
       });
       const t = (c: Conversation) => c.lastMessageAt?.toMillis?.() ?? Date.now();
@@ -116,6 +120,15 @@ export const DISAPPEAR_24H_MS = 24 * 60 * 60 * 1000;
 
 export const setDisappearAfter = async (convId: string, ms: number): Promise<void> => {
   await updateDoc(doc(db, 'conversations', convId), { disappearAfter: Math.max(0, Math.floor(ms)) });
+};
+
+// ---------------------------------------------------------------
+// تثبيت الرسائل (نحفظ معرّفات الرسائل فقط، والمحتوى يبقى مشفّراً)
+// ---------------------------------------------------------------
+export const MAX_PINNED = 3;
+
+export const setPinnedMessages = async (convId: string, ids: string[]): Promise<void> => {
+  await updateDoc(doc(db, 'conversations', convId), { pinned: ids.slice(0, MAX_PINNED) });
 };
 
 // هل انتهت مدة بقاء الرسالة؟ (الرسالة التي لم يصلها وقت الخادم بعد لا تُعتبر منتهية)
@@ -229,16 +242,12 @@ export const sendDirect = async (
 // نولّد مفتاحاً عشوائياً للرسالة، ونشفّر المحتوى به، ثم نشفّر هذا المفتاح
 // لكل عضو بمفتاحه العام (ECDH). فقط الأعضاء يستطيعون القراءة.
 // ---------------------------------------------------------------
-export const sendGroup = async (
+const encryptForGroup = async (
   me: string,
-  groupId: string,
+  local: LocalKey,
   members: string[],
-  payload: ChatPayload,
-  replyTo?: string
-): Promise<void> => {
-  const local = await getLocalKey(me);
-  if (!local) throw new Error('NO_LOCAL_KEY');
-
+  payload: ChatPayload
+): Promise<{ ciphertext: string; iv: string; wraps: Record<string, WrappedKey> }> => {
   const mk = crypto.getRandomValues(new Uint8Array(32));
   const aes = await crypto.subtle.importKey('raw', mk, 'AES-GCM', false, ['encrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -265,19 +274,78 @@ export const sendGroup = async (
     })
   );
 
+  return { ciphertext: toB64(ct), iv: toB64(iv), wraps };
+};
+
+export const sendGroup = async (
+  me: string,
+  groupId: string,
+  members: string[],
+  payload: ChatPayload,
+  replyTo?: string
+): Promise<void> => {
+  const local = await getLocalKey(me);
+  if (!local) throw new Error('NO_LOCAL_KEY');
+
+  const enc = await encryptForGroup(me, local, members, payload);
+
   const msgData: any = {
     senderId: me,
-    ciphertext: toB64(ct),
-    iv: toB64(iv),
+    ciphertext: enc.ciphertext,
+    iv: enc.iv,
     senderKeyId: local.keyId,
     recipientKeyId: 'group-v1-wrapped',
-    wraps,
+    wraps: enc.wraps,
     createdAt: serverTimestamp(),
   };
   if (replyTo) msgData.replyTo = replyTo;
 
   await addDoc(collection(db, 'conversations', groupId, 'messages'), msgData);
   await touchConversation(groupId, me);
+};
+
+// ---------------------------------------------------------------
+// تعديل رسالة نصية أرسلتها أنا (نعيد التشفير ونحدّث نفس الرسالة)
+// ---------------------------------------------------------------
+export const editDirect = async (
+  me: string,
+  otherUid: string,
+  m: RawMessage,
+  payload: ChatPayload
+): Promise<void> => {
+  if (m.senderId !== me) throw new Error('NOT_OWNER');
+  const local = await getLocalKey(me);
+  if (!local || local.keyId !== m.senderKeyId) throw new Error('NO_LOCAL_KEY');
+  const theirKey = await getPublicKeyInfo(otherUid);
+  if (!theirKey || theirKey.keyId !== m.recipientKeyId) throw new Error('KEY_CHANGED');
+
+  const shared = await getSharedKey(local.privateKey, local.keyId, theirKey.keyId, theirKey.publicKey);
+  const { ciphertext, iv } = await encryptJson(shared, payload);
+  await updateDoc(doc(db, 'conversations', convIdOf(me, otherUid), 'messages', m.id), {
+    ciphertext,
+    iv,
+    edited: true,
+  });
+};
+
+export const editGroup = async (
+  me: string,
+  groupId: string,
+  members: string[],
+  m: RawMessage,
+  payload: ChatPayload
+): Promise<void> => {
+  if (m.senderId !== me) throw new Error('NOT_OWNER');
+  const local = await getLocalKey(me);
+  if (!local || local.keyId !== m.senderKeyId) throw new Error('NO_LOCAL_KEY');
+
+  const enc = await encryptForGroup(me, local, members, payload);
+  await updateDoc(doc(db, 'conversations', groupId, 'messages', m.id), {
+    ciphertext: enc.ciphertext,
+    iv: enc.iv,
+    wraps: enc.wraps,
+    edited: true,
+  });
 };
 
 // ---------------------------------------------------------------
