@@ -4,7 +4,7 @@ import {
   ArrowRight, User, Lock, Shield, Smartphone, PlayCircle,
   Palette, Trash2, MessageSquare, Info, LogOut, ChevronLeft,
   CheckCircle2, AlertCircle, Loader2, Globe, Check, Mail, KeyRound,
-  ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink, UserX, PauseCircle,
+  ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink, UserX, PauseCircle, Archive,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -1121,6 +1121,7 @@ const Settings: React.FC = () => {
               <div className="card divide-y divide-white/5">
                 <Row icon={Lock} label={t('settings.privacy')} onClick={() => setActiveSection('privacy')} />
                 <Row icon={MessageSquare} label={t('settings.e2ee')} onClick={() => setActiveSection('e2ee')} />
+                <Row icon={Archive} label={t('archive.settingsRow')} onClick={() => navigate('/archive')} />
               </div>
             </div>
 
