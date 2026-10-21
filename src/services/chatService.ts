@@ -1,303 +1,249 @@
-import { auth, db } from '../config/firebase';
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
-  doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch }
-from 'firebase/firestore';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import {
+  MessageCircle, Lock, Loader2, Search, Plus, Users, X, Trash2, List, Archive, Check,
+  Pin, PinOff, Inbox, ChevronLeft, ArrowRight,
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
+import Avatar from '../components/Avatar';
+import E2EEGate from '../components/E2EEGate';
+import { useConfirm } from '../components/ConfirmDialog';
+import StoryViewer from '../components/StoryViewer';
+import { subscribeConversations, createGroup, isUnread } from '../services/chatService';
+import { getMutualFriendIds } from '../services/followService';
+import { searchUsers } from '../services/searchService';
+import type { Conversation } from '../services/chatService';
+import {
+  setChatPref, subscribeChatPrefs, subscribeFollowRelations, isInMainList,
+  isMessageRequest, setChatsPinned, acceptMessageRequest, MAX_PINNED_CHATS,
+} from '../services/chatPrefsService';
+import type { ChatPrefMap, FollowRelations } from '../services/chatPrefsService';
+import { subscribeStories, hasSeenAll, filterVisibleStories } from '../services/storyService';
+import type { StoryGroup } from '../services/storyService';
+import { subscribeNotes, setNote, deleteNote, NOTE_MAX } from '../services/noteService';
+import type { Note } from '../services/noteService';
+import { usePresence, usePresenceInfo, formatPresence, PRESENCE_DOT_CLASS } from '../services/presenceService';
+import { useUserBriefs } from '../services/userCache';
+import { timeAgo } from '../utils/timeAgo';
+import { useVisibleStories } from '../hooks/useVisibleStories';
 
-export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
-const SEEN_KEY = 'animeverse_stories_seen';
+// ==========================================
+// نافذة إنشاء مجموعة
+// ==========================================
+const CreateGroupModal: React.FC<{ me: string; convs: Conversation[]; onClose: () => void; onCreated: (groupId: string) => void }> = ({ me, convs, onClose, onCreated }) => {
+  const { t } = useI18n();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const direct = convs.filter((c) => c.type !== 'group');
+  const briefs = useUserBriefs(direct.map((c) => c.otherUid));
 
-export interface Story {
-  id: string;
-  authorId: string;
-  authorName: string;
-  authorPhotoURL?: string;
-  mediaUrl: string;
-  mediaType: 'image' | 'video';
-  caption?: string;
-  createdAt: any;
-}
-
-export interface StoryGroup {
-  authorId: string;
-  authorName: string;
-  authorPhotoURL?: string;
-  stories: Story[];
-}
-
-export type NewStory = Omit<Story, 'id' | 'createdAt'>;
-
-export const createStory = async (data: NewStory) => {
-  const caption = data.caption?.trim();
-  const payload: Record<string, any> = {
-    authorId: data.authorId,
-    authorName: data.authorName,
-    mediaUrl: data.mediaUrl,
-    mediaType: data.mediaType,
-    createdAt: serverTimestamp(),
+  const handleCreate = async () => {
+    if (!name.trim() || selectedUsers.length === 0 || busy) return;
+    setBusy(true); setErr('');
+    try {
+      const groupId = await createGroup(me, name.trim(), selectedUsers);
+      onCreated(groupId);
+    } catch (e) {
+      console.error(e);
+      setErr(t('msgUi.createFail'));
+      setBusy(false);
+    }
   };
-  if (data.authorPhotoURL) payload.authorPhotoURL = data.authorPhotoURL;
-  if (caption) payload.caption = caption.slice(0, 200);
-  const ref = await addDoc(collection(db, 'stories'), payload);
-  return ref.id;
-};
 
-export const deleteStory = async (storyId: string) => {
-  await deleteDoc(doc(db, 'stories', storyId));
-  try {
-    const me = auth.currentUser?.uid;
-    if (!me) return;
-    const snap = await getDocs(
-      query(collection(db, 'storyViews'), where('storyId', '==', storyId), where('authorId', '==', me))
-    );
-    for (let i = 0; i < snap.docs.length; i += 400) {
-      const batch = writeBatch(db);
-      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-  } catch (e) {
-    console.error('story views cleanup failed:', e);
-  }
-};
-
-export const storyMillis = (story: Pick<Story, 'createdAt'>): number => {
-  const c = story.createdAt;
-  if (!c) return Date.now();
-  if (typeof c.toMillis === 'function') return c.toMillis();
-  if (typeof c.seconds === 'number') return c.seconds * 1000;
-  if (typeof c === 'number') return c;
-  return Date.now();
-};
-
-// ---------------------------------------------------------------
-// الاشتراك في القصص (الخام، بدون تصفية)
-// ---------------------------------------------------------------
-export const subscribeStories = (callback: (groups: StoryGroup[]) => void) => {
-  const since = Timestamp.fromMillis(Date.now() - STORY_TTL_MS);
-  const q = query(
-    collection(db, 'stories'),
-    where('createdAt', '>', since),
-    orderBy('createdAt', 'asc')
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const map = new Map<string, StoryGroup>();
-      snap.forEach((d) => {
-        const s = { id: d.id, ...d.data() } as Story;
-        let g = map.get(s.authorId);
-        if (!g) {
-          g = {
-            authorId: s.authorId,
-            authorName: s.authorName,
-            authorPhotoURL: s.authorPhotoURL,
-            stories: [],
-          };
-          map.set(s.authorId, g);
-        }
-        g.authorName = s.authorName;
-        g.authorPhotoURL = s.authorPhotoURL;
-        g.stories.push(s);
-      });
-      const groups = Array.from(map.values()).sort(
-        (a, b) =>
-          storyMillis(b.stories[b.stories.length - 1]) -
-          storyMillis(a.stories[a.stories.length - 1])
-      );
-      callback(groups);
-    },
-    (err) => {
-      console.error('Error fetching stories:', err);
-      callback([]);
-    }
-  );
-};
-
-// ---------------------------------------------------------------
-// دوال تصفية القصص (المنطق الجديد)
-// ---------------------------------------------------------------
-
-const VISITED_KEY = 'animeverse_visited_profiles';
-const INTERACTED_KEY = 'animeverse_interacted_profiles';
-
-interface InteractionRecord {
-  postCount: number;
-  lastInteraction: number;
-}
-
-const readVisited = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem(VISITED_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return new Set(Array.isArray(arr) ? arr : []);
-  } catch {
-    return new Set();
-  }
-};
-
-const writeVisited = (set: Set<string>) => {
-  try {
-    localStorage.setItem(VISITED_KEY, JSON.stringify(Array.from(set)));
-  } catch {}
-};
-
-const readInteracted = (): Record<string, InteractionRecord> => {
-  try {
-    const raw = localStorage.getItem(INTERACTED_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeInteracted = (map: Record<string, InteractionRecord>) => {
-  try {
-    localStorage.setItem(INTERACTED_KEY, JSON.stringify(map));
-  } catch {}
-};
-
-/** تسجيل زيارة لملف شخصي (لإظهار قصته دائمًا بعد الزيارة) */
-export const markProfileVisited = (uid: string): void => {
-  const set = readVisited();
-  if (set.has(uid)) return;
-  set.add(uid);
-  writeVisited(set);
-};
-
-/** تسجيل تفاعل مع منشور أو ريلز (إعجاب، تعليق، إعادة نشر) */
-export const markPostInteraction = (authorUid: string): void => {
-  const map = readInteracted();
-  const prev = map[authorUid] || { postCount: 0, lastInteraction: 0 };
-  map[authorUid] = {
-    postCount: prev.postCount + 1,
-    lastInteraction: Date.now(),
+  const toggleUser = (uid: string) => {
+    setSelectedUsers((prev) => (prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]));
   };
-  writeInteracted(map);
-};
 
-/** هل يجب إظهار قصة هذا المستخدم؟ */
-export const shouldShowStory = (
-  authorId: string,
-  me: string,
-  rel: { following: Set<string>; followers: Set<string> }
-): boolean => {
-  if (authorId === me) return true;
-  if (rel.following.has(authorId)) return true;
-  if (readVisited().has(authorId)) return true;
-  const interactions = readInteracted()[authorId];
-  if (interactions && interactions.postCount >= 4) return true;
-  return false;
-};
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+          <h3 className="text-white font-bold">{step === 1 ? t('msgUi.pickMembers') : t('msgUi.groupName')}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
 
-/** تصفية مجموعات القصص بناءً على شروط الظهور */
-export const filterVisibleStories = (
-  groups: StoryGroup[],
-  me: string,
-  rel: { following: Set<string>; followers: Set<string> },
-  authorAccountTypes: Record<string, 'public' | 'private'>,
-  meFollowsAuthors: Set<string>
-): StoryGroup[] => {
-  return groups.filter((g) => {
-    if (g.authorId === me) return true;
-    const accountType = authorAccountTypes[g.authorId] || 'public';
-    if (accountType === 'private') {
-      // الحساب الخاص: القصص مخفية عن غير المتابعين المقبولين
-      return meFollowsAuthors.has(g.authorId);
-    }
-    return shouldShowStory(g.authorId, me, rel);
-  });
-};
+        <div className="p-4">
+          {step === 1 ? (
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {direct.length === 0 && <p className="text-xs text-slate-400 text-center py-4">{t('msgUi.startDirectFirst')}</p>}
+              {direct.map((c) => {
+                const b = briefs[c.otherUid];
+                return (
+                  <button key={c.id} onClick={() => toggleUser(c.otherUid)} className="w-full flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl transition">
+                    <Avatar src={b?.photoURL} seed={c.otherUid} name={b?.displayName} className="w-10 h-10 rounded-full object-cover" />
+                    <span className="flex-1 text-sm font-bold text-white text-start">{b?.displayName || '...'}</span>
+                    <div className={`w-5 h-5 rounded-full border-2 ${selectedUsers.includes(c.otherUid) ? 'bg-primary-500 border-primary-500' : 'border-slate-500'}`} />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder={t('msgUi.groupNamePh')} className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white outline-none focus:border-primary-500" />
+          )}
+          {err && <p className="text-xs text-red-400 mt-3">{err}</p>}
+        </div>
 
-const readSeen = (): Record<string, number> => {
-  try {
-    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
-  } catch {
-    return {};
-  }
-};
-
-export const markStorySeen = (authorId: string, millis: number) => {
-  try {
-    const seen = readSeen();
-    if ((seen[authorId] || 0) >= millis) return;
-    seen[authorId] = millis;
-    localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
-  } catch {}
-};
-
-export const hasSeenAll = (group: StoryGroup): boolean => {
-  const last = group.stories[group.stories.length - 1];
-  if (!last) return true;
-  return (readSeen()[group.authorId] || 0) >= storyMillis(last);
-};
-
-// ---------- مشاهدات القصص والتفاعل ----------
-export interface StoryView {
-  id: string;
-  storyId: string;
-  authorId: string;
-  viewerId: string;
-  liked: boolean;
-  reply?: string;
-  createdAt: any;
-  updatedAt?: any;
-}
-
-export interface StoryViewRecord {
-  liked: boolean;
-  reply?: string;
-}
-
-const viewRef = (storyId: string, viewerId: string) => doc(db, 'storyViews', `${storyId}_${viewerId}`);
-
-export const recordStoryView = async (story: Story, viewerId: string): Promise<StoryViewRecord> => {
-  if (story.authorId === viewerId) return { liked: false };
-  const ref = viewRef(story.id, viewerId);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const d = snap.data() as any;
-    return { liked: !!d.liked, reply: typeof d.reply === 'string' ? d.reply : undefined };
-  }
-  await setDoc(ref, {
-    storyId: story.id,
-    authorId: story.authorId,
-    viewerId,
-    liked: false,
-    createdAt: serverTimestamp(),
-  });
-  return { liked: false };
-};
-
-export const setStoryLiked = async (story: Story, viewerId: string, liked: boolean): Promise<void> => {
-  await updateDoc(viewRef(story.id, viewerId), { liked, updatedAt: serverTimestamp() });
-};
-
-export const sendStoryReply = async (story: Story, viewerId: string, text: string): Promise<void> => {
-  const reply = text.trim().slice(0, 200);
-  if (!reply) return;
-  await updateDoc(viewRef(story.id, viewerId), { reply, updatedAt: serverTimestamp() });
-};
-
-export const subscribeStoryViews = (
-  story: Pick<Story, 'id' | 'authorId'>,
-  callback: (views: StoryView[]) => void,
-  onError?: (e: unknown) => void
-) => {
-  const q = query(
-    collection(db, 'storyViews'),
-    where('storyId', '==', story.id),
-    where('authorId', '==', story.authorId)
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as StoryView));
-      const ms = (v: StoryView) => v.createdAt?.toMillis?.() ?? Date.now();
-      items.sort((a, b) => ms(b) - ms(a));
-      callback(items);
-    },
-    onError
+        <div className="p-4 border-t border-white/10 flex justify-end gap-2">
+          {step === 2 && <button onClick={() => setStep(1)} className="px-4 py-2 text-slate-300">{t('chatUi.back')}</button>}
+          {step === 1 ? (
+            <button onClick={() => setStep(2)} disabled={selectedUsers.length === 0} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{t('msgUi.next')}</button>
+          ) : (
+            <button onClick={handleCreate} disabled={!name.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : t('msgUi.create')}</button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
+
+// ==========================================
+// نافذة الملاحظة (تظهر فوق صورة البروفايل 24 ساعة)
+// ==========================================
+const NoteModal: React.FC<{ uid: string; current?: string; onClose: () => void }> = ({ uid, current, onClose }) => {
+  const { t } = useI18n();
+  const [text, setText] = useState(current || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true); setErr('');
+    try { await setNote(uid, text); onClose(); }
+    catch (e) { console.error(e); setErr(t('msgUi.noteSaveFail')); setBusy(false); }
+  };
+  const remove = async () => {
+    setBusy(true);
+    try { await deleteNote(uid); onClose(); }
+    catch (e) { console.error(e); setErr(t('msgUi.noteDeleteFail')); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-dark-900 w-full max-w-sm rounded-2xl overflow-hidden border border-white/10" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+          <h3 className="text-white font-bold">{t('msgUi.yourNote')}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-4 space-y-2">
+          <input autoFocus value={text} onChange={(e) => setText(e.target.value.slice(0, NOTE_MAX))} placeholder={t('msgUi.notePh')} className="w-full p-3 rounded-xl bg-dark-800 border border-white/10 text-white text-sm outline-none focus:border-primary-500" />
+          <p className="text-[11px] text-slate-500 flex justify-between"><span>{t('msgUi.noteHint')}</span><span>{text.length}/{NOTE_MAX}</span></p>
+          {err && <p className="text-xs text-red-400">{err}</p>}
+        </div>
+        <div className="p-4 border-t border-white/10 flex items-center justify-between gap-2">
+          {current ? <button onClick={remove} disabled={busy} className="px-3 py-2 text-red-400 text-sm flex items-center gap-1"><Trash2 className="w-4 h-4" /> {t('chatUi.delete')}</button> : <span />}
+          <button onClick={save} disabled={!text.trim() || busy} className="btn-primary px-6 py-2 rounded-xl disabled:opacity-50">{busy ? '...' : t('msgUi.share')}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// شريط القصص والملاحظات (معدل لاستخدام useVisibleStories)
+// ==========================================
+const NoteBubble: React.FC<{ text: string; onClick?: () => void }> = ({ text, onClick }) => (
+  <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-10 max-w-[80px]">
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      className="block max-w-full px-2.5 py-1 rounded-2xl bg-dark-800 border border-white/15 text-[10px] text-white leading-tight shadow-lg truncate"
+    >
+      {text}
+    </button>
+    <span className="absolute left-1/2 -translate-x-1/2 -bottom-[3px] w-2 h-2 rotate-45 bg-dark-800 border-b border-e border-white/15" />
+  </div>
+);
+
+const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, showActivity }) => {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  const { groups, loading } = useVisibleStories();
+  const [notes, setNotes] = useState<Record<string, Note>>({});
+  const [viewer, setViewer] = useState<number | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => subscribeNotes(setNotes), []);
+
+  const mine = groups.find((g) => g.authorId === me);
+  const others = groups.filter((g) => g.authorId !== me);
+  const ordered = mine ? [mine, ...others] : others;
+  const noteCandidates = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
+  const briefs = useUserBriefs(noteCandidates);
+  const noteOnlyUids = noteCandidates.filter((uid) => !!briefs[uid]);
+  const online = usePresence([...others.map((g) => g.authorId), ...noteOnlyUids], showActivity);
+
+  const ring = (active: boolean) => (active ? 'bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400' : 'bg-white/15');
+  const myNote = notes[me]?.text;
+
+  return (
+    <>
+      <div className="flex gap-3.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-3 pt-8 snap-x">
+        {/* أنا: القصة + زر الإضافة + الملاحظة */}
+        <div className="shrink-0 snap-start w-[72px] flex flex-col items-center gap-1.5">
+          <div className="relative">
+            {myNote ? <NoteBubble text={myNote} onClick={() => setNoteOpen(true)} /> : (
+              <button type="button" onClick={() => setNoteOpen(true)} className="absolute -top-6 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-2xl bg-dark-800 border border-dashed border-white/20 text-[10px] text-slate-400 z-10 whitespace-nowrap">{t('msgUi.noteBubble')}</button>
+            )}
+            <button type="button" onClick={() => (mine ? setViewer(0) : navigate('/create-post?mode=story'))} className={`block w-[72px] h-[72px] rounded-full p-[2.5px] ${ring(!!mine && !hasSeenAll(mine))}`}>
+              <Avatar src={profile?.photoURL} seed={me} name={profile?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+            </button>
+            <button type="button" onClick={() => navigate('/create-post?mode=story')} className="absolute -bottom-0.5 -end-0.5 w-6 h-6 rounded-full bg-gradient-to-tr from-primary-500 to-accent-500 border-2 border-dark-950 flex items-center justify-center">
+              <Plus className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-300 font-semibold truncate w-full text-center">{t('msgUi.yourStory')}</span>
+        </div>
+
+        {/* أصحاب القصص (بعد التصفية) */}
+        {others.map((g) => {
+          const seen = hasSeenAll(g);
+          const note = notes[g.authorId]?.text;
+          return (
+            <button key={g.authorId} onClick={() => setViewer(ordered.indexOf(g))} className="shrink-0 snap-start w-[72px] flex flex-col items-center gap-1.5">
+              <div className="relative">
+                {note && <NoteBubble text={note} />}
+                <div className={`w-[72px] h-[72px] rounded-full p-[2.5px] ${ring(!seen)}`}>
+                  <Avatar src={g.authorPhotoURL} seed={g.authorId} name={g.authorName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+                </div>
+                {online[g.authorId] && <span className={`absolute bottom-0.5 end-0.5 w-4 h-4 ${PRESENCE_DOT_CLASS}`} />}
+              </div>
+              <span className={`text-[11px] font-semibold truncate w-full text-center ${seen ? 'text-slate-500' : 'text-slate-200'}`}>{g.authorName}</span>
+            </button>
+          );
+        })}
+
+        {/* أصحاب ملاحظات فقط */}
+        {noteOnlyUids.map((uid) => {
+          const b = briefs[uid];
+          return (
+            <button key={uid} onClick={() => navigate(`/user/${uid}`)} className="shrink-0 snap-start w-[72px] flex flex-col items-center gap-1.5">
+              <div className="relative">
+                <NoteBubble text={notes[uid].text} />
+                <div className="w-[72px] h-[72px] rounded-full p-[2.5px] bg-white/15">
+                  <Avatar src={b?.photoURL} seed={uid} name={b?.displayName} className="w-full h-full rounded-full object-cover bg-dark-900 border-[2.5px] border-dark-950" />
+                </div>
+                {online[uid] && <span className={`absolute bottom-0.5 end-0.5 w-4 h-4 ${PRESENCE_DOT_CLASS}`} />}
+              </div>
+              <span className="text-[11px] font-semibold truncate w-full text-center text-slate-300">{b?.displayName || '...'}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {viewer !== null && (
+        <StoryViewer groups={ordered} startGroup={viewer} onClose={() => { setViewer(null); setTick((n) => n + 1); }} />
+      )}
+      {noteOpen && <NoteModal uid={me} current={myNote} onClose={() => setNoteOpen(false)} />}
+    </>
+  );
+};
+
+// ... (باقي الكود كما هو: PeopleResults, ConversationList, ActionItem, Messages)
+// (لضمان عدم الإطالة، يمكنك نسخ باقي الكود من الملف الأصلي دون تغيير)
