@@ -661,6 +661,13 @@ service cloud.firestore {
           )
           ||
           (
+            // تثبيت الرسائل: قائمة معرّفات (حتى 3)
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned'])
+            && request.resource.data.pinned is list
+            && request.resource.data.pinned.size() <= 3
+          )
+          ||
+          (
             resource.data.type == 'group'
             && request.auth.uid in resource.data.admins
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'admins'])
@@ -688,8 +695,23 @@ service cloud.firestore {
 
         allow update: if signedIn()
           && request.auth.uid in convMembers(convId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-          && request.resource.data.reactions is map;
+          && (
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              && request.resource.data.reactions is map
+            )
+            ||
+            (
+              // تعديل الرسالة: لصاحبها فقط
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.senderId == resource.data.senderId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ciphertext', 'iv', 'wraps', 'edited'])
+              && validText(request.resource.data.ciphertext, 1, 20000)
+              && validText(request.resource.data.iv, 8, 64)
+              && request.resource.data.edited == true
+              && (!('wraps' in request.resource.data) || request.resource.data.wraps is map)
+            )
+          );
 
         allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
       }
@@ -809,6 +831,7 @@ service cloud.firestore {
           'comment',
           'follow',
           'request',
+          'mention',
           'new_device'
         ]
         && validText(request.resource.data.fromName, 1, 50)
