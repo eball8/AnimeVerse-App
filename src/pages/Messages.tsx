@@ -165,8 +165,10 @@ const StoriesNotesBar: React.FC<{ me: string; showActivity: boolean }> = ({ me, 
   const mine = groups.find((g) => g.authorId === me);
   const others = groups.filter((g) => g.authorId !== me);
   const ordered = mine ? [mine, ...others] : others;
-  const noteOnlyUids = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
-  const briefs = useUserBriefs(noteOnlyUids);
+  const noteCandidates = Object.keys(notes).filter((uid) => uid !== me && !groups.some((g) => g.authorId === uid));
+  const briefs = useUserBriefs(noteCandidates);
+  // نعرض فقط أصحاب الملاحظات الذين لهم حساب حقيقي (نحذف الأيقونة الوهمية/الروبوت)
+  const noteOnlyUids = noteCandidates.filter((uid) => !!briefs[uid]);
   const online = usePresence([...others.map((g) => g.authorId), ...noteOnlyUids], showActivity);
 
   const ring = (active: boolean) => (active ? 'bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400' : 'bg-white/15');
