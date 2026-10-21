@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { subscribeStories, hasSeenAll } from '../services/storyService';
+import { hasSeenAll } from '../services/storyService';
 import type { StoryGroup } from '../services/storyService';
 import StoryViewer from './StoryViewer';
 import { useI18n } from '../i18n/I18nContext';
+import { useVisibleStories } from '../hooks/useVisibleStories';
 
 const avatarOf = (url: string | undefined, uid: string) =>
   url || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`;
@@ -14,11 +15,9 @@ const StoriesBar: React.FC = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { t } = useI18n();
-  const [groups, setGroups] = useState<StoryGroup[]>([]);
+  const { groups, loading } = useVisibleStories();
   const [viewer, setViewer] = useState<number | null>(null);
   const [, setTick] = useState(0);
-
-  useEffect(() => subscribeStories(setGroups), []);
 
   if (!user || !profile) return null;
 
@@ -27,6 +26,10 @@ const StoriesBar: React.FC = () => {
   const ordered = mine ? [mine, ...others] : others;
 
   const open = (g: StoryGroup) => setViewer(ordered.indexOf(g));
+
+  if (loading && groups.length === 0) {
+    return <div className="h-20" />;
+  }
 
   return (
     <>
