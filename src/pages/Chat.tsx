@@ -116,7 +116,7 @@ const saveMediaToDevice = async (src: string, fallbackMime: string): Promise<voi
 };
 
 // ---------------------------------------------------------------
-// الثيمات والخلفيات (تُحفظ في وثيقة المحادثة، فيراها الطرفان). اسم كل ثيم يُترجم بالمفتاح chatTheme.<id>
+// الثيمات والخلفيات (تُحفظ في وثيقة المحادثة، فيراها الطرفان)
 // ---------------------------------------------------------------
 interface ChatTheme { id: string; bg: string; mine: string; }
 const THEMES: ChatTheme[] = [
@@ -157,7 +157,6 @@ const previewOf = (p: ChatPayload | null | undefined, t: (k: string) => string):
 const mediaCache = new Map<string, string>();
 const rememberMedia = (url: string, blob: Blob) => { mediaCache.set(url, URL.createObjectURL(blob)); };
 
-// فك تشفير وسائط رسالة (أو أخذها من الذاكرة المؤقتة) وإرجاع رابطها
 const ensureMediaSrc = async (p: { url: string; key: string; iv: string; mime: string }): Promise<string> => {
   const cached = mediaCache.get(p.url);
   if (cached) return cached;
@@ -193,8 +192,7 @@ const useDecryptedMedia = (p: MediaPayload, auto: boolean) => {
 };
 
 // ---------------------------------------------------------------
-// الرسالة الصوتية: نفك التشفير مسبقاً عند ظهورها، فيعمل الضغط فوراً
-// (التشغيل يجب أن يبدأ مباشرة داخل حدث الضغط، وإلا يمنعه الأندرويد)
+// الرسالة الصوتية
 // ---------------------------------------------------------------
 let activeAudio: HTMLAudioElement | null = null;
 
@@ -320,7 +318,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
 };
 
 // ---------------------------------------------------------------
-// قائمة الضغط المطوّل: 6 إيموجيات + زر (+) لكل الإيموجيات + رد/توجيه/نسخ/حذف
+// قائمة الضغط المطوّل
 // ---------------------------------------------------------------
 const MessageSheet: React.FC<{
   mine: boolean;
@@ -419,7 +417,7 @@ const ForwardModal: React.FC<{ convs: Conversation[]; onClose: () => void; onPic
 };
 
 // ---------------------------------------------------------------
-// ثيم وخلفية المحادثة (تُفتح من قائمة الخيارات)
+// ثيم وخلفية المحادثة
 // ---------------------------------------------------------------
 const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onClose: () => void }> = ({ current, onPick, onClose }) => {
   const { t } = useI18n();
@@ -448,7 +446,7 @@ const ThemeSheet: React.FC<{ current: string; onPick: (id: string) => void; onCl
 };
 
 // ---------------------------------------------------------------
-// الوسائط المشتركة (صور وفيديوهات المحادثة)
+// الوسائط المشتركة
 // ---------------------------------------------------------------
 const MediaThumb: React.FC<{ payload: MediaPayload; onOpen: (src: string, type: 'image' | 'video') => void }> = ({ payload, onOpen }) => {
   const isVideo = payload.mime.startsWith('video/');
@@ -553,7 +551,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const press = useRef<{ timer: number | null; x: number; y: number }>({ timer: null, x: 0, y: 0 });
   const markingRef = useRef(false);
 
-  // ---- المحادثة (فردية أم مجموعة) ----
   useEffect(() => subscribeConversations(me, setConvs), [me]);
   const conv = convs?.find((c) => c.id === other || c.id === convIdOf(me, other)) || null;
   const isGroup: boolean | undefined = convs === null ? undefined : conv?.type === 'group';
@@ -570,14 +567,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
   const nameOf = (uid: string) => (uid === me ? t('chatUi.you') : briefs[uid]?.displayName || t('chatUi.member'));
 
-  // ---- كتم / تقييد / حظر / الرسائل المؤقتة ----
   useEffect(() => subscribeChatPrefs(me, setPrefs), [me]);
   useEffect(() => subscribeBlockedIds(me, setBlockedIds), [me]);
   const pref = prefs[convId];
   const iBlocked = isGroup === false && blockedIds.has(other);
   const disappearAfter = conv?.disappearAfter || 0;
 
-  // ساعة داخلية تعيد تقييم انتهاء الرسائل كل 30 ثانية (فقط عند تفعيل الرسائل المؤقتة)
   useEffect(() => {
     if (!disappearAfter) return;
     setNow(Date.now());
@@ -585,12 +580,19 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     return () => window.clearInterval(id);
   }, [disappearAfter]);
 
+  const deletedAt = pref?.deletedAt || 0;
   const visibleMessages = useMemo(
-    () => messages.filter((m) => !isExpired(m, disappearAfter, now)),
-    [messages, disappearAfter, now]
+    () => messages.filter((m) => {
+      if (isExpired(m, disappearAfter, now)) return false;
+      if (deletedAt) {
+        const ms: number | undefined = m.createdAt?.toMillis?.();
+        if (ms !== undefined && ms <= deletedAt) return false;
+      }
+      return true;
+    }),
+    [messages, disappearAfter, now, deletedAt]
   );
 
-  // كل مستخدم يحذف رسائله المنتهية من قاعدة البيانات (القواعد تسمح بحذف الرسالة لصاحبها فقط)
   useEffect(() => {
     if (!disappearAfter) return;
     const mine = messages.filter((m) => m.senderId === me && isExpired(m, disappearAfter, now) && !purgedRef.current.has(m.id));
@@ -599,7 +601,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     Promise.allSettled(mine.map((m) => removeMessage(convId, m.id))).catch(console.error);
   }, [messages, disappearAfter, now, convId, me]);
 
-  // ---- البحث داخل المحادثة ----
   const q = searchQ.trim().toLowerCase();
   const matchIds = useMemo(() => {
     if (!searchOpen || !q) return [] as string[];
@@ -617,7 +618,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     document.getElementById(`msg-${currentMatch}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [currentMatch]);
 
-  // ---- الوسائط المشتركة (الأحدث أولاً) ----
   const mediaItems = useMemo(
     () => visibleMessages
       .map((m) => plain[m.id])
@@ -626,7 +626,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     [visibleMessages, plain]
   );
 
-  // ---- مفاتيح التشفير ----
   useEffect(() => {
     let off = false;
     (async () => {
@@ -645,7 +644,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     return () => { off = true; };
   }, [isGroup, other]);
 
-  // ---- الرسائل ----
   useEffect(() => {
     if (isGroup === undefined) return;
     setMessages([]); setPlain({}); decSigRef.current = {};
@@ -670,14 +668,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [visibleMessages.length]);
 
-  // ---- علامة "مقروء" (تُطفئ النقطة الحمراء) ----
   useEffect(() => {
     if (!conv || markingRef.current || !isUnread(conv, me)) return;
     markingRef.current = true;
     markConversationRead(conv.id, me).catch(console.error).finally(() => { markingRef.current = false; });
   }, [conv, me]);
 
-  // ---- شاشة معاينة الصور/الفيديو: زر الرجوع في الهاتف يغلقها ويبقيك في الدردشة ----
   useEffect(() => {
     if (!viewer) return;
     window.history.pushState({ ...(window.history.state || {}), avViewer: 1 }, '');
@@ -701,7 +697,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     return `${t('chat.sendFailed')}${c ? ` (${c})` : ''}`;
   };
 
-  // ---- الإرسال ----
   const doSend = async (payload: ChatPayload): Promise<boolean> => {
     if (iBlocked) { setError(t('chatUi.youBlocked')); return false; }
     setBusy(true); setError('');
@@ -717,7 +712,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     } finally { setBusy(false); }
   };
 
-  // ---- الإشارة: نرسل إشعاراً لكل عضو ذُكر باسم المستخدم ----
   const notifyMentions = async (v: string) => {
     const names = extractMentions(v).slice(0, 5);
     if (!names.length) return;
@@ -742,7 +736,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     }
   };
 
-  // ---- تعديل رسالة نصية ----
   const cancelEdit = () => { setEditing(null); setText(''); };
 
   const startEdit = (m: RawMessage) => {
@@ -778,7 +771,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     } finally { setBusy(false); }
   };
 
-  // ---- تثبيت الرسائل ----
   const pinnedIds = conv?.pinned || [];
   const pinnedVisible = pinnedIds.filter((id) => visibleMessages.some((m) => m.id === id));
   const pinSafe = pinnedVisible.length ? pinIdx % pinnedVisible.length : 0;
@@ -804,7 +796,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     setPinIdx((i) => i + 1);
   };
 
-  // ---- تنزيل الصور/الفيديو ----
   const downloadSrc = async (src: string, fallbackMime: string) => {
     if (downloading) return;
     setDownloading(true);
@@ -829,7 +820,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     }
   };
 
-  // ---- اقتراحات الإشارة (@) ----
   const mentionMatch = /(^|\s)@([a-zA-Z0-9_.]*)$/.exec(text);
   const mentionQuery = mentionMatch ? mentionMatch[2].toLowerCase() : null;
   const mentionOptions = mentionQuery === null || mentionDismissed === text ? [] : memberUids
@@ -890,7 +880,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       okFiles.push(f);
     }
     if (!okFiles.length) return;
-    // نفتح شاشة المعاينة ليكتب المستخدم نصاً مع الصورة/الفيديو قبل الإرسال
     setCaption('');
     setPending(okFiles.map((f) => ({ file: f, url: URL.createObjectURL(f) })));
   };
@@ -916,7 +905,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     closePending();
   };
 
-  // ---- التسجيل الصوتي (يعمل في الفردي والمجموعات) ----
   const { recording, seconds, start, stop, cancel } = useVoiceRecorder(sendVoice);
   const startRec = async () => {
     setError('');
@@ -932,7 +920,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     await sendVoice(r);
   };
 
-  // ---- التفاعلات / الرد / التوجيه ----
   const react = (m: RawMessage, emoji: string) => {
     const has = !!m.reactions?.[emoji]?.includes(me);
     toggleReaction(convId, m.id, emoji, me, has).catch((e) => { console.error(e); setError(t('chatUi.reactFail')); });
@@ -951,7 +938,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
     } catch (e: any) { console.error(e); setError(errText(e)); }
   };
 
-  // ---- الضغط المطوّل على الرسالة ----
   const clearPress = () => { if (press.current.timer) { clearTimeout(press.current.timer); press.current.timer = null; } };
   const startPress = (e: React.PointerEvent, m: RawMessage) => {
     clearPress();
@@ -968,7 +954,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const name = isGroup ? (conv?.name || t('chatUi.group')) : (briefs[other]?.displayName || '...');
   const BackIcon = lang === 'ar' ? ArrowRight : ArrowLeft;
 
-  // ---- إجراءات قائمة الخيارات ----
   const needConv = (): boolean => {
     if (conv) return true;
     setError(t('chatUi.needConv'));
@@ -1076,7 +1061,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         className={`fixed inset-x-0 z-30 mx-auto max-w-2xl flex flex-col ${theme.id !== 'default' ? 'keep-dark' : ''}`}
         style={{ top: 'var(--app-header-h, calc(env(safe-area-inset-top) + 3.75rem))', bottom: 0, background: theme.bg }}
       >
-        {/* الشريط العلوي */}
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0 chat-bar backdrop-blur">
           <button onClick={() => navigate('/messages')} className="p-2 rounded-xl hover:bg-white/10 text-slate-200"><BackIcon className="w-5 h-5" /></button>
           <button onClick={() => !isGroup && navigate(`/user/${other}`)} className="flex items-center gap-3 min-w-0 flex-1">
@@ -1098,7 +1082,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           <button onClick={() => setShowOptions(true)} className="p-2 rounded-xl hover:bg-white/10 text-slate-200" aria-label={t('chatUi.optionsAria')}><MoreVertical className="w-5 h-5" /></button>
         </div>
 
-        {/* البحث في المحادثة */}
         {searchOpen && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0 chat-bar">
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
@@ -1116,14 +1099,12 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           </div>
         )}
 
-        {/* شريط الرسائل المؤقتة */}
         {disappearAfter > 0 && (
           <div className="px-4 py-1.5 text-[11px] text-center text-primary-300 chat-bar shrink-0 flex items-center justify-center gap-1.5 border-b border-white/5">
             <Timer className="w-3 h-3" /> {t('chatUi.disappearBar')}
           </div>
         )}
 
-        {/* شريط الرسالة المثبّتة */}
         {pinnedCurrentId && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 shrink-0 chat-bar">
             <Pin className="w-4 h-4 text-primary-400 shrink-0" />
@@ -1144,7 +1125,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           </div>
         )}
 
-        {/* الرسائل */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-2">
           {visibleMessages.map((m) => {
             const mine = m.senderId === me;
@@ -1207,7 +1187,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           <div ref={endRef} />
         </div>
 
-        {/* شريط الإدخال */}
         <div className="shrink-0 border-t border-white/10 chat-bar-strong px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm">
           {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mb-2">{error}</p>}
           {notice && <p className="text-xs text-emerald-300 bg-emerald-500/10 p-2 rounded-lg mb-2">{notice}</p>}
@@ -1279,7 +1258,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         </div>
       </div>
 
-      {/* معاينة قبل الإرسال مع كتابة نص */}
       {pending.length > 0 && (
         <div className="fixed inset-0 z-[125] bg-black/95 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="flex items-center justify-between px-4 py-3">
@@ -1316,7 +1294,6 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
         </div>
       )}
 
-      {/* معاينة الوسائط مع سهم رجوع للدردشة */}
       {viewer && (
         <div className="fixed inset-0 z-[130] bg-black flex items-center justify-center" onClick={closeViewer}>
           <button
