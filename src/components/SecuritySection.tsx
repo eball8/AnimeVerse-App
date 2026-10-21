@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ArrowRight, Lock, KeyRound, Mail, Loader2, CheckCircle2, AlertCircle, Pencil, Trash2, Plus,
+  RefreshCw, ShieldCheck,
 } from 'lucide-react';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { checkEmail } from '../utils/emailValidation';
@@ -144,6 +147,10 @@ const MethodRow: React.FC<{
   );
 };
 
+// مدة صلاحية التحقق من البريد، ومدة الانتظار قبل إعادة إرسال الرسالة
+const GATE_MINUTES = 10;
+const COOLDOWN_SECONDS = 60;
+
 type Panel =
   | null
   | 'addEmail'
@@ -156,7 +163,7 @@ type Panel =
 // ---------- الأمان وكلمة السر ----------
 const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { t } = useI18n();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, resendVerification } = useAuth();
   const { devices, trusted, current, loaded, failed } = useDevices(user!.uid);
   const [panel, setPanel] = useState<Panel>(null);
   const [email, setEmail] = useState('');
@@ -165,6 +172,29 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [cur, setCur] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // التحقق من البريد السابق قبل تعديل طرق الدخول
+  const [verifiedUntil, setVerifiedUntil] = useState(0);
+  const [pendingPanel, setPendingPanel] = useState<Panel>(null);
+  const [gateBusy, setGateBusy] = useState(false);
+  const [gateErr, setGateErr] = useState('');
+  const [gateCooldown, setGateCooldown] = useState(0);
+
+  // نسيت كلمة السر
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
+
+  useEffect(() => {
+    if (gateCooldown <= 0) return;
+    const timer = setTimeout(() => setGateCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [gateCooldown]);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const timer = setTimeout(() => setResetCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resetCooldown]);
 
   // مزامنة البريد (بعد تأكيد رابط تغيير البريد مثلاً) وتحديث بيانات المستخدم
   useEffect(() => {
@@ -189,10 +219,86 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setCur('');
   };
 
+  // البريد الذي تُرسل إليه رسالة التحقق (البريد الحالي قبل أي تعديل)
+  const gateEmail = user.email || passwordEmail || googleEmail || '';
+
+  const sendGateMail = async () => {
+    setGateErr('');
+    setGateBusy(true);
+    try {
+      await resendVerification();
+      setGateCooldown(COOLDOWN_SECONDS);
+    } catch (e) {
+      console.error(e);
+      setGateErr(errorText(e, t));
+    } finally {
+      setGateBusy(false);
+    }
+  };
+
+  const confirmGate = async () => {
+    setGateErr('');
+    setGateBusy(true);
+    try {
+      if (!auth.currentUser) throw new Error('no-user');
+      await auth.currentUser.reload();
+      if (!auth.currentUser.emailVerified) {
+        setGateErr(t('af.errNotVerified'));
+        return;
+      }
+      setVerifiedUntil(Date.now() + GATE_MINUTES * 60 * 1000);
+      setPanel(pendingPanel);
+      setPendingPanel(null);
+      refreshUser();
+    } catch (e) {
+      console.error(e);
+      setGateErr(t('af.errConn'));
+    } finally {
+      setGateBusy(false);
+    }
+  };
+
+  const cancelGate = () => {
+    setPendingPanel(null);
+    setGateErr('');
+  };
+
   const openPanel = (p: Panel) => {
     resetFields();
     setMsg(null);
-    setPanel(panel === p ? null : p);
+    if (panel === p) {
+      setPanel(null);
+      return;
+    }
+    // تحقق حديث من البريد: نفتح اللوحة مباشرة
+    if (Date.now() < verifiedUntil) {
+      setPendingPanel(null);
+      setPanel(p);
+      return;
+    }
+    // وإلا نطلب التحقق من البريد السابق أولاً
+    const alreadySent = pendingPanel !== null;
+    setPanel(null);
+    setPendingPanel(p);
+    setGateErr('');
+    if (!alreadySent) sendGateMail();
+  };
+
+  const onForgotPassword = async () => {
+    const target = passwordEmail || user.email;
+    if (!target) return;
+    setResetBusy(true);
+    setMsg(null);
+    try {
+      await sendPasswordResetEmail(auth, target);
+      setResetCooldown(COOLDOWN_SECONDS);
+      setMsg({ kind: 'ok', text: t('sc.forgotSent', { email: target }) });
+    } catch (e) {
+      console.error(e);
+      setMsg({ kind: 'err', text: errorText(e, t) });
+    } finally {
+      setResetBusy(false);
+    }
   };
 
   const validNewPassword = (): string | null => {
@@ -360,6 +466,40 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </p>
         )}
       </div>
+
+      {/* ---------- التحقق من البريد السابق ---------- */}
+      {pendingPanel !== null && (
+        <div className="card p-5 space-y-4 text-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-primary-500/20 to-accent-500/20 border border-primary-500/30 flex items-center justify-center">
+            <ShieldCheck className="w-7 h-7 text-primary-400" />
+          </div>
+          <h3 className="text-sm font-black text-white">{t('sc.gate.title')}</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">{t('sc.gate.desc')}</p>
+          <div>
+            <p className="text-xs text-slate-400 leading-relaxed">{t('af.sentVerifyTo')}</p>
+            <p dir="ltr" className="text-sm font-bold text-primary-400 mt-1 break-all">{gateEmail}</p>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            {t('af.verifyHint')} <b className="text-white">"{t('af.verified')}"</b>
+          </p>
+          {gateErr && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{gateErr}</p>}
+          <button onClick={confirmGate} disabled={gateBusy} className={btnCls}>
+            {gateBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {t('af.verified')}
+          </button>
+          <button
+            onClick={sendGateMail}
+            disabled={gateBusy || gateCooldown > 0}
+            className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {gateCooldown > 0 ? t('sc.resendIn', { s: gateCooldown }) : t('af.resend')}
+          </button>
+          <button onClick={cancelGate} disabled={gateBusy} className="w-full py-2 text-slate-400 text-sm font-bold disabled:opacity-50">
+            {t('sc.gate.cancel')}
+          </button>
+        </div>
+      )}
 
       {/* ---------- إضافة البريد وكلمة السر ---------- */}
       {panel === 'addEmail' && !hasPassword && (
@@ -544,6 +684,15 @@ const SecuritySection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           />
           <button onClick={onChangePassword} disabled={!canEdit || busy || panel !== null} className={btnCls}>
             {spinner} {t('sc.savePw')}
+          </button>
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            disabled={resetBusy || resetCooldown > 0}
+            className="w-full py-1 text-center text-xs font-bold text-primary-400 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {resetBusy && <Loader2 className="w-3 h-3 animate-spin" />}
+            {resetCooldown > 0 ? t('sc.resendIn', { s: resetCooldown }) : t('sc.forgot')}
           </button>
         </div>
       )}
