@@ -211,8 +211,8 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
       setSentMsg(true);
       setTimeout(() => setSentMsg(false), 2000);
 
-      // 3. إغلاق القصة والانتقال إلى المحادثة
-      onClose();
+      // 3. الانتقال إلى المحادثة. لا نستدعي onClose() قبل التنقل، لأن React Router v7
+      // يغلّف التنقل بـ startTransition (أولوية أقل) فتظهر الصفحة الخلفية لحظة. القصة تُزال تلقائياً عند مغادرة الصفحة.
       navigate(`/messages/${story.authorId}`);
     } catch (e: any) {
       console.error(e);
@@ -228,7 +228,8 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
 
   const openProfile = () => {
     if (!story || !user) return;
-    onClose();
+    // بدون onClose() هنا: إغلاق العارض قبل التنقل كان يكشف صفحة المجتمع لأجزاء من الثانية
+    // (التنقل في RR v7 يتم داخل startTransition). العارض يختفي مع مغادرة الصفحة.
     if (story.authorId === user.uid) {
       navigate('/profile');
     } else {
