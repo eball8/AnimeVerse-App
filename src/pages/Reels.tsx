@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Heart, MessageCircle, Repeat2, Share2, Link2, Volume2, VolumeX, Loader2, Clapperboard,
-  Plus, Users, MoreVertical, Trash2, ArrowLeft,
+  Plus, Users, MoreVertical, Trash2, ArrowLeft, Music2,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,7 @@ import Avatar from '../components/Avatar';
 import CommentsSheet from '../components/CommentsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useMediaBlocked, useMediaLock } from '../utils/mediaManager';
+import { useSyncedAudio } from '../utils/syncedAudio';
 
 type Tab = 'reels' | 'friends';
 
@@ -52,6 +53,7 @@ interface ItemProps {
   onOpenAuthor: (uid: string) => void;
   onFollow: (p: Post) => void;
   onMore: (p: Post) => void;
+  onUseAudio: (p: Post) => void;
 }
 
 const DOUBLE_TAP_MS = 280;
@@ -66,6 +68,12 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const { post, active, near, muted, liked } = p;
   const blocked = useMediaBlocked();
+
+  // صوت مستعار (ريمكس): يُكتم الفيديو ويُشغَّل الصوت المستعار متزامناً معه
+  const borrowedAudio = post.audioUrl;
+  useSyncedAudio(vref, borrowedAudio, muted, near);
+  // الأسطوانة / خيار استعمال الصوت: تظهر فقط إن سمح صاحب الفيديو (وليس ريمكس ولا إعادة نشر)
+  const audioAllowed = post.allowAudio === true && !post.audioSourceId && !post.repostOfId;
 
   useEffect(() => {
     const el = ref.current;
@@ -95,7 +103,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   useEffect(() => {
     const v = vref.current;
     if (!v) return;
-    v.muted = muted;
+    v.muted = muted || !!borrowedAudio;
     if (active && !blocked) {
       v.play().catch(() => {
         // المتصفح منع التشغيل بالصوت: نشغّله بدون صوت ونُظهر زر الكتم
@@ -106,7 +114,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
         }
       });
     } else v.pause();
-  }, [active, near, muted, blocked]);
+  }, [active, near, muted, blocked, borrowedAudio]);
 
   useEffect(
     () => () => {
@@ -165,7 +173,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           poster={videoThumb(post.mediaUrl)}
           loop
           playsInline
-          muted={muted}
+          muted={muted || !!borrowedAudio}
           autoPlay={active && !blocked}
           preload={active ? 'auto' : 'metadata'}
           className="w-full h-full object-contain"
@@ -215,6 +223,30 @@ const ReelItem: React.FC<ItemProps> = (p) => {
             <MoreVertical className="w-6 h-6" />
           </button>
         )}
+        {/* أسطوانة الصوت: تظهر فقط عندما يسمح صاحب الفيديو باستخدام صوته */}
+        {audioAllowed && (
+          <button
+            onClick={() => p.onUseAudio(post)}
+            className="relative w-9 h-9 active:scale-90 transition-transform"
+            aria-label={t('audio.use')}
+            title={t('audio.use')}
+          >
+            <span
+              className="block w-9 h-9 rounded-full overflow-hidden border-2 border-white/80 bg-dark-900 shadow-lg animate-[spin_5s_linear_infinite]"
+              style={{ animationPlayState: active && !blocked ? 'running' : 'paused' }}
+            >
+              <Avatar
+                src={p.authorPhoto}
+                seed={post.authorId}
+                name={p.authorName}
+                className="w-full h-full object-cover"
+              />
+            </span>
+            <span className="absolute -top-1 -end-1 w-4 h-4 rounded-full bg-primary-500 border border-black/40 flex items-center justify-center">
+              <Music2 className="w-2.5 h-2.5 text-white" />
+            </span>
+          </button>
+        )}
       </div>
 
       {/* معلومات الناشر */}
@@ -253,6 +285,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           )}
         </div>
         {post.content && <p className="text-xs text-white/90 line-clamp-3 break-words">{post.content}</p>}
+        {borrowedAudio && (
+          <p className="text-[11px] text-white/80 flex items-center gap-1">
+            <Music2 className="w-3.5 h-3.5" /> {t('audio.original')}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -573,6 +610,7 @@ const Reels: React.FC = () => {
                   onOpenAuthor={(uid) => navigate(`/user/${uid}`)}
                   onFollow={onFollow}
                   onMore={setMenuPost}
+                  onUseAudio={(pp) => pp.id && navigate(`/create-post?audio=${pp.id}`)}
                 />
               );
             })}
