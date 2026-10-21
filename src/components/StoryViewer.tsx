@@ -15,6 +15,7 @@ import { timeAgo } from '../utils/timeAgo';
 import DeleteButton from './DeleteButton';
 import { useConfirm } from './ConfirmDialog';
 import { sendDirect, convIdOf } from '../services/chatService';
+import { useMediaLock } from '../utils/mediaManager';
 
 interface Props {
   groups: StoryGroup[];
@@ -43,6 +44,9 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const [views, setViews] = useState<StoryView[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // فتح الستوري = إيقاف كل فيديوهات الخلفية (فيديو الستوري وحده مسموح له)
+  useMediaLock();
 
   const group = groups[gi];
   const story = group?.stories[si];
@@ -133,6 +137,18 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+  }, [story?.id]);
+
+  // إيقاف فيديو الستوري وتحرير الموارد عند تغيير الستوري أو الإغلاق
+  useEffect(() => {
+    const v = videoRef.current;
+    return () => {
+      if (v) {
+        v.pause();
+        v.removeAttribute('src');
+        v.load();
+      }
+    };
   }, [story?.id]);
 
   useEffect(() => {
@@ -256,6 +272,7 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
             key={story.id}
             ref={videoRef}
             src={story.mediaUrl}
+            data-media-priority="1"
             autoPlay
             playsInline
             muted={muted}
