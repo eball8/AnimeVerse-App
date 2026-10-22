@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, ArrowLeft, Send, Mic, Trash2, Lock, Loader2, Play, Pause, X, Paperclip, RefreshCw,
   CornerUpLeft, Share2, Users, Plus, MoreVertical, Check, Copy, Maximize2, Palette,
-  Search, ChevronUp, ChevronDown, Timer, Ban, Pin, PinOff, Pencil, Download
+  Search, ChevronUp, ChevronDown, Timer, Ban, Pin, PinOff, Pencil, Download, Flag as FlagIcon
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -327,6 +327,7 @@ const MessageSheet: React.FC<{
   canCopy: boolean;
   canEdit: boolean;
   canDownload: boolean;
+  canReport: boolean;
   pinned: boolean;
   myEmojis: string[];
   onReact: (emoji: string) => void;
@@ -336,9 +337,10 @@ const MessageSheet: React.FC<{
   onEdit: () => void;
   onPin: () => void;
   onDownload: () => void;
+  onReport: () => void;
   onDelete: () => void;
   onClose: () => void;
-}> = ({ mine, canCopy, canEdit, canDownload, pinned, myEmojis, onReact, onReply, onForward, onCopy, onEdit, onPin, onDownload, onDelete, onClose }) => {
+}> = ({ mine, canCopy, canEdit, canDownload, canReport, pinned, myEmojis, onReact, onReply, onForward, onCopy, onEdit, onPin, onDownload, onReport, onDelete, onClose }) => {
   const { t, lang } = useI18n();
   const [picker, setPicker] = useState(false);
   const [val, setVal] = useState('');
@@ -378,6 +380,7 @@ const MessageSheet: React.FC<{
             {pinned ? <PinOff className="w-4 h-4 text-slate-300" /> : <Pin className="w-4 h-4 text-slate-300" />} {pinned ? pick(lang, 'إلغاء التثبيت', 'Unpin', 'Désépingler') : pick(lang, 'تثبيت', 'Pin', 'Épingler')}
           </button>
           {canDownload && <button onClick={onDownload} className={btn}><Download className="w-4 h-4 text-slate-300" /> {pick(lang, 'تنزيل', 'Download', 'Télécharger')}</button>}
+          {canReport && <button onClick={onReport} className={`${btn} !text-red-400`}><FlagIcon className="w-4 h-4" /> {pick(lang, 'الإبلاغ عن الرسالة', 'Report message', 'Signaler le message')}</button>}
           {mine && <button onClick={onDelete} className={`${btn} !text-red-400`}><Trash2 className="w-4 h-4" /> {t('chatUi.delete')}</button>}
         </div>
       </div>
@@ -527,6 +530,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
   const [notice, setNotice] = useState('');
   const [viewer, setViewer] = useState<{ src: string; type: 'image' | 'video' } | null>(null);
   const [activeMsg, setActiveMsg] = useState<RawMessage | null>(null);
+  const [reportMsg, setReportMsg] = useState<RawMessage | null>(null);
   const [replyTo, setReplyTo] = useState<RawMessage | null>(null);
   const [forwardMsg, setForwardMsg] = useState<RawMessage | null>(null);
   const [showOptions, setShowOptions] = useState(false);
@@ -1327,6 +1331,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           canCopy={plain[activeMsg.id]?.k === 't'}
           canEdit={activeMsg.senderId === me && plain[activeMsg.id]?.k === 't'}
           canDownload={plain[activeMsg.id]?.k === 'm'}
+          canReport={activeMsg.senderId !== me}
           pinned={pinnedIds.includes(activeMsg.id)}
           myEmojis={(Object.entries(activeMsg.reactions || {}) as [string, string[]][]).filter(([, u]) => u?.includes(me)).map(([e]) => e)}
           onReact={(emoji) => { react(activeMsg, emoji); setActiveMsg(null); }}
@@ -1340,6 +1345,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           onEdit={() => { startEdit(activeMsg); setActiveMsg(null); }}
           onPin={() => { togglePin(activeMsg); setActiveMsg(null); }}
           onDownload={() => { const m = activeMsg; setActiveMsg(null); downloadMessageMedia(m); }}
+          onReport={() => { setReportMsg(activeMsg); setActiveMsg(null); }}
           onDelete={async () => {
             const id = activeMsg.id; setActiveMsg(null);
             if (await confirm({ title: t('chatUi.deleteMsgTitle') })) removeMessage(convId, id).catch(console.error);
@@ -1347,6 +1353,22 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
           onClose={() => setActiveMsg(null)}
         />
       )}
+
+      {reportMsg && (() => {
+        const pl = plain[reportMsg.id];
+        const kind = pl?.k === 'v' ? 'audio' : pl?.k === 'm' ? (pl.mime.startsWith('video/') ? 'video' : 'image') : 'text';
+        return (
+          <ReportFlow
+            targetType="message"
+            targetId={`${convId}:${reportMsg.id}`}
+            reportedUid={reportMsg.senderId}
+            reportedName={nameOf(reportMsg.senderId)}
+            link={profileLink(reportMsg.senderId)}
+            contentType={kind}
+            onClose={() => setReportMsg(null)}
+          />
+        );
+      })()}
 
       {forwardMsg && (
         <ForwardModal convs={convs || []} onClose={() => setForwardMsg(null)} onPick={forwardTo} />
