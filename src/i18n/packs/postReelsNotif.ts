@@ -79,6 +79,7 @@ const ar: Dict = {
   'collab.badge': 'منشور تعاوني',
   'notif.collab': 'دعاك للتعاون في منشور',
   'notif.collabAccepted': 'قبل دعوتك للتعاون في منشور',
+  'notif.mentionedComment': 'أشار إليك في تعليق',
 };
 
 const en: Dict = {
@@ -154,6 +155,7 @@ const en: Dict = {
   'collab.badge': 'Collab post',
   'notif.collab': 'invited you to collaborate on a post',
   'notif.collabAccepted': 'accepted your collaboration invite',
+  'notif.mentionedComment': 'mentioned you in a comment',
 };
 
 const fr: Dict = {
@@ -229,6 +231,7 @@ const fr: Dict = {
   'collab.badge': 'Publication collab',
   'notif.collab': 'vous a invité à collaborer sur une publication',
   'notif.collabAccepted': 'a accepté votre invitation à collaborer',
+  'notif.mentionedComment': 'vous a mentionné dans un commentaire',
 };
 
 const es: Dict = {
@@ -304,6 +307,7 @@ const es: Dict = {
   'collab.badge': 'Publicación colab',
   'notif.collab': 'te invitó a colaborar en una publicación',
   'notif.collabAccepted': 'aceptó tu invitación a colaborar',
+  'notif.mentionedComment': 'te mencionó en un comentario',
 };
 
 const pack: Record<Lang, Dict> = { ar, en, fr, es };
