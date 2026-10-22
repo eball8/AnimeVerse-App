@@ -17,7 +17,8 @@ import { getMyFollowStates, toggleFollow } from '../services/followService';
 import type { FollowState } from '../services/followService';
 import { logAdmin } from '../services/adminLog';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
-import { copyText, reelLink, shareLink, videoThumb } from '../utils/links';
+import { copyText, reelLink, videoThumb } from '../utils/links';
+import PostShareSheet from '../components/PostShareSheet';
 import Avatar from '../components/Avatar';
 import MentionText from '../components/MentionText';
 import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
@@ -342,6 +343,7 @@ const Reels: React.FC = () => {
   const [likers, setLikers] = useState<Record<string, string[]>>({});
   const [commentPost, setCommentPost] = useState<Post | null>(null);
   const [menuPost, setMenuPost] = useState<Post | null>(null);
+  const [sharePost, setSharePost] = useState<Post | null>(null);
   const [toast, setToast] = useState('');
   const cursorRef = useRef<QueryDocumentSnapshot | null>(null);
   const loadingMore = useRef(false);
@@ -534,11 +536,10 @@ const Reels: React.FC = () => {
     }
   };
 
-  const onShare = async (post: Post) => {
+  // زر المشاركة: يفتح نافذة (أصدقاء + قصتك + تطبيقات) بدل نسخ الرابط مباشرة
+  const onShare = (post: Post) => {
     if (!post.id) return;
-    const a = pickAuthor(briefs, post.authorId, post.authorName);
-    const r = await shareLink(reelLink(post.id), a.name);
-    if (r === 'copied') showToast(t('common.linkCopied'));
+    setSharePost(post);
   };
 
   const onCopy = async (post: Post) => {
@@ -694,6 +695,15 @@ const Reels: React.FC = () => {
           </div>
         )}
       </div>
+
+      {sharePost && sharePost.id && (
+        <PostShareSheet
+          post={sharePost}
+          url={reelLink(sharePost.id)}
+          authorName={pickAuthor(briefs, sharePost.authorId, sharePost.authorName).name}
+          onClose={() => setSharePost(null)}
+        />
+      )}
 
       {commentPost && (
         <CommentsSheet
