@@ -144,13 +144,13 @@ const Profile: React.FC = () => {
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{profile?.displayName}</h2>
-        <p className="text-sm text-slate-500">
+        <p className="selectable text-sm text-slate-500">
           @{profile?.username}
           {profile?.pronouns ? <span className="text-slate-400"> · {profile.pronouns}</span> : null}
         </p>
         {genderLabel && <p className="text-[11px] text-slate-500 mt-0.5">{genderLabel}</p>}
         {profile?.bio && (
-          <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
+          <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
         )}
 
         {/* العدّادات */}
