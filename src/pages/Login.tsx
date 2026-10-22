@@ -16,6 +16,8 @@ const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // تفاصيل تقنية للخطأ (لتشخيص سبب فشل الدخول بدقة)
+  const [errorDetail, setErrorDetail] = useState('');
   const [saved, setSaved] = useState<SavedAccount[]>(getSavedAccounts());
   const [showForm, setShowForm] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -36,6 +38,8 @@ const Login: React.FC = () => {
     } else {
       setEmail(acc.email);
       setPassword('');
+      setError('');
+      setErrorDetail('');
       setShowForm(true);
       setTimeout(() => passwordRef.current?.focus(), 50);
     }
@@ -49,6 +53,7 @@ const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setErrorDetail('');
     setLoading(true);
     try {
       await signInEmail(email, password);
@@ -78,6 +83,7 @@ const Login: React.FC = () => {
 
   const handleGoogle = async (hintEmail?: string, staleUid?: string) => {
     setError('');
+    setErrorDetail('');
     setLoading(true);
     try {
       const signedEmail = (await signInGoogle(hintEmail)) as unknown as string | undefined;
@@ -110,10 +116,29 @@ const Login: React.FC = () => {
         navigate('/');
       }
     } catch (e: any) {
-      if (!e?.cancelled) setError(t('auth.errGoogle'));
+      if (!e?.cancelled) {
+        setError(t('auth.errGoogle'));
+        // السبب التقني الحقيقي للفشل (للتشخيص)
+        const detail = [e?.code, e?.message, e?.hintDetail]
+          .filter((x) => !!x)
+          .map((x) => String(x))
+          .join(' | ');
+        setErrorDetail(detail.slice(0, 500));
+      }
       setLoading(false);
     }
   };
+
+  const errorBox = (
+    <>
+      {error && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
+      {error && errorDetail && (
+        <p dir="ltr" className="text-[10px] text-slate-400 text-left bg-white/5 p-2 rounded-lg break-all whitespace-pre-wrap">
+          {errorDetail}
+        </p>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -136,7 +161,7 @@ const Login: React.FC = () => {
 
         {showPicker && (
           <div className="space-y-3">
-            {error && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
+            {errorBox}
             {saved.map((acc) => (
               <div key={acc.uid} className="card flex items-center gap-3 p-3">
                 <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0 disabled:opacity-60">
@@ -159,7 +184,7 @@ const Login: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => { setError(''); setShowForm(true); }}
+              onClick={() => { setError(''); setErrorDetail(''); setShowForm(true); }}
               className="w-full py-3.5 rounded-full bg-white/10 hover:bg-white/15 transition flex items-center justify-center gap-2 text-sm font-bold text-white"
             >
               <UserRound className="w-4 h-4" /> {t('auth.useOther')}
@@ -219,7 +244,7 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg">{error}</p>}
+          {errorBox}
 
           <button
             type="submit"
