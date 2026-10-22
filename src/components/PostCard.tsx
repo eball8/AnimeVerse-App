@@ -11,6 +11,7 @@ import { db } from '../config/firebase';
 import { isPendingCollaborator, respondToCollabInvite } from '../services/postService';
 import type { Post } from '../services/postService';
 import Avatar from './Avatar';
+import MentionText from './MentionText';
 import {
   CollabAvatarStack, CollabInviteBanner, ContributorsSheet, useCollab, useCollabNames,
 } from './CollabHeader';
@@ -238,7 +239,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             long ? 'text-base text-start' : 'text-2xl text-center'
           }`}
         >
-          {content}
+          <MentionText text={content} />
         </p>
         {burst > 0 && <HeartBurst k={burst} />}
       </div>
@@ -274,6 +275,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             preload={near ? 'metadata' : 'none'}
             onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
             onCanPlay={() => {
+              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان هو الفعّال
               if (isFeedActive(playerId)) videoRef.current?.play().catch(() => undefined);
             }}
             onPlay={() => setPaused(false)}
@@ -371,10 +373,13 @@ const PostCard: React.FC<Props> = ({
   const [err, setErr] = useState('');
   const [popLike, setPopLike] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
   const [localContent, setLocalContent] = useState<string | null>(null);
+  // إعداد السماح بالصوت بعد تغييره من القائمة (صفحة المنشور لا تتحدث لحظياً)
   const [localAllowAudio, setLocalAllowAudio] = useState<boolean | null>(null);
   const [audioBusy, setAudioBusy] = useState(false);
 
+  // المنشور التعاوني: نسخة محلية من قوائم الدعوات بعد القبول/الرفض (صفحة المنشور لا تتحدث لحظياً)
   const [collabLocal, setCollabLocal] = useState<{ collaborators: string[]; collabAccepted: string[] } | null>(null);
   const [collabBusy, setCollabBusy] = useState(false);
   const [collabErr, setCollabErr] = useState('');
@@ -387,6 +392,7 @@ const PostCard: React.FC<Props> = ({
   const { accepted, pending } = useCollab(cpost, authorName, authorPhoto);
   const collabNames = useCollabNames();
 
+  // أي نافذة منبثقة مفتوحة = إيقاف كل الفيديوهات
   useMediaLock(menuOpen || editing);
 
   useEffect(() => {
@@ -402,9 +408,11 @@ const PostCard: React.FC<Props> = ({
   const url = post.id ? (isVideo ? reelLink(post.id) : postLink(post.id)) : '';
   const isOwner = !!user && post.authorId === user.uid;
   const canEdit = isOwner && !!post.id;
+  // الصوت يخص الفيديوهات الأصلية فقط (ليس إعادة النشر ولا الفيديو ذو الصوت المستعار)
   const ownsAudio = isVideo && !!post.mediaUrl && !!post.id && !post.repostOfId && !post.audioSourceId;
   const audioAllowed = ownsAudio && (localAllowAudio ?? post.allowAudio) === true;
   const shareText = (content || authorName).slice(0, 100);
+  // النص يظهر تحت الصورة كتعليق؛ المنشور النصي فقط يظهر داخل اللوحة الملونة
   const caption = post.mediaUrl ? content : '';
   const longCaption = caption.length > 120 || caption.split('\n').length > 2;
 
@@ -504,6 +512,7 @@ const PostCard: React.FC<Props> = ({
     }
   };
 
+  // رأس المنشور التعاوني: صور متراكبة + "A و B"؛ ويظهر لصاحب المنشور أيضاً إن كان لديه دعوات معلّقة
   const isCollab = accepted.length > 1 || (isOwner && pending.length > 0);
   const pendingMe = isPendingCollaborator(cpost, user?.uid);
   const iAmCollab =
@@ -520,6 +529,7 @@ const PostCard: React.FC<Props> = ({
         </p>
       )}
 
+      {/* رأس المنشور */}
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         {isCollab ? (
           <>
@@ -568,6 +578,7 @@ const PostCard: React.FC<Props> = ({
         )}
       </div>
 
+      {/* دعوة التعاون (للمدعو فقط) */}
       {pendingMe && (
         <CollabInviteBanner
           inviterName={authorName}
@@ -578,6 +589,7 @@ const PostCard: React.FC<Props> = ({
         />
       )}
 
+      {/* الوسائط بعرض الشاشة */}
       <PostMedia
         post={post}
         isVideo={isVideo}
@@ -588,6 +600,7 @@ const PostCard: React.FC<Props> = ({
         mediaAlt={t('postCard.media')}
       />
 
+      {/* شريط الأزرار */}
       <div className="flex items-center gap-4 px-3 pt-3">
         <button
           onClick={likeNow}
@@ -611,12 +624,14 @@ const PostCard: React.FC<Props> = ({
         </button>
       </div>
 
+      {/* عدد الإعجابات */}
       {post.likesCount > 0 && (
         <p className="px-3 mt-2 text-[13.5px] font-extrabold text-white">
           {t('postCard.likes', { count: fmtCount(post.likesCount) })}
         </p>
       )}
 
+      {/* النص المرافق */}
       {caption && (
         <p
           dir="auto"
@@ -627,7 +642,7 @@ const PostCard: React.FC<Props> = ({
           <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
             {authorName}
           </button>
-          {caption}
+          <MentionText text={caption} />
         </p>
       )}
       {caption && longCaption && !expanded && (
@@ -636,12 +651,14 @@ const PostCard: React.FC<Props> = ({
         </button>
       )}
 
+      {/* التعليقات */}
       <button onClick={() => onComment(post)} className="block px-3 mt-1.5 text-[13px] text-slate-500 text-start">
         {post.commentsCount > 0
           ? t('postCard.viewComments', { count: fmtCount(post.commentsCount) })
           : t('postCard.addComment')}
       </button>
 
+      {/* قائمة المساهمين */}
       {contribOpen && (
         <ContributorsSheet
           accepted={accepted}
@@ -654,6 +671,7 @@ const PostCard: React.FC<Props> = ({
         />
       )}
 
+      {/* قائمة الثلاث نقاط */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => setMenuOpen(false)}>
           <div
@@ -770,6 +788,7 @@ const PostCard: React.FC<Props> = ({
         </div>
       )}
 
+      {/* نافذة تعديل المنشور */}
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => !saving && setEditing(false)}>
           <div
