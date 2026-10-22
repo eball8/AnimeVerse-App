@@ -11,6 +11,8 @@ import { logAdmin } from '../services/adminLog';
 import { timeAgo } from '../utils/timeAgo';
 import Avatar from './Avatar';
 import DeleteButton from './DeleteButton';
+import MentionText from './MentionText';
+import MentionInput from './MentionInput';
 import { useConfirm } from './ConfirmDialog';
 import { useMediaLock } from '../utils/mediaManager';
 
@@ -91,7 +93,9 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
                   <p className="text-xs font-bold text-white">
                     {a.name} <span className="text-[10px] text-slate-500 font-normal ms-1">{timeAgo(c.createdAt, lang)}</span>
                   </p>
-                  <p className="text-sm text-slate-300 break-words">{c.content}</p>
+                  <p className="text-sm text-slate-300 break-words whitespace-pre-wrap">
+                    <MentionText text={c.content} onNavigate={onClose} />
+                  </p>
                 </div>
                 {(c.authorId === user?.uid || isAdmin) && (
                   <DeleteButton variant="ghost" label={t('common.delete')} onClick={() => remove(c)} />
@@ -102,13 +106,14 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
         </div>
 
         <div className="p-3 border-t border-white/10 flex gap-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <input
+          <MentionInput
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={setText}
             onKeyDown={(e) => e.key === 'Enter' && send()}
             maxLength={500}
+            popup="top"
             placeholder={t('comments.placeholder')}
-            className="flex-1 px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+            className="w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
           />
           <button onClick={send} disabled={sending || !text.trim()} className="btn-primary px-4 disabled:opacity-50" aria-label={t('common.send')}>
             <Send className="w-4 h-4" />
