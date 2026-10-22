@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Heart, MessageCircle, Repeat2, Share2, Link2, Volume2, VolumeX, Loader2, Clapperboard,
-  Plus, Users, MoreVertical, Trash2, ArrowLeft, Music2,
+  Plus, Users, MoreVertical, Trash2, ArrowLeft, Music2, Flag,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,7 @@ import { logAdmin } from '../services/adminLog';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { copyText, reelLink, videoThumb } from '../utils/links';
 import PostShareSheet from '../components/PostShareSheet';
+import ReportFlow from '../components/ReportFlow';
 import Avatar from '../components/Avatar';
 import MentionText from '../components/MentionText';
 import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
@@ -56,6 +57,7 @@ interface ItemProps {
   onOpenAuthor: (uid: string) => void;
   onFollow: (p: Post) => void;
   onMore: (p: Post) => void;
+  onReport: (p: Post) => void;
   onUseAudio: (p: Post) => void;
 }
 
@@ -226,6 +228,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
         <button onClick={p.onToggleMute} className={railBtn} aria-label={t('reelsUi.mute')}>
           {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
         </button>
+        {!p.isMe && (
+          <button onClick={() => p.onReport(post)} className={railBtn} aria-label="report">
+            <Flag className="w-6 h-6" />
+          </button>
+        )}
         {p.canManage && (
           <button onClick={() => p.onMore(post)} className={railBtn} aria-label={t('reelsUi.options')}>
             <MoreVertical className="w-6 h-6" />
@@ -344,6 +351,7 @@ const Reels: React.FC = () => {
   const [commentPost, setCommentPost] = useState<Post | null>(null);
   const [menuPost, setMenuPost] = useState<Post | null>(null);
   const [sharePost, setSharePost] = useState<Post | null>(null);
+  const [reportPost, setReportPost] = useState<Post | null>(null);
   const [toast, setToast] = useState('');
   const cursorRef = useRef<QueryDocumentSnapshot | null>(null);
   const loadingMore = useRef(false);
@@ -639,6 +647,7 @@ const Reels: React.FC = () => {
                   onOpenAuthor={(uid) => navigate(`/user/${uid}`)}
                   onFollow={onFollow}
                   onMore={setMenuPost}
+                  onReport={setReportPost}
                   onUseAudio={(pp) => pp.id && navigate(`/create-post?audio=${pp.id}`)}
                 />
               );
@@ -702,6 +711,17 @@ const Reels: React.FC = () => {
           url={reelLink(sharePost.id)}
           authorName={pickAuthor(briefs, sharePost.authorId, sharePost.authorName).name}
           onClose={() => setSharePost(null)}
+        />
+      )}
+
+      {reportPost && reportPost.id && (
+        <ReportFlow
+          targetType="reel"
+          targetId={reportPost.id}
+          reportedUid={reportPost.authorId}
+          reportedName={pickAuthor(briefs, reportPost.authorId, reportPost.authorName).name}
+          link={reelLink(reportPost.id)}
+          onClose={() => setReportPost(null)}
         />
       )}
 
