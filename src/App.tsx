@@ -31,6 +31,7 @@ import EditProfile from './pages/EditProfile';
 import Library from './pages/Library';
 import Notifications from './pages/Notifications';
 import Admin from './pages/Admin';
+import DeepLinkHandler from './components/DeepLinkHandler';
 
 const Spinner: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-dark-950">
@@ -62,6 +63,7 @@ const App: React.FC = () => {
         <AuthProvider>
           <ConfirmProvider>
           <HashRouter>
+            <DeepLinkHandler />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<SignUp />} />
