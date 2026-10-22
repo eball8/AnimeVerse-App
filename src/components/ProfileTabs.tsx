@@ -107,9 +107,10 @@ const ProfileTabs: React.FC<{ uid: string; canView?: boolean }> = ({ uid, canVie
 
   const lists = useMemo(() => {
     const own = mine.filter((p) => !p.repostOfId);
-    const collab = mine.filter((p) => (p.collaborators?.length ?? 0) > 0);
+    // المنشورات التعاونية المقبولة تظهر الآن ضمن "mine" (منشورات/ريلز) في ملف كل مساهم،
+    // أما تبويب الإشارات فللمنشورات التي أُشير إليّ فيها فقط
     const seen = new Set<string>();
-    const mentions = [...tagged, ...collab]
+    const mentions = tagged
       .filter((p) => p.id && !seen.has(p.id) && (seen.add(p.id), true))
       .sort((a, b) => ms(b) - ms(a));
     return {
