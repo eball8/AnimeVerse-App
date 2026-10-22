@@ -133,6 +133,7 @@ const MentionInput: React.FC<Props> = ({
     onKeyDown?.(e);
   };
 
+  const common = {
     value,
     maxLength,
     placeholder,
@@ -167,6 +168,7 @@ const MentionInput: React.FC<Props> = ({
       {list.length > 0 && (
         <div
           className={`absolute z-40 start-0 w-[min(20rem,92vw)] rounded-2xl bg-dark-900 border border-white/10 shadow-2xl overflow-hidden ${
+            popup === 'top' ? 'bottom-full mb-2' : 'top-full mt-1'
           }`}
         >
           {list.map((s) => (
