@@ -1,4 +1,4 @@
-import { db } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 import {
   collection, serverTimestamp, query, orderBy, onSnapshot, where, limit, addDoc,
   doc, writeBatch, increment, getDocs, getDoc, setDoc, updateDoc, deleteDoc, startAfter,
@@ -76,6 +76,30 @@ export const isPendingCollaborator = (
   uid !== post.authorId &&
   (post.collaborators || []).includes(uid) &&
   !(post.collabAccepted || []).includes(uid);
+
+/**
+ * خصوصية إعادة النشر:
+ * منشور "أعاد النشر" لا يراه إلا صاحبه، أو من بينه وبين صاحبه متابعة متبادلة (أصدقاء).
+ * أي شخص آخر لا يرى الفيديو ولا الصورة ولا شارة "أعاد النشر من ..." إطلاقاً.
+ */
+const hideRestrictedReposts = async (posts: Post[]): Promise<Post[]> => {
+  if (!posts.some((p) => !!p.repostOfId)) return posts;
+  const me = auth.currentUser?.uid;
+  let friends = new Set<string>();
+  if (me) {
+    try {
+      friends = new Set(await getMutualFriendIds(me));
+    } catch (e) {
+      console.error('friends lookup failed:', e);
+    }
+  }
+  return posts.filter((p) => {
+    if (!p.repostOfId) return true;
+    if (!me) return false;
+    if (p.authorId === me) return true;
+    return friends.has(p.authorId);
+  });
+};
 
 export const POSTS_CHANGED_EVENT = 'av:posts-changed';
 
@@ -198,16 +222,36 @@ export const getMyRepostMap = async (uid: string): Promise<Record<string, string
 
 export const subscribeToPosts = (callback: (posts: Post[]) => void, max = 20) => {
   const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(max));
-  return onSnapshot(q, (snapshot) => {
+  let seq = 0;
+  let closed = false;
+  const unsub = onSnapshot(q, (snapshot) => {
     const posts: Post[] = [];
     snapshot.forEach((d) => posts.push({ id: d.id, ...d.data() } as Post));
-    callback(posts);
+    const mine = ++seq;
+    hideRestrictedReposts(posts)
+      .then((visible) => {
+        if (!closed && mine === seq) callback(visible);
+      })
+      .catch((e) => console.error('repost privacy filter failed:', e));
   }, (error) => console.error('Error fetching posts:', error));
+  return () => {
+    closed = true;
+    unsub();
+  };
 };
 
 export const getPostById = async (id: string): Promise<Post | null> => {
-  const snap = await getDoc(doc(db, 'posts', id));
-  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Post) : null;
+  let snap;
+  try {
+    snap = await getDoc(doc(db, 'posts', id));
+  } catch (e: any) {
+    if (e?.code === 'permission-denied') return null;
+    throw e;
+  }
+  if (!snap.exists()) return null;
+  const post = { id: snap.id, ...snap.data() } as Post;
+  const [visible] = await hideRestrictedReposts([post]);
+  return visible || null;
 };
 
 export interface ReelsPage {
@@ -216,7 +260,7 @@ export interface ReelsPage {
   done: boolean;
 }
 
-export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 8): Promise<ReelsPage> => {
+const fetchReelsRaw = async (cursor: QueryDocumentSnapshot | null, size: number): Promise<ReelsPage> => {
   try {
     const constraints: QueryConstraint[] = [where('mediaType', '==', 'video'), orderBy('createdAt', 'desc')];
     if (cursor) constraints.push(startAfter(cursor));
@@ -237,6 +281,21 @@ export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 
     items.sort((a, b) => ms(b) - ms(a));
     return { items, cursor: null, done: true };
   }
+};
+
+export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 8): Promise<ReelsPage> => {
+  // قد تُخفى بعض الإعادات بسبب الخصوصية، لذلك نجلب صفحات إضافية حتى تمتلئ الصفحة أو ينتهي المحتوى
+  let cur = cursor;
+  const out: Post[] = [];
+  for (let i = 0; i < 6; i++) {
+    const page = await fetchReelsRaw(cur, size);
+    cur = page.cursor;
+    const visible = await hideRestrictedReposts(page.items);
+    out.push(...visible);
+    if (page.done) return { items: out, cursor: cur, done: true };
+    if (out.length >= Math.ceil(size / 2)) return { items: out, cursor: cur, done: false };
+  }
+  return { items: out, cursor: cur, done: false };
 };
 
 export interface FriendReel {
@@ -275,9 +334,11 @@ export const getFriendsReels = async (me: string, max = 40): Promise<FriendReel[
     ps.forEach((d) => posts.set(d.id, { id: d.id, ...d.data() } as Post));
   }
 
-  return ids
+  const candidates = ids
     .filter((id) => posts.get(id)?.mediaType === 'video' && !!posts.get(id)?.mediaUrl)
     .map((id) => ({ post: posts.get(id)!, likedBy: likers.get(id) || [] }));
+  const visibleIds = new Set((await hideRestrictedReposts(candidates.map((c) => c.post))).map((p) => p.id));
+  return candidates.filter((c) => visibleIds.has(c.post.id));
 };
 
 export const clearMyFriendActivity = async (uid: string): Promise<void> => {
@@ -299,11 +360,11 @@ export const getUserPosts = async (uid: string, max = 100): Promise<Post[]> => {
   });
   const merge = async (own: Post[]): Promise<Post[]> => {
     const extra = await collabPosts;
-    if (!extra.length) return own;
+    if (!extra.length) return hideRestrictedReposts(own);
     const seen = new Set(own.map((p) => p.id));
     const all = [...own, ...extra.filter((p) => !seen.has(p.id))];
     all.sort((a, b) => createdMs(b) - createdMs(a));
-    return all;
+    return hideRestrictedReposts(all);
   };
   try {
     const snap = await getDocs(
@@ -346,7 +407,7 @@ export const getMentionedPosts = async (uid: string, max = 100): Promise<Post[]>
   const snap = await getDocs(query(collection(db, 'posts'), where('mentions', 'array-contains', uid), limit(max)));
   const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
   items.sort((a, b) => createdMs(b) - createdMs(a));
-  return items;
+  return hideRestrictedReposts(items);
 };
 
 export const deletePost = async (postId: string): Promise<void> => {
