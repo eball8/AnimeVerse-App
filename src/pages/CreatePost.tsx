@@ -15,6 +15,7 @@ import {
 import type { GalleryMedia } from '../services/galleryService';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
+import MentionInput from '../components/MentionInput';
 import CollabPickerSheet from '../components/CollabPickerSheet';
 import type { PickedUser } from '../components/CollabPickerSheet';
 
@@ -208,8 +209,6 @@ const CreatePost: React.FC = () => {
     []
   );
 
-  const applyFile = (selected: File): boolean => {
-    if (selected.size > MAX_BYTES) {
       setError(t('cp.errTooBig'));
       return false;
     }
@@ -413,14 +412,15 @@ const CreatePost: React.FC = () => {
           <div className="px-4 pt-4 space-y-3">
             <div className="flex gap-3">
               <img src={avatar} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-primary-500/40 bg-dark-900 shrink-0" />
-              <textarea
+              <MentionInput
+                multiline
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={setContent}
                 maxLength={2000}
                 rows={3}
                 disabled={uploading}
                 placeholder={t('cp.placeholderPost')}
-                className="flex-1 bg-transparent text-white text-[15px] leading-relaxed placeholder:text-slate-500 outline-none resize-none pt-2"
+                className="w-full bg-transparent text-white text-[15px] leading-relaxed placeholder:text-slate-500 outline-none resize-none pt-2"
               />
             </div>
             {preview && (
