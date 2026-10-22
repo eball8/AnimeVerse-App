@@ -1,10 +1,13 @@
-export const APP_URL = 'https://eball8.github.io/AnimeVerse-App';
+// نطاق موقعك على Cloudflare Pages (بدون https://)
+export const WEB_HOST = 'animeverse.pages.dev';
+export const APP_URL = `https://${WEB_HOST}`;
 
 const baseUrl = (): string => APP_URL.replace(/\/+$/, '');
 
-export const profileLink = (uid: string) => `${baseUrl()}/#/user/${uid}`;
-export const postLink = (id: string) => `${baseUrl()}/#/post/${id}`;
-export const reelLink = (id: string) => `${baseUrl()}/#/reels/${id}`;
+export const profileLink = (uid: string) => `${baseUrl()}/user/${uid}`;
+export const postLink = (id: string) => `${baseUrl()}/post/${id}`;
+// الفيديو منشور أيضاً، والتطبيق يحوّله تلقائياً إلى شاشة الريلز
+export const reelLink = (id: string) => `${baseUrl()}/post/${id}`;
 
 export const copyText = async (text: string): Promise<boolean> => {
   try {
