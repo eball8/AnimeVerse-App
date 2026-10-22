@@ -12,11 +12,12 @@ import { isPendingCollaborator, respondToCollabInvite } from '../services/postSe
 import type { Post } from '../services/postService';
 import Avatar from './Avatar';
 import MentionText from './MentionText';
+import PostShareSheet from './PostShareSheet';
 import {
   CollabAvatarStack, CollabInviteBanner, ContributorsSheet, useCollab, useCollabNames,
 } from './CollabHeader';
 import { timeAgo } from '../utils/timeAgo';
-import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/links';
+import { copyText, postLink, reelLink, videoThumb } from '../utils/links';
 import { useI18n } from '../i18n/I18nContext';
 import { useAuth } from '../context/AuthContext';
 import { isFeedActive, registerFeedPlayer, reportFeedRatio, useMediaLock } from '../utils/mediaManager';
@@ -367,6 +368,7 @@ const PostCard: React.FC<Props> = ({
 
   const [flash, setFlash] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -425,10 +427,10 @@ const PostCard: React.FC<Props> = ({
     if (url && (await copyText(url))) doFlash();
   };
 
-  const onShare = async () => {
+  // زر المشاركة: يفتح نافذة (أصدقاء + قصتك + تطبيقات) بدل نسخ الرابط مباشرة
+  const onShare = () => {
     if (!url) return;
-    const r = await shareLink(url, authorName);
-    if (r === 'copied') doFlash();
+    setShareOpen(true);
   };
 
   const likeNow = () => {
@@ -657,6 +659,11 @@ const PostCard: React.FC<Props> = ({
           ? t('postCard.viewComments', { count: fmtCount(post.commentsCount) })
           : t('postCard.addComment')}
       </button>
+
+      {/* نافذة المشاركة */}
+      {shareOpen && url && (
+        <PostShareSheet post={post} url={url} authorName={authorName} onClose={() => setShareOpen(false)} />
+      )}
 
       {/* قائمة المساهمين */}
       {contribOpen && (
