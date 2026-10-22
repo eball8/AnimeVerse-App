@@ -20,6 +20,9 @@ const Login: React.FC = () => {
   const [errorDetail, setErrorDetail] = useState('');
   const [saved, setSaved] = useState<SavedAccount[]>(getSavedAccounts());
   const [showForm, setShowForm] = useState(false);
+  // حساب غوغل محفوظ بلا بريد: نطلب البريد مرة واحدة فقط ثم يصبح الدخول به مباشراً دائماً
+  const [needEmailFor, setNeedEmailFor] = useState<SavedAccount | null>(null);
+  const [hintInput, setHintInput] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
   // مثل فيسبوك: إن وُجدت حسابات محفوظة نعرضها أولاً، والنموذج يظهر عند اختيار «استخدام حساب آخر»
   const showPicker = saved.length > 0 && !showForm;
@@ -33,8 +36,15 @@ const Login: React.FC = () => {
 
   const pickAccount = (acc: SavedAccount) => {
     if (acc.provider === 'google') {
-      // إن لم يكن البريد محفوظاً، سيظهر اختيار الحساب مرة واحدة فقط ثم يُحفظ البريد تلقائياً
-      handleGoogle(acc.email || undefined, acc.uid);
+      if (acc.email) {
+        handleGoogle(acc.email, acc.uid);
+      } else {
+        // لا بريد محفوظ: لا نفتح قائمة غوغل، بل نطلب البريد مرة واحدة ثم ندخل مباشرة
+        setError('');
+        setErrorDetail('');
+        setHintInput('');
+        setNeedEmailFor(acc);
+      }
     } else {
       setEmail(acc.email);
       setPassword('');
@@ -43,6 +53,27 @@ const Login: React.FC = () => {
       setShowForm(true);
       setTimeout(() => passwordRef.current?.focus(), 50);
     }
+  };
+
+  const submitHintEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    const acc = needEmailFor;
+    const mail = hintInput.trim().toLowerCase();
+    if (!acc || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+      setError('اكتب بريداً صحيحاً');
+      return;
+    }
+    // نحفظ البريد فوراً في الحساب المحفوظ، حتى لو فشل الدخول لاحقاً لا نطلبه مرة أخرى
+    saveAccount({
+      uid: acc.uid,
+      email: mail,
+      displayName: acc.displayName,
+      photoURL: acc.photoURL,
+      provider: 'google',
+    });
+    setSaved(getSavedAccounts());
+    setNeedEmailFor(null);
+    handleGoogle(mail, acc.uid);
   };
 
   const removeAccount = (uid: string) => {
@@ -163,22 +194,42 @@ const Login: React.FC = () => {
           <div className="space-y-3">
             {errorBox}
             {saved.map((acc) => (
-              <div key={acc.uid} className="card flex items-center gap-3 p-3">
-                <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0 disabled:opacity-60">
-                  <img
-                    src={acc.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc.uid}`}
-                    alt=""
-                    className="w-12 h-12 rounded-full object-cover ring-2 ring-primary-500/40 shrink-0"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold text-white truncate">{acc.displayName}</span>
-                    <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{acc.email}</span>
-                  </span>
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <ChevronLeft className="w-4 h-4 text-slate-500" />}
-                </button>
-                <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label={t('auth.remove')}>
-                  <X className="w-4 h-4" />
-                </button>
+              <div key={acc.uid} className="card p-3">
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => pickAccount(acc)} disabled={loading} className="flex-1 flex items-center gap-3 text-right min-w-0 disabled:opacity-60">
+                    <img
+                      src={acc.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc.uid}`}
+                      alt=""
+                      className="w-12 h-12 rounded-full object-cover ring-2 ring-primary-500/40 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-white truncate">{acc.displayName}</span>
+                      <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{acc.email}</span>
+                    </span>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <ChevronLeft className="w-4 h-4 text-slate-500" />}
+                  </button>
+                  <button type="button" onClick={() => removeAccount(acc.uid)} className="p-2 text-slate-500 hover:text-white" aria-label={t('auth.remove')}>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {needEmailFor?.uid === acc.uid && (
+                  <form onSubmit={submitHintEmail} className="mt-3 space-y-2">
+                    <p className="text-[11px] text-slate-400">اكتب بريد هذا الحساب مرة واحدة فقط، وبعدها يدخل مباشرة بدون قائمة حسابات غوغل.</p>
+                    <input
+                      type="email"
+                      autoFocus
+                      dir="ltr"
+                      value={hintInput}
+                      onChange={(e) => setHintInput(e.target.value)}
+                      placeholder="you@gmail.com"
+                      className="w-full px-3 py-2.5 rounded-2xl bg-dark-900 border border-white/10 text-white placeholder:text-slate-500 outline-none focus:border-primary-500/50 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button type="submit" disabled={loading} className="flex-1 btn-primary py-2.5 text-sm disabled:opacity-50">متابعة</button>
+                      <button type="button" onClick={() => setNeedEmailFor(null)} className="px-4 py-2.5 rounded-2xl bg-white/10 text-sm text-white">إلغاء</button>
+                    </div>
+                  </form>
+                )}
               </div>
             ))}
 
