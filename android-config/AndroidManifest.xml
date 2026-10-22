@@ -61,6 +61,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- روابط الويب: فتح المنشورات والملفات الشخصية مباشرة داخل التطبيق -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="animeverse.pages.dev" android:pathPrefix="/post/" />
+                <data android:scheme="https" android:host="animeverse.pages.dev" android:pathPrefix="/user/" />
+            </intent-filter>
         </activity>
     </application>
 
