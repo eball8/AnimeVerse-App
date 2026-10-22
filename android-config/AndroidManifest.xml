@@ -67,8 +67,8 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="animeverse.pages.dev" android:pathPrefix="/post/" />
-                <data android:scheme="https" android:host="animeverse.pages.dev" android:pathPrefix="/user/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/post/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/user/" />
             </intent-filter>
         </activity>
     </application>
