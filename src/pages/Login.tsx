@@ -80,7 +80,7 @@ const Login: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      const signedEmail = await signInGoogle(hintEmail);
+      const signedEmail = (await signInGoogle(hintEmail)) as unknown as string | undefined;
 
       // نحفظ الحساب الذي دخلنا به فوراً مع بريده، حتى يصبح الدخول به مباشراً في المرة القادمة
       const u = auth.currentUser;
