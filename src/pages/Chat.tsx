@@ -15,6 +15,8 @@ import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
 import E2EEGate from '../components/E2EEGate';
 import ChatOptionsSheet, { ReportSheet } from '../components/ChatOptionsSheet';
+import ReportFlow from '../components/ReportFlow';
+import { profileLink } from '../utils/links';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useUserBriefs } from '../services/userCache';
 import { notify } from '../services/notificationService';
@@ -1388,7 +1390,14 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
       )}
 
       {sheet === 'report' && (
-        <ReportSheet name={name} busy={reporting} onSubmit={submitReport} onClose={() => setSheet(null)} />
+        <ReportFlow
+          targetType={isGroup ? 'group' : 'conversation'}
+          targetId={convId}
+          reportedUid={isGroup ? undefined : other}
+          reportedName={name}
+          link={isGroup ? undefined : profileLink(other)}
+          onClose={() => setSheet(null)}
+        />
       )}
     </>
   );
