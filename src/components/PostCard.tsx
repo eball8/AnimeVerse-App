@@ -5,7 +5,7 @@ import { Browser } from '@capacitor/browser';
 import { doc, updateDoc } from 'firebase/firestore';
 import {
   Heart, MessageCircle, Send, Link2, Check, Repeat2, Clapperboard,
-  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2, LogOut,
+  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2, LogOut, Flag,
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { isPendingCollaborator, respondToCollabInvite } from '../services/postService';
@@ -13,6 +13,7 @@ import type { Post } from '../services/postService';
 import Avatar from './Avatar';
 import MentionText from './MentionText';
 import PostShareSheet from './PostShareSheet';
+import ReportFlow from './ReportFlow';
 import {
   CollabAvatarStack, CollabInviteBanner, ContributorsSheet, useCollab, useCollabNames,
 } from './CollabHeader';
@@ -369,6 +370,7 @@ const PostCard: React.FC<Props> = ({
   const [flash, setFlash] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -660,6 +662,18 @@ const PostCard: React.FC<Props> = ({
           : t('postCard.addComment')}
       </button>
 
+      {/* نافذة البلاغ */}
+      {reportOpen && post.id && (
+        <ReportFlow
+          targetType={isVideo ? 'video' : 'post'}
+          targetId={post.id}
+          reportedUid={post.authorId}
+          reportedName={authorName}
+          link={url}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
+
       {/* نافذة المشاركة */}
       {shareOpen && url && (
         <PostShareSheet post={post} url={url} authorName={authorName} onClose={() => setShareOpen(false)} />
@@ -778,6 +792,18 @@ const PostCard: React.FC<Props> = ({
                   ))}
                 </div>
               </div>
+            )}
+
+            {!isOwner && post.id && (
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setReportOpen(true);
+                }}
+                className={menuRow.replace('text-slate-200', 'text-red-400')}
+              >
+                <Flag className="w-5 h-5 text-red-400" /> {lang === 'ar' ? (isVideo ? 'الإبلاغ عن الفيديو' : 'الإبلاغ عن المنشور') : lang === 'fr' ? (isVideo ? 'Signaler la vidéo' : 'Signaler la publication') : isVideo ? 'Report video' : 'Report post'}
+              </button>
             )}
 
             {canDelete && (
