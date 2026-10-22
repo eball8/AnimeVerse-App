@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Loader2, X, ChevronLeft, UserPlus, UserRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { auth } from '../config/firebase';
-import { getSavedAccounts, removeSavedAccount } from '../utils/savedAccounts';
+import { getSavedAccounts, removeSavedAccount, saveAccount } from '../utils/savedAccounts';
 import type { SavedAccount } from '../utils/savedAccounts';
 import { useI18n } from '../i18n/I18nContext';
 
@@ -31,7 +31,7 @@ const Login: React.FC = () => {
 
   const pickAccount = (acc: SavedAccount) => {
     if (acc.provider === 'google') {
-      handleGoogle(acc.email);
+      handleGoogle(acc.email, acc.uid);
     } else {
       setEmail(acc.email);
       setPassword('');
@@ -75,11 +75,29 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoogle = async (hintEmail?: string) => {
+  const handleGoogle = async (hintEmail?: string, staleUid?: string) => {
     setError('');
     setLoading(true);
     try {
       await signInGoogle(hintEmail);
+
+      // نحفظ الحساب الذي دخلنا به فوراً مع بريده، حتى يصبح الدخول به مباشراً في المرة القادمة
+      const u = auth.currentUser;
+      if (u) {
+        const mail = u.email || u.providerData.find((x) => !!x?.email)?.email || '';
+        if (mail) {
+          saveAccount({
+            uid: u.uid,
+            email: mail,
+            displayName: u.displayName || mail.split('@')[0],
+            photoURL: u.photoURL || undefined,
+            provider: 'google',
+          });
+        }
+        // إزالة المدخل القديم الذي لا بريد له إذا كان الحساب الفعلي مختلفاً عنه (حتى لا يتكرر في القائمة)
+        if (staleUid && staleUid !== u.uid) removeSavedAccount(staleUid);
+        setSaved(getSavedAccounts());
+      }
       // ملاحظة: في الهاتف، سيتم فتح المتصفح الخارجي.
       // التطبيق سيتوقف هنا حتى يعود المستخدم من المتصفح، ثم سيتولى AuthContext إكمال الدخول.
       if (!window.location.href.includes('android')) {
