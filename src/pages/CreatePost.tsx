@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   X, Camera, Image as ImageIcon, Video, Check, Play, Loader2, ImagePlus,
-  Settings, Film, ShieldCheck, Music2,
+  Settings, Film, ShieldCheck, Music2, Users, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
-import { createPost, getPostById } from '../services/postService';
+import { createPost, getPostById, MAX_COLLABORATORS } from '../services/postService';
 import { createStory } from '../services/storyService';
 import {
   isNativeGallery, checkGalleryAccess, requestGalleryAccess, openAppSettings,
@@ -14,6 +14,9 @@ import {
 } from '../services/galleryService';
 import type { GalleryMedia } from '../services/galleryService';
 import { useI18n } from '../i18n/I18nContext';
+import Avatar from '../components/Avatar';
+import CollabPickerSheet from '../components/CollabPickerSheet';
+import type { PickedUser } from '../components/CollabPickerSheet';
 
 type Mode = 'post' | 'story';
 type Filter = 'all' | 'images' | 'videos';
@@ -47,6 +50,9 @@ const CreatePost: React.FC = () => {
   const [allowAudio, setAllowAudio] = useState(true);
   // الصوت المستعار من منشور آخر (ريمكس)
   const [audioSource, setAudioSource] = useState<{ id: string; url: string; name: string } | null>(null);
+  // المنشور التعاوني: المدعوون (حتى 4 + صاحب المنشور = 5 أشخاص)
+  const [collabs, setCollabs] = useState<PickedUser[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const native = isNativeGallery();
   const [access, setAccess] = useState<Access>(native ? 'checking' : 'granted');
@@ -316,6 +322,7 @@ const CreatePost: React.FC = () => {
           allowAudio: isVideo && !useBorrowed ? allowAudio : undefined,
           audioSourceId: useBorrowed ? audioSource!.id : undefined,
           audioUrl: useBorrowed ? audioSource!.url : undefined,
+          collaborators: collabs.length ? collabs.map((c) => c.uid) : undefined,
         });
       }
       navigate('/community', { replace: true });
@@ -419,6 +426,43 @@ const CreatePost: React.FC = () => {
             {preview && (
               <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black">{mediaPreview}</div>
             )}
+
+            {/* دعوة مساهمين: منشور تعاوني بنمط إنستغرام */}
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              disabled={uploading}
+              className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-start active:bg-white/10 transition"
+            >
+              <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4 text-primary-300" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-black text-white">{t('collab.add')}</span>
+                <span className="block text-[11px] text-slate-400 leading-relaxed mt-0.5">
+                  {collabs.length
+                    ? collabs.map((c) => c.displayName).join('، ')
+                    : t('collab.addDesc', { count: MAX_COLLABORATORS })}
+                </span>
+              </span>
+              {collabs.length > 0 && (
+                <span className="flex items-center shrink-0">
+                  {collabs.slice(0, 3).map((c, i) => (
+                    <span
+                      key={c.uid}
+                      className="block w-7 h-7 rounded-full ring-2 ring-dark-950 overflow-hidden"
+                      style={{ marginInlineStart: i === 0 ? 0 : -10 }}
+                    >
+                      <Avatar src={c.photoURL} seed={c.uid} name={c.displayName} className="w-full h-full object-cover bg-dark-900" />
+                    </span>
+                  ))}
+                </span>
+              )}
+              <span className="text-[11px] font-bold text-slate-400 tabular-nums shrink-0">
+                {collabs.length}/{MAX_COLLABORATORS}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-500 shrink-0 rtl:rotate-180" />
+            </button>
 
             {/* الصوت المستعار (ريمكس) */}
             {audioSource && (
@@ -668,6 +712,16 @@ const CreatePost: React.FC = () => {
 
         <div className="h-[calc(env(safe-area-inset-bottom)+16px)]" />
       </div>
+
+      {pickerOpen && (
+        <CollabPickerSheet
+          meUid={user.uid}
+          selected={collabs}
+          max={MAX_COLLABORATORS}
+          onChange={setCollabs}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
 
       <input ref={galleryInputRef} type="file" accept="image/*,video/*" onChange={onInputFile} className="hidden" />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={onInputFile} className="hidden" />
