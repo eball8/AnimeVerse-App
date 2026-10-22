@@ -19,6 +19,7 @@ import { logAdmin } from '../services/adminLog';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { copyText, reelLink, shareLink, videoThumb } from '../utils/links';
 import Avatar from '../components/Avatar';
+import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
 import CommentsSheet from '../components/CommentsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useMediaBlocked, useMediaLock } from '../utils/mediaManager';
@@ -68,6 +69,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const { post, active, near, muted, liked } = p;
   const blocked = useMediaBlocked();
+  // منشور تعاوني: المساهمون المقبولون يظهرون معاً مع الناشر
+  const { accepted: collabList } = useCollab(post, p.authorName, p.authorPhoto);
+  const collabNames = useCollabNames();
+  const [contribOpen, setContribOpen] = useState(false);
+  const isCollab = collabList.length > 1;
 
   // صوت مستعار (ريمكس): يُكتم الفيديو ويُشغَّل الصوت المستعار متزامناً معه
   const borrowedAudio = post.audioUrl;
@@ -262,15 +268,22 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           </p>
         )}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <button onClick={() => p.onOpenAuthor(post.authorId)} className="flex items-center gap-2 min-w-0">
-            <Avatar
-              src={p.authorPhoto}
-              seed={post.authorId}
-              name={p.authorName}
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900 shrink-0"
-            />
-            <span className="text-sm font-black text-white drop-shadow truncate">{p.authorName}</span>
-          </button>
+          {isCollab ? (
+            <button onClick={() => setContribOpen(true)} className="flex items-center gap-2 min-w-0">
+              <CollabAvatarStack list={collabList} size={36} ringClass="ring-black/60" />
+              <span className="text-sm font-black text-white drop-shadow truncate">{collabNames(collabList)}</span>
+            </button>
+          ) : (
+            <button onClick={() => p.onOpenAuthor(post.authorId)} className="flex items-center gap-2 min-w-0">
+              <Avatar
+                src={p.authorPhoto}
+                seed={post.authorId}
+                name={p.authorName}
+                className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900 shrink-0"
+              />
+              <span className="text-sm font-black text-white drop-shadow truncate">{p.authorName}</span>
+            </button>
+          )}
           {!p.isMe && (
             <button
               onClick={() => p.onFollow(post)}
@@ -291,6 +304,16 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           </p>
         )}
       </div>
+
+      {contribOpen && (
+        <ContributorsSheet
+          accepted={collabList}
+          pending={[]}
+          canLeave={false}
+          onLeave={() => undefined}
+          onClose={() => setContribOpen(false)}
+        />
+      )}
     </div>
   );
 };
