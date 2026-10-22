@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -115,3 +118,11 @@ jobs:
         with:
           name: AnimeVerse-Release-APK
           path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Publish APK to GitHub Release (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk AnimeVerse.apk
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "AnimeVerse (آخر نسخة)" --notes "أحدث نسخة من التطبيق" --latest
+          gh release upload latest AnimeVerse.apk --clobber
