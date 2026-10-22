@@ -186,11 +186,11 @@ const UserProfilePage: React.FC = () => {
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{p.displayName}</h2>
-        <p className="text-sm text-slate-500">
+        <p className="selectable text-sm text-slate-500">
           @{p.username}
           {p.pronouns ? <span className="text-slate-400"> · {p.pronouns}</span> : null}
         </p>
-        {p.bio && <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
+        {p.bio && <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
 
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
