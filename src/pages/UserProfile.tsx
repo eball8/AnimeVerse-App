@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Lock, UserPlus, UserCheck, Clock, MessageCircle, Share2, Link2, Check } from 'lucide-react';
+import { ArrowRight, Loader2, Lock, UserPlus, UserCheck, Clock, MessageCircle, Share2, Link2, Check, MoreHorizontal, Flag, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ import { usePostsCount } from '../hooks/usePostsCount';
 import Avatar from '../components/Avatar';
 import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
+import ReportFlow from '../components/ReportFlow';
 import { recordProfileView } from '../services/profileInsightsService';
 import { markProfileVisited } from '../services/storyService'; // ← أضفنا هذا السطر
 
@@ -23,7 +24,9 @@ const UserProfilePage: React.FC = () => {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [p, setP] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<FollowState>('none');
@@ -160,6 +163,15 @@ const UserProfilePage: React.FC = () => {
       </button>
 
       <div className="card p-6 text-center relative">
+        {user?.uid !== p.uid && (
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="absolute top-3 end-3 p-2 rounded-xl hover:bg-white/10 text-slate-400"
+            aria-label="menu"
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </button>
+        )}
         <div className="absolute top-3 start-3 flex gap-1">
           <button
             onClick={async () => {
@@ -253,6 +265,42 @@ const UserProfilePage: React.FC = () => {
           username={p.username}
           photoURL={p.photoURL}
           onClose={() => setShareOpen(false)}
+        />
+      )}
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => setMenuOpen(false)}>
+          <div
+            className="w-full max-w-md mx-auto bg-dark-900 border-t border-white/10 rounded-t-3xl p-4 space-y-2 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-end">
+              <button onClick={() => setMenuOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-white/10">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setReportOpen(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/20 active:bg-red-500/20 transition"
+            >
+              <Flag className="w-5 h-5" />{' '}
+              {lang === 'ar' ? 'الإبلاغ عن مستخدم' : lang === 'fr' ? "Signaler l'utilisateur" : 'Report user'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reportOpen && (
+        <ReportFlow
+          targetType="user"
+          targetId={p.uid}
+          reportedUid={p.uid}
+          reportedName={p.displayName}
+          link={link}
+          onClose={() => setReportOpen(false)}
         />
       )}
     </div>
