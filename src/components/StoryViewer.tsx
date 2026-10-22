@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Volume2, VolumeX, Loader2, Heart, Eye, Send } from 'lucide-react';
+import { X, Volume2, VolumeX, Loader2, Heart, Eye, Send, Flag } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,8 @@ import DeleteButton from './DeleteButton';
 import { useConfirm } from './ConfirmDialog';
 import { sendDirect, convIdOf } from '../services/chatService';
 import { useMediaLock } from '../utils/mediaManager';
+import ReportFlow from './ReportFlow';
+import { profileLink } from '../utils/links';
 
 interface Props {
   groups: StoryGroup[];
@@ -43,6 +45,7 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const [sentMsg, setSentMsg] = useState(false);
   const [views, setViews] = useState<StoryView[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // فتح الستوري = إيقاف كل فيديوهات الخلفية (فيديو الستوري وحده مسموح له)
@@ -56,7 +59,7 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
   const viewerBriefs = useUserBriefs(isOwner ? views.map((v) => v.viewerId) : []);
 
   const [confirming, setConfirming] = useState(false);
-  const paused = held || inputFocus || sheetOpen || confirming;
+  const paused = held || inputFocus || sheetOpen || confirming || reportOpen;
   const pausedRef = useRef(false);
   pausedRef.current = paused || !loaded;
 
@@ -332,6 +335,17 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
           )}
+          {!isOwner && (
+            <button
+              onPointerDown={stop}
+              onPointerUp={stop}
+              onClick={() => setReportOpen(true)}
+              className="p-2 text-white"
+              aria-label="report"
+            >
+              <Flag className="w-5 h-5" />
+            </button>
+          )}
           {canDelete && (
             <DeleteButton
               variant="glass"
@@ -432,6 +446,17 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
             </div>
           </div>
         </>
+      )}
+    
+      {reportOpen && story && (
+        <ReportFlow
+          targetType="story"
+          targetId={story.id}
+          reportedUid={story.authorId}
+          reportedName={group.authorName}
+          link={profileLink(story.authorId)}
+          onClose={() => setReportOpen(false)}
+        />
       )}
     </div>
   );
