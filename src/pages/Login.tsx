@@ -80,12 +80,13 @@ const Login: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      await signInGoogle(hintEmail);
+      const signedEmail = await signInGoogle(hintEmail);
 
       // نحفظ الحساب الذي دخلنا به فوراً مع بريده، حتى يصبح الدخول به مباشراً في المرة القادمة
       const u = auth.currentUser;
       if (u) {
         const mail =
+          signedEmail ||
           u.email ||
           u.providerData.find((x) => !!x?.email)?.email ||
           getSavedAccounts().find((a) => a.uid === u.uid)?.email ||
