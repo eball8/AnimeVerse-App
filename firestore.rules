@@ -11,8 +11,7 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // المالك الأساسي: صاحب حجز اسم المستخدم animeverse_official
-    // (لا يوجد أي إيميل داخل القواعد)
+    // المالك الأساسي: صاحب حجز اسم المستخدم animeverse_official[span_1](start_span)[span_1](end_span)
     function isAdmin() {
       return signedIn()
         && request.auth.token.email_verified == true
@@ -31,7 +30,6 @@ service cloud.firestore {
       return v is string && v.size() >= min && v.size() <= max;
     }
 
-    // حقول التسجيل الجديدة (كلها اختيارية للتوافق مع الحسابات القديمة وحسابات Google)
     function validSignupFields(d) {
       return (!('firstName' in d) || validText(d.firstName, 1, 25))
         && (!('lastName' in d) || validText(d.lastName, 1, 25))
@@ -42,8 +40,6 @@ service cloud.firestore {
         && (!('age' in d) || (d.age is int && d.age >= 13 && d.age <= 120));
     }
 
-    // اسم المستخدم المكتوب في الملف الشخصي يجب أن يكون محجوزاً لصاحب الحساب
-    // (الحجز يتم في نفس العملية الجماعية، لذلك نقرأ الحالة بعد التنفيذ)
     function ownsUsername(uname) {
       return uname is string
         && getAfter(/databases/$(database)/documents/usernames/$(uname))
@@ -56,7 +52,6 @@ service cloud.firestore {
       );
     }
 
-    // حظر صارم ثنائي الاتجاه: أي من الطرفين حظر الآخر
     function isBlockedEitherWay(a, b) {
       return exists(/databases/$(database)/documents/blocks/$(a + '_' + b))
         || exists(/databases/$(database)/documents/blocks/$(b + '_' + a));
@@ -72,7 +67,6 @@ service cloud.firestore {
       return convData(convId).get('type', 'direct') == 'group';
     }
 
-    // المحادثات المباشرة فقط: يُرفض الإرسال فوراً عند وجود حظر بين الطرفين
     function notHardBlocked(convId) {
       return isGroupConv(convId)
         || !isBlockedEitherWay(
@@ -93,7 +87,6 @@ service cloud.firestore {
         : members[0];
     }
 
-    // ---------- دالة الخصوصية (الإصدار المصحح) ----------
     function canMessageOther(otherUid) {
       let otherData = get(/databases/$(database)/documents/users/$(otherUid)).data;
       let privacy = otherData.get('messagePrivacy', 'everyone');
@@ -101,7 +94,7 @@ service cloud.firestore {
         || (privacy == 'following' && exists(/databases/$(database)/documents/follows/$(otherUid + '_' + request.auth.uid)));
     }
 
-    // ---------- 1. ملفات المستخدمين العامة ----------
+    // ---------- 1. ملفات المستخدمين العامة ----------[span_2](start_span)[span_2](end_span)
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -147,7 +140,6 @@ service cloud.firestore {
               || request.resource.data.gender in ['male', 'female', 'none'])
           && validSignupFields(request.resource.data)
         )
-        // إدارة المستخدمين من لوحة الأدمن: حظر / توثيق / تغيير الدور (المالك فقط)
         || (
           isAdmin()
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -156,7 +148,6 @@ service cloud.firestore {
           && request.resource.data.isVerified is bool
           && request.resource.data.role in ['admin', 'moderator', 'user']
         )
-        // عدّاد المنشورات: يزيد/ينقص عند النشر والحذف (صاحب الحساب أو الأدمن)
         || (
           (isOwner(uid) || isAdmin())
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -168,8 +159,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // ---------- 1-ب. حجز أسماء المستخدمين (الإصلاح) ----------
-    // معرّف الوثيقة = اسم المستخدم نفسه، وتحمل uid صاحبه
+    // ---------- 1-ب. حجز أسماء المستخدمين ----------[span_3](start_span)[span_3](end_span)
     match /usernames/{uname} {
       allow read: if signedIn();
 
@@ -184,13 +174,12 @@ service cloud.firestore {
 
       allow update: if false;
 
-      // اسم المالك محمي: لا يمكن حذفه أو تحريره حتى لا يستولي عليه أحد
       allow delete: if signedIn()
         && uname != 'animeverse_official'
         && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- 2. البيانات الخاصة ----------
+    // ---------- 2. البيانات الخاصة ----------[span_4](start_span)[span_4](end_span)
     match /userPrivate/{uid} {
       allow read: if isOwner(uid) || isAdmin();
 
@@ -202,7 +191,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // ---------- 3. مفاتيح التشفير العامة ----------
+    // ---------- 3. مفاتيح التشفير العامة ----------[span_5](start_span)[span_5](end_span)
     match /publicKeys/{uid} {
       allow read: if signedIn();
 
@@ -219,7 +208,6 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // نسخة المفتاح الخاص المشفرة
     match /keyBackups/{uid} {
       allow read, delete: if isOwner(uid);
 
@@ -242,7 +230,7 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
     }
 
-    // ---------- 4. المنشورات ----------
+    // ---------- 4. المنشورات ----------[span_6](start_span)[span_6](end_span)
     match /posts/{postId} {
       allow read: if true;
 
@@ -282,7 +270,10 @@ service cloud.firestore {
                 && request.resource.data.mentions.size() <= 20))
         && (!('collaborators' in request.resource.data)
             || (request.resource.data.collaborators is list
-                && request.resource.data.collaborators.size() <= 10))
+                && request.resource.data.collaborators.size() <= 4
+                && request.resource.data.collaborators.toSet().size()
+                   == request.resource.data.collaborators.size()
+                && !request.resource.data.collaborators.hasAny([request.auth.uid])))
         && (!('mediaUrl' in request.resource.data)
             || request.resource.data.mediaUrl == ''
             || request.resource.data.mediaUrl.matches(
@@ -334,6 +325,24 @@ service cloud.firestore {
         || isAdmin()
         || (
           !isBanned()
+          && resource.data.get('collaborators', []).hasAny([request.auth.uid])
+          && request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly(['collaborators', 'collabAccepted'])
+          && request.resource.data.get('collaborators', []) is list
+          && request.resource.data.get('collabAccepted', []) is list
+          && request.resource.data.get('collaborators', []).toSet()
+               .difference(resource.data.get('collaborators', []).toSet()).size() == 0
+          && resource.data.get('collaborators', []).toSet()
+               .difference(request.resource.data.get('collaborators', []).toSet())
+               .hasOnly([request.auth.uid])
+          && request.resource.data.get('collabAccepted', []).toSet()
+               .difference(request.resource.data.get('collaborators', []).toSet()).size() == 0
+          && request.resource.data.get('collabAccepted', []).toSet()
+               .difference(resource.data.get('collabAccepted', []).toSet())
+               .hasOnly([request.auth.uid])
+        )
+        || (
+          !isBanned()
           && request.resource.data.diff(resource.data)
             .affectedKeys().hasOnly(['likesCount'])
           && request.resource.data.likesCount >= 0
@@ -369,7 +378,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 5. القصص ----------
+    // ---------- 5. القصص ----------[span_7](start_span)[span_7](end_span)
     match /stories/{storyId} {
       allow read: if signedIn();
 
@@ -405,7 +414,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 5-ب. مشاهدات القصص والتفاعل معها ----------
+    // ---------- 5-ب. مشاهدات القصص ----------[span_8](start_span)[span_8](end_span)
     match /storyViews/{viewId} {
       allow get: if signedIn()
         && (
@@ -464,7 +473,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 6. الإعجابات ----------
+    // ---------- 6. الإعجابات ----------[span_9](start_span)[span_9](end_span)
     match /likes/{likeId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -486,9 +495,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 6-ب. نشاط الأصدقاء (ريلز أعجب بها الأصدقاء) ----------
-    // audience = قائمة الأصدقاء (متابعة متبادلة) الذين يحق لهم رؤية الإعجاب.
-    // عند إيقاف "إظهار الإعجابات للأصدقاء" لا تُنشأ هذه الوثائق وتُحذف القديمة.
+    // ---------- 6-ب. نشاط الأصدقاء ----------[span_10](start_span)[span_10](end_span)
     match /friendActivity/{actId} {
       allow read: if signedIn()
         && (
@@ -518,7 +525,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 7. المتابعات ----------
+    // ---------- 7. المتابعات ----------[span_11](start_span)[span_11](end_span)
     match /follows/{followId} {
       allow read: if signedIn();
 
@@ -557,7 +564,6 @@ service cloud.firestore {
         );
     }
 
-    // طلبات متابعة الحسابات الخاصة
     match /followRequests/{reqId} {
       allow read: if signedIn()
         && (
@@ -589,7 +595,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 8. الحظر ----------
+    // ---------- 8. الحظر ----------[span_12](start_span)[span_12](end_span)
     match /blocks/{blockId} {
       allow read: if signedIn()
         && resource.data.blockerId == request.auth.uid;
@@ -610,7 +616,7 @@ service cloud.firestore {
         && resource.data.blockerId == request.auth.uid;
     }
 
-    // ---------- 9. البلاغات ----------
+    // ---------- 9. البلاغات ----------[span_13](start_span)[span_13](end_span)
     match /reports/{reportId} {
       allow create: if signedIn()
         && !isBanned()
@@ -640,7 +646,7 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- 10. المحادثات ----------
+    // ---------- 10. المحادثات ----------[span_14](start_span)[span_14](end_span)
     match /conversations/{convId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
 
@@ -657,7 +663,6 @@ service cloud.firestore {
             && convId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
             && !isBlockedBy(otherOf(request.resource.data.members))
             && canMessageOther(otherOf(request.resource.data.members))
-            // من بدأ المحادثة يجب أن يكون المرسل نفسه (يمنع تزوير طلبات المراسلة)
             && (!('starterId' in request.resource.data)
                 || request.resource.data.starterId == request.auth.uid)
           )
@@ -692,7 +697,6 @@ service cloud.firestore {
           )
           ||
           (
-            // الرسائل المؤقتة: مدة بالميلي ثانية (0 = معطّلة)
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disappearAfter'])
             && request.resource.data.disappearAfter is int
             && request.resource.data.disappearAfter >= 0
@@ -700,7 +704,6 @@ service cloud.firestore {
           )
           ||
           (
-            // تثبيت الرسائل: قائمة معرّفات (حتى 3)
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned'])
             && request.resource.data.pinned is list
             && request.resource.data.pinned.size() <= 3
@@ -741,7 +744,6 @@ service cloud.firestore {
             )
             ||
             (
-              // تعديل الرسالة: لصاحبها فقط
               resource.data.senderId == request.auth.uid
               && request.resource.data.senderId == resource.data.senderId
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ciphertext', 'iv', 'wraps', 'edited'])
@@ -756,7 +758,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 10-أ. إعدادات المحادثة الشخصية (كتم / تقييد / أرشفة / حذف عندي / تثبيت / قبول الطلب) ----------
+    // ---------- 10-أ. إعدادات المحادثة الشخصية ----------[span_15](start_span)[span_15](end_span)
     match /chatPrefs/{prefId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -787,7 +789,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 10-ب. الملاحظات ----------
+    // ---------- 10-ب. الملاحظات ----------[span_16](start_span)[span_16](end_span)
     match /notes/{noteUid} {
       allow read: if signedIn();
 
@@ -801,7 +803,7 @@ service cloud.firestore {
       allow delete: if isOwner(noteUid) || isAdmin();
     }
 
-    // ---------- 11. الحلقات والسيرفرات ----------
+    // ---------- 11. الحلقات والسيرفرات ----------[span_17](start_span)[span_17](end_span)
     match /episodes/{episodeId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -820,7 +822,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 12. التعليقات ----------
+    // ---------- 12. التعليقات ----------[span_18](start_span)[span_18](end_span)
     match /comments/{commentId} {
       allow read: if signedIn();
 
@@ -853,7 +855,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 13. الإشعارات ----------
+    // ---------- 13. الإشعارات ----------[span_19](start_span)[span_19](end_span)
     match /notifications/{nid} {
       allow read: if signedIn()
         && resource.data.toUid == request.auth.uid;
@@ -917,7 +919,7 @@ service cloud.firestore {
         && resource.data.toUid == request.auth.uid;
     }
 
-    // ---------- 14. الأجهزة المسجلة ----------
+    // ---------- 14. الأجهزة المسجلة ----------[span_20](start_span)[span_20](end_span)
     match /userDevices/{uid}/items/{deviceId} {
       allow read: if isOwner(uid);
 
@@ -938,7 +940,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
-    // ---------- 15. المكتبة الشخصية ----------
+    // ---------- 15. المكتبة الشخصية ----------[span_21](start_span)[span_21](end_span)
     match /library/{itemId} {
       allow read: if signedIn()
         && (
@@ -956,7 +958,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 16. تقييمات الحلقات ----------
+    // ---------- 16. تقييمات الحلقات ----------[span_22](start_span)[span_22](end_span)
     match /episodeRatings/{ratingId} {
       allow read: if signedIn();
 
@@ -980,26 +982,26 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 17. أنمي خاص ----------
+    // ---------- 17. أنمي خاص ----------[span_23](start_span)[span_23](end_span)
     match /customAnime/{animeId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // ---------- 18. الإعلانات ----------
+    // ---------- 18. الإعلانات ----------[span_24](start_span)[span_24](end_span)
     match /announcements/{annId} {
       allow read: if signedIn();
       allow write: if isAdmin();
     }
 
-    // ---------- 19. سجل الإدارة ----------
+    // ---------- 19. سجل الإدارة ----------[span_25](start_span)[span_25](end_span)
     match /adminLogs/{logId} {
       allow read: if isAdmin();
       allow create: if isAdmin();
       allow update, delete: if false;
     }
 
-    // ---------- 20. زيارات الملفات الشخصية (للإحصائيات) ----------
+    // ---------- 20. زيارات الملفات الشخصية ----------[span_26](start_span)[span_26](end_span)
     match /profileViews/{viewId} {
       allow read: if signedIn()
         && (resource.data.profileUid == request.auth.uid || isAdmin());
@@ -1024,7 +1026,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // أي مسار غير مذكور مرفوض افتراضياً.
+    // القاعدة الافتراضية العامة لأي مسار غير مذكور[span_27](start_span)[span_27](end_span)
     match /{document=**} {
       allow read, write: if false;
     }
