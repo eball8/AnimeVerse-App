@@ -265,9 +265,21 @@ const ReportFlow: React.FC<ReportFlowProps> = ({
   };
 
   const headerTitle = isApp ? tx(T.headerApp) : tx(T.header);
+  // البوابة (Portal) تمرّر الأحداث لأعلى شجرة React، فنمنعها حتى لا تتأثر القصص والريلز
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
   return createPortal(
-    <div className="fixed inset-0 z-[300] bg-dark-950 flex flex-col" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+    <div
+      className="fixed inset-0 z-[300] bg-dark-950 flex flex-col"
+      dir={lang === 'ar' ? 'rtl' : 'ltr'}
+      onClick={stop}
+      onPointerDown={stop}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onTouchStart={stop}
+      onTouchEnd={stop}
+      onMouseDown={stop}
+    >
       {/* الرأس */}
       <div className="shrink-0 flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-white/10">
         <button type="button" onClick={goBack} className="p-2 text-white" aria-label="back">
