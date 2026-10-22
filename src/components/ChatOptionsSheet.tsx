@@ -68,7 +68,7 @@ export interface ChatOptionsSheetProps {
 }
 
 const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const { uid: routeUid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
@@ -174,6 +174,24 @@ const ChatOptionsSheet: React.FC<ChatOptionsSheetProps> = (p) => {
             sub={p.blocked ? t('opt.unblockSub') : t('opt.blockSub')}
             onClick={p.onToggleBlock}
             danger={!p.blocked}
+          />
+        </div>
+      )}
+
+      {p.isGroup && (
+        <div className="divide-y divide-white/5 border-t border-white/10 mt-2">
+          <Row
+            icon={Flag}
+            label={lang === 'ar' ? 'الإبلاغ عن المجموعة' : lang === 'fr' ? 'Signaler le groupe' : 'Report group'}
+            sub={
+              lang === 'ar'
+                ? 'أبلغ عن هذه المجموعة وسيراجعها فريق الإدارة'
+                : lang === 'fr'
+                ? "Signalez ce groupe, l'équipe l'examinera"
+                : 'Report this group for review by our team'
+            }
+            onClick={p.onReport}
+            danger
           />
         </div>
       )}
