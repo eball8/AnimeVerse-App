@@ -349,7 +349,6 @@ export const sendProblemReport = async (text: string, version: string): Promise<
     type: 'bug',
     targetId: 'app',
     targetType: 'app',
-    reporterUid: user.uid,
     reason,
     status: 'pending',
     createdAt: serverTimestamp(),
