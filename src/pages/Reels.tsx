@@ -19,6 +19,7 @@ import { logAdmin } from '../services/adminLog';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { copyText, reelLink, shareLink, videoThumb } from '../utils/links';
 import Avatar from '../components/Avatar';
+import MentionText from '../components/MentionText';
 import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
 import CommentsSheet from '../components/CommentsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -164,9 +165,6 @@ const ReelItem: React.FC<ItemProps> = (p) => {
   };
 
   const railBtn = 'flex flex-col items-center gap-1 text-white drop-shadow active:scale-90 transition-transform';
-  const followLabel = p.followState === 'following'
-    ? t('reelsUi.following')
-    : p.followState === 'requested'
     ? t('reelsUi.requested')
     : t('reelsUi.follow');
 
@@ -297,7 +295,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
             </button>
           )}
         </div>
-        {post.content && <p className="text-xs text-white/90 line-clamp-3 break-words">{post.content}</p>}
+        {post.content && (
+          <p className="text-xs text-white/90 line-clamp-3 break-words pointer-events-auto">
+            <MentionText text={post.content} linkClassName="text-white font-black underline underline-offset-2" />
+          </p>
+        )}
         {borrowedAudio && (
           <p className="text-[11px] text-white/80 flex items-center gap-1">
             <Music2 className="w-3.5 h-3.5" /> {t('audio.original')}
