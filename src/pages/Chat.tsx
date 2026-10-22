@@ -290,7 +290,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
             <span className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : failed ? <RefreshCw className="w-5 h-5" /> : <Play className="w-5 h-5" />}</span>
             <span className="text-[11px] opacity-80">{failed ? t('chat.mediaError') : `${t('chat.video')} • ${formatBytes(payload.size)}`}</span>
           </button>
-          {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
+          {payload.c ? <p className="selectable px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
         </div>
       );
     }
@@ -300,7 +300,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
           <video src={src} controls playsInline className="w-56 max-h-72 rounded-xl bg-black" />
           <button onClick={() => onOpen(src, 'video')} className="absolute top-2 end-2 p-1.5 rounded-full bg-black/60 text-white"><Maximize2 className="w-3.5 h-3.5" /></button>
         </div>
-        {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
+        {payload.c ? <p className="selectable px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
       </div>
     );
   }
@@ -312,7 +312,7 @@ const MediaBubble: React.FC<{ payload: MediaPayload; onOpen: (src: string, type:
          failed ? (<button onClick={load} className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs opacity-80"><RefreshCw className="w-5 h-5" /> {t('chat.mediaError')}</button>) :
          (<div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin opacity-70" /></div>)}
       </div>
-      {payload.c ? <p className="px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
+      {payload.c ? <p className="selectable px-1.5 pt-1.5 text-sm whitespace-pre-wrap break-words">{renderWithMentions(payload.c)}</p> : null}
     </div>
   );
 };
@@ -1157,7 +1157,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
                     )}
                     {p === undefined ? (<Loader2 className="w-4 h-4 animate-spin" />)
                       : p === null ? (<span className="text-xs opacity-70">{t('chat.undecryptable')}</span>)
-                      : p.k === 't' ? (<p className="whitespace-pre-wrap">{renderWithMentions(p.v)}</p>)
+                      : p.k === 't' ? (<p className="selectable whitespace-pre-wrap">{renderWithMentions(p.v)}</p>)
                       : p.k === 'm' ? (<MediaBubble payload={p} onOpen={(src, type) => setViewer({ src, type })} />)
                       : p.k === 'v' ? (<VoiceBubble payload={p} />) : null}
                     <div className={`flex items-center justify-end gap-2 mt-1 ${isMedia ? 'px-1.5 pb-0.5' : ''}`}>
