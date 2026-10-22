@@ -16,6 +16,8 @@ import MentionText from './MentionText';
 import MentionInput from './MentionInput';
 import { useConfirm } from './ConfirmDialog';
 import { useMediaLock } from '../utils/mediaManager';
+import ReportFlow from './ReportFlow';
+import { postLink } from '../utils/links';
 
 interface Props {
   post: Post;
@@ -199,20 +201,6 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
       return;
     }
     setReportFor(c);
-  };
-
-  const submitReport = async (reason: CommentReportReason) => {
-    const c = reportFor;
-    if (!c || !user) return;
-    setReportFor(null);
-    try {
-      await reportComment(c, user.uid, reason);
-      rememberReported(c.id);
-      showToast(t('cm.reportDone'));
-    } catch (e) {
-      console.error('report comment failed:', e);
-      showToast(t('cm.reportFail'));
-    }
   };
 
   const goProfile = (uid: string) => {
@@ -418,33 +406,17 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
           </div>
         )}
 
-        {/* اختيار سبب الإبلاغ */}
+        {/* نافذة البلاغ الموحّدة */}
         {reportFor && (
-          <div className="absolute inset-0 z-30 bg-black/60 flex items-end" onClick={() => setReportFor(null)}>
-            <div
-              className="w-full bg-dark-900 border-t border-white/10 rounded-t-3xl p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] animate-slide-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mx-auto w-10 h-1 rounded-full bg-white/15 mb-3" />
-              <h4 className="text-sm font-black text-white px-3">{t('cm.reportTitle')}</h4>
-              <p className="text-[11px] text-slate-500 px-3 mt-1 mb-2">{t('cm.reportSub')}</p>
-              {REPORT_REASONS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => submitReport(r)}
-                  className="w-full text-start px-3 py-3 rounded-xl text-sm text-slate-200 hover:bg-white/5"
-                >
-                  {t(`cm.reason.${r}`)}
-                </button>
-              ))}
-              <button
-                onClick={() => setReportFor(null)}
-                className="w-full mt-1 px-3 py-3 rounded-xl text-sm font-bold text-slate-400 hover:bg-white/5"
-              >
-                {t('cm.cancel')}
-              </button>
-            </div>
-          </div>
+          <ReportFlow
+            targetType="comment"
+            targetId={reportFor.id}
+            reportedUid={reportFor.authorId}
+            reportedName={reportFor.authorName}
+            link={post.id ? postLink(post.id) : undefined}
+            onClose={() => setReportFor(null)}
+            onDone={() => rememberReported(reportFor.id)}
+          />
         )}
       </div>
     </div>,
