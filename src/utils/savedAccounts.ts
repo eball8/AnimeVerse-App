@@ -9,6 +9,7 @@ export type SavedAccount = {
 };
 
 const KEY = 'animeverse_saved_accounts';
+const MAX_ACCOUNTS = 10;
 
 export const getSavedAccounts = (): SavedAccount[] => {
   try {
@@ -30,7 +31,7 @@ export const saveAccount = (acc: Omit<SavedAccount, 'lastUsed'>): void => {
     const photoURL = acc.photoURL || prev?.photoURL;
     localStorage.setItem(
       KEY,
-      JSON.stringify([{ ...acc, email, photoURL, lastUsed: Date.now() }, ...others].slice(0, 5)),
+      JSON.stringify([{ ...acc, email, photoURL, lastUsed: Date.now() }, ...others].slice(0, MAX_ACCOUNTS)),
     );
   } catch {
     /* التخزين غير متاح: نتجاهل */
