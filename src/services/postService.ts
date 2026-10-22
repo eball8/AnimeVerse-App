@@ -1,6 +1,6 @@
 import { db } from '../config/firebase';
 import {
-  collection, serverTimestamp, query, orderBy, onSnapshot, where, limit,
+  collection, serverTimestamp, query, orderBy, onSnapshot, where, limit, addDoc,
   doc, writeBatch, increment, getDocs, getDoc, setDoc, updateDoc, deleteDoc, startAfter,
   documentId, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
@@ -44,6 +44,17 @@ export interface PostComment {
   authorPhotoURL?: string;
   content: string;
   createdAt: any;
+  /** للردود فقط: معرّف التعليق الرئيسي (مستوى واحد من الردود مثل إنستغرام) */
+  parentId?: string;
+  /** للردود فقط: صاحب التعليق الذي يتم الرد عليه واسمه */
+  replyToUid?: string;
+  replyToName?: string;
+  /** عدد الإعجابات وقائمة من أعجبهم (قد لا تكون موجودة في التعليقات القديمة) */
+  likesCount?: number;
+  likedBy?: string[];
+  /** true بعد تعديل النص */
+  edited?: boolean;
+  editedAt?: any;
 }
 
 /** الحد الأقصى للمدعوين؛ مع صاحب المنشور يصبح المجموع 5 أشخاص */
@@ -439,10 +450,19 @@ export const subscribeComments = (postId: string, cb: (c: PostComment[]) => void
   );
 };
 
+export interface CommentReplyTarget {
+  /** التعليق الرئيسي الذي ستُعلَّق تحته الردود */
+  parentId: string;
+  /** صاحب التعليق المُرَدّ عليه (قد يكون رداً داخل نفس السلسلة) */
+  uid: string;
+  name: string;
+}
+
 export const addComment = async (
   post: Post,
   author: { uid: string; displayName: string; photoURL?: string },
-  text: string
+  text: string,
+  replyTo?: CommentReplyTarget
 ): Promise<void> => {
   if (!post.id) return;
   const content = text.trim().slice(0, 500);
@@ -455,30 +475,107 @@ export const addComment = async (
     createdAt: serverTimestamp(),
   };
   if (author.photoURL) data.authorPhotoURL = author.photoURL;
+  if (replyTo) {
+    data.parentId = replyTo.parentId;
+    data.replyToUid = replyTo.uid;
+    data.replyToName = (replyTo.name || 'User').slice(0, 50);
+  }
 
   const batch = writeBatch(db);
   batch.set(doc(collection(db, 'comments')), data);
   batch.update(doc(db, 'posts', post.id), { commentsCount: increment(1) });
   await batch.commit();
-  
-  markPostInteraction(post.authorId); // ← تسجيل التفاعل
-  notify(post.authorId, 'comment', `علّق على منشورك: ${content.slice(0, 60)}`, post.id);
 
-  // الإشارات داخل التعليق: إشعار لكل شخص ذُكر (عدا صاحب المنشور فقد وصله إشعار التعليق)
+  markPostInteraction(post.authorId);
+
+  if (replyTo) {
+    // إشعار لصاحب التعليق المُرَدّ عليه
+    notify(replyTo.uid, 'comment', `ردّ على تعليقك: ${content.slice(0, 60)}`, post.id);
+    // وصاحب المنشور (إن كان شخصاً آخر) يصله إشعار التعليق المعتاد
+    if (post.authorId !== replyTo.uid) {
+      notify(post.authorId, 'comment', `علّق على منشورك: ${content.slice(0, 60)}`, post.id);
+    }
+  } else {
+    notify(post.authorId, 'comment', `علّق على منشورك: ${content.slice(0, 60)}`, post.id);
+  }
+
+  // الإشارات داخل التعليق: إشعار لكل شخص ذُكر (عدا من وصله إشعار أعلاه)
   if (content.includes('@')) {
+    const skip = new Set<string>([post.authorId]);
+    if (replyTo) skip.add(replyTo.uid);
     extractMentionIds(content, author.uid)
       .then((ids) =>
         ids
-          .filter((id) => id !== post.authorId)
+          .filter((id) => !skip.has(id))
           .forEach((id) => notify(id, 'comment', 'أشار إليك في تعليق', post.id))
       )
       .catch((e) => console.error('comment mentions failed:', e));
   }
 };
 
-export const deleteComment = async (c: PostComment): Promise<void> => {
+/** تعديل نص تعليق (صاحب التعليق فقط). تُوسَم العلامة edited ليظهر "تم التعديل". */
+export const updateComment = async (c: PostComment, text: string): Promise<void> => {
+  const content = text.trim().slice(0, 500);
+  if (!content) throw new Error('EMPTY_COMMENT');
+  if (content === c.content) return;
+  await updateDoc(doc(db, 'comments', c.id), {
+    content,
+    edited: true,
+    editedAt: serverTimestamp(),
+  });
+};
+
+/**
+ * حذف تعليق. إن كان تعليقاً رئيسياً تُحذف ردوده معه (مثل إنستغرام)،
+ * على دفعات صغيرة، والردود أولاً ثم التعليق الرئيسي، حتى تبقى صلاحية الحذف سارية.
+ */
+export const deleteComment = async (c: PostComment, allComments: PostComment[] = []): Promise<void> => {
+  const replies = c.parentId ? [] : allComments.filter((r) => r.parentId === c.id);
+  for (let i = 0; i < replies.length; i += 6) {
+    const chunk = replies.slice(i, i + 6);
+    const b = writeBatch(db);
+    chunk.forEach((r) => b.delete(doc(db, 'comments', r.id)));
+    b.update(doc(db, 'posts', c.postId), { commentsCount: increment(-chunk.length) });
+    await b.commit();
+  }
   const batch = writeBatch(db);
   batch.delete(doc(db, 'comments', c.id));
   batch.update(doc(db, 'posts', c.postId), { commentsCount: increment(-1) });
   await batch.commit();
+};
+
+/** إعجاب / إلغاء إعجاب بتعليق. يرجع true إذا أصبح معجباً به. */
+export const toggleCommentLike = async (c: PostComment, uid: string): Promise<boolean> => {
+  const liked = (c.likedBy || []).includes(uid);
+  await updateDoc(doc(db, 'comments', c.id), {
+    likedBy: liked ? arrayRemove(uid) : arrayUnion(uid),
+    likesCount: increment(liked ? -1 : 1),
+  });
+  if (!liked) notify(c.authorId, 'like', 'أعجب بتعليقك', c.postId);
+  return !liked;
+};
+
+export type CommentReportReason = 'spam' | 'abuse' | 'hate' | 'inappropriate' | 'misinfo' | 'other';
+
+const REPORT_REASON_LABEL: Record<CommentReportReason, string> = {
+  spam: 'محتوى مزعج أو سبام',
+  abuse: 'إساءة أو تنمّر',
+  hate: 'خطاب كراهية',
+  inappropriate: 'محتوى غير لائق',
+  misinfo: 'معلومات مضللة',
+  other: 'سبب آخر',
+};
+
+/** الإبلاغ عن تعليق: يُحفظ في مجموعة reports ليراجعه المشرف من لوحة الإدارة. */
+export const reportComment = async (c: PostComment, me: string, reason: CommentReportReason): Promise<void> => {
+  const excerpt = c.content.replace(/\s+/g, ' ').slice(0, 200);
+  await addDoc(collection(db, 'reports'), {
+    type: reason === 'spam' ? 'spam' : 'abuse',
+    targetId: c.id,
+    targetType: 'comment',
+    reporterUid: me,
+    reason: `${REPORT_REASON_LABEL[reason]} | منشور: ${c.postId} | كاتب التعليق: ${c.authorId} | «${excerpt}»`.slice(0, 500),
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
 };
