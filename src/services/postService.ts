@@ -2,7 +2,7 @@ import { db } from '../config/firebase';
 import {
   collection, serverTimestamp, query, orderBy, onSnapshot, where, limit,
   doc, writeBatch, increment, getDocs, getDoc, setDoc, updateDoc, deleteDoc, startAfter,
-  documentId,
+  documentId, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
@@ -21,7 +21,10 @@ export interface Post {
   repostOfId?: string;
   repostOfAuthorId?: string;
   mentions?: string[];
+  /** المدعوون للتعاون في المنشور (حتى MAX_COLLABORATORS، ولا يشمل صاحب المنشور) */
   collaborators?: string[];
+  /** من قبِل الدعوة منهم فعلاً (مجموعة جزئية من collaborators) — هؤلاء فقط يظهرون في رأس المنشور */
+  collabAccepted?: string[];
   /** السماح للآخرين باستخدام صوت الفيديو / عمل ريمكس (للفيديو فقط) */
   allowAudio?: boolean;
   /** معرّف المنشور الأصلي الذي أُخذ صوته (ريمكس) */
@@ -42,6 +45,26 @@ export interface PostComment {
   content: string;
   createdAt: any;
 }
+
+/** الحد الأقصى للمدعوين؛ مع صاحب المنشور يصبح المجموع 5 أشخاص */
+export const MAX_COLLABORATORS = 4;
+
+/** صاحب المنشور + المساهمون الذين قبلوا الدعوة (بالترتيب، بدون تكرار، حتى 5) */
+export const getContributorIds = (post: Pick<Post, 'authorId' | 'collaborators' | 'collabAccepted'>): string[] => {
+  const invited = new Set(post.collaborators || []);
+  const accepted = (post.collabAccepted || []).filter((id) => invited.has(id) && id !== post.authorId);
+  return Array.from(new Set([post.authorId, ...accepted])).slice(0, MAX_COLLABORATORS + 1);
+};
+
+/** هل هذا المستخدم مدعوّ للتعاون ولم يقبل بعد؟ */
+export const isPendingCollaborator = (
+  post: Pick<Post, 'authorId' | 'collaborators' | 'collabAccepted'>,
+  uid?: string | null
+): boolean =>
+  !!uid &&
+  uid !== post.authorId &&
+  (post.collaborators || []).includes(uid) &&
+  !(post.collabAccepted || []).includes(uid);
 
 export const POSTS_CHANGED_EVENT = 'av:posts-changed';
 
@@ -88,12 +111,14 @@ export const createPost = async (
       Object.entries(postData).filter(([, v]) => v !== undefined && v !== '')
     ) as Record<string, unknown>;
     delete clean.collaborators;
+    delete clean.collabAccepted;
 
+    // المنشور التعاوني: حتى 4 مدعوين + صاحب المنشور = 5 أشخاص كحد أقصى
     const collab = Array.from(new Set(postData.collaborators || []))
       .filter((id) => id && id !== postData.authorId)
-      .slice(0, 10);
+      .slice(0, MAX_COLLABORATORS);
     const mentionIds = await extractMentionIds(postData.content ?? '', postData.authorId);
-    const allMentions = Array.from(new Set([...mentionIds, ...collab])).slice(0, 20);
+    const allMentions = mentionIds.slice(0, 20);
 
     const payload: Record<string, unknown> = {
       ...clean,
@@ -256,18 +281,53 @@ export const clearMyFriendActivity = async (uid: string): Promise<void> => {
 const createdMs = (p: Post) => p.createdAt?.toMillis?.() ?? 0;
 
 export const getUserPosts = async (uid: string, max = 100): Promise<Post[]> => {
+  // منشورات تعاونية قبل المستخدم دعوتها (تظهر في ملفه الشخصي مثل إنستغرام)
+  const collabPosts = getCollabPosts(uid, max).catch((e) => {
+    console.error('collab posts failed:', e);
+    return [] as Post[];
+  });
+  const merge = async (own: Post[]): Promise<Post[]> => {
+    const extra = await collabPosts;
+    if (!extra.length) return own;
+    const seen = new Set(own.map((p) => p.id));
+    const all = [...own, ...extra.filter((p) => !seen.has(p.id))];
+    all.sort((a, b) => createdMs(b) - createdMs(a));
+    return all;
+  };
   try {
     const snap = await getDocs(
       query(collection(db, 'posts'), where('authorId', '==', uid), orderBy('createdAt', 'desc'), limit(max))
     );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
+    return merge(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post)));
   } catch (e: any) {
     if (e?.code !== 'failed-precondition') throw e;
     console.error('User posts index is missing. Open the link inside this error to create it:', e);
     const snap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), limit(max)));
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Post));
     items.sort((a, b) => createdMs(b) - createdMs(a));
-    return items;
+    return merge(items);
+  }
+};
+
+/** المنشورات التي قبل فيها هذا المستخدم دعوة التعاون (لا تحتاج فهرساً مركباً) */
+export const getCollabPosts = async (uid: string, max = 100): Promise<Post[]> => {
+  const snap = await getDocs(query(collection(db, 'posts'), where('collabAccepted', 'array-contains', uid), limit(max)));
+  const items = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Post))
+    .filter((p) => p.authorId !== uid && (p.collaborators || []).includes(uid));
+  items.sort((a, b) => createdMs(b) - createdMs(a));
+  return items;
+};
+
+/** قبول دعوة التعاون (accept=true) أو رفضها/الانسحاب منها (accept=false) */
+export const respondToCollabInvite = async (post: Post, uid: string, accept: boolean): Promise<void> => {
+  if (!post.id) return;
+  const ref = doc(db, 'posts', post.id);
+  if (accept) {
+    await updateDoc(ref, { collabAccepted: arrayUnion(uid) });
+    notify(post.authorId, 'comment', 'قبل دعوتك للتعاون في منشور', post.id);
+  } else {
+    await updateDoc(ref, { collaborators: arrayRemove(uid), collabAccepted: arrayRemove(uid) });
   }
 };
 
