@@ -31,7 +31,8 @@ const Login: React.FC = () => {
 
   const pickAccount = (acc: SavedAccount) => {
     if (acc.provider === 'google') {
-      handleGoogle(acc.email, acc.uid);
+      // إن لم يكن البريد محفوظاً، سيظهر اختيار الحساب مرة واحدة فقط ثم يُحفظ البريد تلقائياً
+      handleGoogle(acc.email || undefined, acc.uid);
     } else {
       setEmail(acc.email);
       setPassword('');
@@ -84,7 +85,11 @@ const Login: React.FC = () => {
       // نحفظ الحساب الذي دخلنا به فوراً مع بريده، حتى يصبح الدخول به مباشراً في المرة القادمة
       const u = auth.currentUser;
       if (u) {
-        const mail = u.email || u.providerData.find((x) => !!x?.email)?.email || '';
+        const mail =
+          u.email ||
+          u.providerData.find((x) => !!x?.email)?.email ||
+          getSavedAccounts().find((a) => a.uid === u.uid)?.email ||
+          '';
         if (mail) {
           saveAccount({
             uid: u.uid,
