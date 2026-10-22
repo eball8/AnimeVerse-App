@@ -11,7 +11,7 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // المالك الأساسي: صاحب حجز اسم المستخدم animeverse_official[span_1](start_span)[span_1](end_span)
+    // المالك الأساسي: صاحب حجز اسم المستخدم animeverse_official
     function isAdmin() {
       return signedIn()
         && request.auth.token.email_verified == true
@@ -94,7 +94,7 @@ service cloud.firestore {
         || (privacy == 'following' && exists(/databases/$(database)/documents/follows/$(otherUid + '_' + request.auth.uid)));
     }
 
-    // ---------- 1. ملفات المستخدمين العامة ----------[span_2](start_span)[span_2](end_span)
+    // ---------- 1. ملفات المستخدمين العامة ----------
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -159,7 +159,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // ---------- 1-ب. حجز أسماء المستخدمين ----------[span_3](start_span)[span_3](end_span)
+    // ---------- 1-ب. حجز أسماء المستخدمين ----------
     match /usernames/{uname} {
       allow read: if signedIn();
 
@@ -179,7 +179,7 @@ service cloud.firestore {
         && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- 2. البيانات الخاصة ----------[span_4](start_span)[span_4](end_span)
+    // ---------- 2. البيانات الخاصة ----------
     match /userPrivate/{uid} {
       allow read: if isOwner(uid) || isAdmin();
 
@@ -191,7 +191,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // ---------- 3. مفاتيح التشفير العامة ----------[span_5](start_span)[span_5](end_span)
+    // ---------- 3. مفاتيح التشفير العامة ----------
     match /publicKeys/{uid} {
       allow read: if signedIn();
 
@@ -230,7 +230,7 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
     }
 
-    // ---------- 4. المنشورات ----------[span_6](start_span)[span_6](end_span)
+    // ---------- 4. المنشورات ----------
     match /posts/{postId} {
       allow read: if true;
 
@@ -378,7 +378,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 5. القصص ----------[span_7](start_span)[span_7](end_span)
+    // ---------- 5. القصص ----------
     match /stories/{storyId} {
       allow read: if signedIn();
 
@@ -414,7 +414,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 5-ب. مشاهدات القصص ----------[span_8](start_span)[span_8](end_span)
+    // ---------- 5-ب. مشاهدات القصص ----------
     match /storyViews/{viewId} {
       allow get: if signedIn()
         && (
@@ -473,7 +473,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 6. الإعجابات ----------[span_9](start_span)[span_9](end_span)
+    // ---------- 6. الإعجابات ----------
     match /likes/{likeId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -495,7 +495,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 6-ب. نشاط الأصدقاء ----------[span_10](start_span)[span_10](end_span)
+    // ---------- 6-ب. نشاط الأصدقاء ----------
     match /friendActivity/{actId} {
       allow read: if signedIn()
         && (
@@ -525,7 +525,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 7. المتابعات ----------[span_11](start_span)[span_11](end_span)
+    // ---------- 7. المتابعات ----------
     match /follows/{followId} {
       allow read: if signedIn();
 
@@ -595,7 +595,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 8. الحظر ----------[span_12](start_span)[span_12](end_span)
+    // ---------- 8. الحظر ----------
     match /blocks/{blockId} {
       allow read: if signedIn()
         && resource.data.blockerId == request.auth.uid;
@@ -616,8 +616,9 @@ service cloud.firestore {
         && resource.data.blockerId == request.auth.uid;
     }
 
-    // ---------- 9. البلاغات ----------[span_13](start_span)[span_13](end_span)
+    // ---------- 9. البلاغات ----------
     match /reports/{reportId} {
+      // البلاغات مجهولة: reporterUid اختياري (للبلاغات القديمة فقط) ولا يكتبه التطبيق الجديد
       allow create: if signedIn()
         && !isBanned()
         && request.resource.data.keys().hasOnly([
@@ -627,6 +628,23 @@ service cloud.firestore {
           'reporterUid',
           'reason',
           'status',
+          'createdAt',
+          'category',
+          'details',
+          'reportedUid',
+          'reportedUsername',
+          'link',
+          'screenshots',
+          'contentType',
+          'contactUsername',
+          'appVersion'
+        ])
+        && request.resource.data.keys().hasAll([
+          'type',
+          'targetId',
+          'targetType',
+          'reason',
+          'status',
           'createdAt'
         ])
         && request.resource.data.type in ['broken-link', 'abuse', 'spam', 'bug']
@@ -634,19 +652,45 @@ service cloud.firestore {
           'episode',
           'comment',
           'post',
+          'video',
+          'reel',
+          'story',
+          'message',
+          'conversation',
+          'group',
           'user',
           'app'
         ]
-        && request.resource.data.reporterUid == request.auth.uid
+        && (!('reporterUid' in request.resource.data)
+            || request.resource.data.reporterUid == request.auth.uid)
         && request.resource.data.status == 'pending'
         && validText(request.resource.data.targetId, 1, 200)
         && validText(request.resource.data.reason, 1, 500)
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.createdAt == request.time
+        && (!('category' in request.resource.data)
+            || validText(request.resource.data.category, 1, 40))
+        && (!('details' in request.resource.data)
+            || validText(request.resource.data.details, 1, 1000))
+        && (!('reportedUid' in request.resource.data)
+            || validText(request.resource.data.reportedUid, 1, 200))
+        && (!('reportedUsername' in request.resource.data)
+            || validText(request.resource.data.reportedUsername, 1, 60))
+        && (!('link' in request.resource.data)
+            || validText(request.resource.data.link, 1, 500))
+        && (!('contentType' in request.resource.data)
+            || request.resource.data.contentType in ['text', 'image', 'video', 'audio'])
+        && (!('contactUsername' in request.resource.data)
+            || validText(request.resource.data.contactUsername, 1, 60))
+        && (!('appVersion' in request.resource.data)
+            || validText(request.resource.data.appVersion, 1, 30))
+        && (!('screenshots' in request.resource.data)
+            || (request.resource.data.screenshots is list
+                && request.resource.data.screenshots.size() <= 3));
 
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- 10. المحادثات ----------[span_14](start_span)[span_14](end_span)
+    // ---------- 10. المحادثات ----------
     match /conversations/{convId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
 
@@ -758,7 +802,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 10-أ. إعدادات المحادثة الشخصية ----------[span_15](start_span)[span_15](end_span)
+    // ---------- 10-أ. إعدادات المحادثة الشخصية ----------
     match /chatPrefs/{prefId} {
       allow read: if signedIn()
         && resource.data.userId == request.auth.uid;
@@ -789,7 +833,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 10-ب. الملاحظات ----------[span_16](start_span)[span_16](end_span)
+    // ---------- 10-ب. الملاحظات ----------
     match /notes/{noteUid} {
       allow read: if signedIn();
 
@@ -803,7 +847,7 @@ service cloud.firestore {
       allow delete: if isOwner(noteUid) || isAdmin();
     }
 
-    // ---------- 11. الحلقات والسيرفرات ----------[span_17](start_span)[span_17](end_span)
+    // ---------- 11. الحلقات والسيرفرات ----------
     match /episodes/{episodeId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -822,7 +866,7 @@ service cloud.firestore {
       }
     }
 
-    // ---------- 12. التعليقات ----------[span_18](start_span)[span_18](end_span)
+    // ---------- 12. التعليقات ----------
     match /comments/{commentId} {
       allow read: if signedIn();
 
@@ -939,7 +983,7 @@ service cloud.firestore {
         );
     }
 
-    // ---------- 13. الإشعارات ----------[span_19](start_span)[span_19](end_span)
+    // ---------- 13. الإشعارات ----------
     match /notifications/{nid} {
       allow read: if signedIn()
         && resource.data.toUid == request.auth.uid;
@@ -1003,7 +1047,7 @@ service cloud.firestore {
         && resource.data.toUid == request.auth.uid;
     }
 
-    // ---------- 14. الأجهزة المسجلة ----------[span_20](start_span)[span_20](end_span)
+    // ---------- 14. الأجهزة المسجلة ----------
     match /userDevices/{uid}/items/{deviceId} {
       allow read: if isOwner(uid);
 
@@ -1024,7 +1068,7 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
-    // ---------- 15. المكتبة الشخصية ----------[span_21](start_span)[span_21](end_span)
+    // ---------- 15. المكتبة الشخصية ----------
     match /library/{itemId} {
       allow read: if signedIn()
         && (
@@ -1042,7 +1086,7 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 16. تقييمات الحلقات ----------[span_22](start_span)[span_22](end_span)
+    // ---------- 16. تقييمات الحلقات ----------
     match /episodeRatings/{ratingId} {
       allow read: if signedIn();
 
@@ -1066,26 +1110,26 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- 17. أنمي خاص ----------[span_23](start_span)[span_23](end_span)
+    // ---------- 17. أنمي خاص ----------
     match /customAnime/{animeId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // ---------- 18. الإعلانات ----------[span_24](start_span)[span_24](end_span)
+    // ---------- 18. الإعلانات ----------
     match /announcements/{annId} {
       allow read: if signedIn();
       allow write: if isAdmin();
     }
 
-    // ---------- 19. سجل الإدارة ----------[span_25](start_span)[span_25](end_span)
+    // ---------- 19. سجل الإدارة ----------
     match /adminLogs/{logId} {
       allow read: if isAdmin();
       allow create: if isAdmin();
       allow update, delete: if false;
     }
 
-    // ---------- 20. زيارات الملفات الشخصية ----------[span_26](start_span)[span_26](end_span)
+    // ---------- 20. زيارات الملفات الشخصية ----------
     match /profileViews/{viewId} {
       allow read: if signedIn()
         && (resource.data.profileUid == request.auth.uid || isAdmin());
@@ -1110,7 +1154,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // القاعدة الافتراضية العامة لأي مسار غير مذكور[span_27](start_span)[span_27](end_span)
+    // القاعدة الافتراضية العامة لأي مسار غير مذكور
     match /{document=**} {
       allow read, write: if false;
     }
