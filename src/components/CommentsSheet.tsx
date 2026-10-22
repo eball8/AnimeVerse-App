@@ -236,14 +236,14 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
-            <span>{a.name}</span>
+            <span className="selectable">{a.name}</span>
             {c.authorId === post.authorId && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
                 {t('cm.creator')}
               </span>
             )}
           </p>
-          <p className="text-sm text-slate-300 break-words whitespace-pre-wrap">
+          <p className="selectable text-sm text-slate-300 break-words whitespace-pre-wrap">
             {isReply && c.replyToUid && c.replyToName && (
               <button
                 onClick={() => goProfile(c.replyToUid as string)}
