@@ -69,6 +69,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/post/" />
                 <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/user/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/profile/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/anime/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/episode/" />
+                <data android:scheme="https" android:host="animeverse-btn.pages.dev" android:pathPrefix="/story/" />
             </intent-filter>
         </activity>
     </application>
