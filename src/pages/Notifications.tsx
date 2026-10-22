@@ -47,6 +47,7 @@ const EXACT_TEXT_KEYS: Record<string, string> = {
   'أشار إليك في منشور': 'notif.mentioned',
   'شاركك في منشور تعاوني': 'notif.collab',
   'قبل دعوتك للتعاون في منشور': 'notif.collabAccepted',
+  'أشار إليك في تعليق': 'notif.mentionedComment',
   'بدأ بمتابعتك': 'notif.followed',
   'أرسل لك طلب متابعة': 'notif.requested',
 };
