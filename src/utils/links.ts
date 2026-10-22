@@ -1,5 +1,5 @@
 // نطاق موقعك على Cloudflare Pages (بدون https://)
-export const WEB_HOST = 'animeverse.pages.dev';
+export const WEB_HOST = 'animeverse-btn.pages.dev';
 export const APP_URL = `https://${WEB_HOST}`;
 
 const baseUrl = (): string => APP_URL.replace(/\/+$/, '');
