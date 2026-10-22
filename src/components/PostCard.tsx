@@ -5,11 +5,15 @@ import { Browser } from '@capacitor/browser';
 import { doc, updateDoc } from 'firebase/firestore';
 import {
   Heart, MessageCircle, Send, Link2, Check, Repeat2, Clapperboard,
-  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2,
+  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2, LogOut,
 } from 'lucide-react';
 import { db } from '../config/firebase';
+import { isPendingCollaborator, respondToCollabInvite } from '../services/postService';
 import type { Post } from '../services/postService';
 import Avatar from './Avatar';
+import {
+  CollabAvatarStack, CollabInviteBanner, ContributorsSheet, useCollab, useCollabNames,
+} from './CollabHeader';
 import { timeAgo } from '../utils/timeAgo';
 import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/links';
 import { useI18n } from '../i18n/I18nContext';
@@ -270,7 +274,6 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
             preload={near ? 'metadata' : 'none'}
             onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
             onCanPlay={() => {
-              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان هو الفعّال
               if (isFeedActive(playerId)) videoRef.current?.play().catch(() => undefined);
             }}
             onPlay={() => setPaused(false)}
@@ -368,13 +371,22 @@ const PostCard: React.FC<Props> = ({
   const [err, setErr] = useState('');
   const [popLike, setPopLike] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
   const [localContent, setLocalContent] = useState<string | null>(null);
-  // إعداد السماح بالصوت بعد تغييره من القائمة (صفحة المنشور لا تتحدث لحظياً)
   const [localAllowAudio, setLocalAllowAudio] = useState<boolean | null>(null);
   const [audioBusy, setAudioBusy] = useState(false);
 
-  // أي نافذة منبثقة مفتوحة = إيقاف كل الفيديوهات
+  const [collabLocal, setCollabLocal] = useState<{ collaborators: string[]; collabAccepted: string[] } | null>(null);
+  const [collabBusy, setCollabBusy] = useState(false);
+  const [collabErr, setCollabErr] = useState('');
+  const [contribOpen, setContribOpen] = useState(false);
+  const collabKey = `${(post.collaborators || []).join(',')}|${(post.collabAccepted || []).join(',')}`;
+  useEffect(() => {
+    setCollabLocal(null);
+  }, [collabKey]);
+  const cpost = collabLocal ? { authorId: post.authorId, ...collabLocal } : post;
+  const { accepted, pending } = useCollab(cpost, authorName, authorPhoto);
+  const collabNames = useCollabNames();
+
   useMediaLock(menuOpen || editing);
 
   useEffect(() => {
@@ -390,11 +402,9 @@ const PostCard: React.FC<Props> = ({
   const url = post.id ? (isVideo ? reelLink(post.id) : postLink(post.id)) : '';
   const isOwner = !!user && post.authorId === user.uid;
   const canEdit = isOwner && !!post.id;
-  // الصوت يخص الفيديوهات الأصلية فقط (ليس إعادة النشر ولا الفيديو ذو الصوت المستعار)
   const ownsAudio = isVideo && !!post.mediaUrl && !!post.id && !post.repostOfId && !post.audioSourceId;
   const audioAllowed = ownsAudio && (localAllowAudio ?? post.allowAudio) === true;
   const shareText = (content || authorName).slice(0, 100);
-  // النص يظهر تحت الصورة كتعليق؛ المنشور النصي فقط يظهر داخل اللوحة الملونة
   const caption = post.mediaUrl ? content : '';
   const longCaption = caption.length > 120 || caption.split('\n').length > 2;
 
@@ -443,6 +453,29 @@ const PostCard: React.FC<Props> = ({
     }
   };
 
+  const respondCollab = async (accept: boolean) => {
+    if (!user || !post.id || collabBusy) return;
+    setCollabBusy(true);
+    setCollabErr('');
+    try {
+      await respondToCollabInvite(post, user.uid, accept);
+      const col = cpost.collaborators || [];
+      const acc = cpost.collabAccepted || [];
+      setCollabLocal(
+        accept
+          ? { collaborators: col, collabAccepted: Array.from(new Set([...acc, user.uid])) }
+          : { collaborators: col.filter((i) => i !== user.uid), collabAccepted: acc.filter((i) => i !== user.uid) }
+      );
+      setContribOpen(false);
+      setMenuOpen(false);
+    } catch (e) {
+      console.error(e);
+      setCollabErr(t('collab.failed'));
+    } finally {
+      setCollabBusy(false);
+    }
+  };
+
   const startEdit = () => {
     setMenuOpen(false);
     setDraft(content || '');
@@ -471,6 +504,11 @@ const PostCard: React.FC<Props> = ({
     }
   };
 
+  const isCollab = accepted.length > 1 || (isOwner && pending.length > 0);
+  const pendingMe = isPendingCollaborator(cpost, user?.uid);
+  const iAmCollab =
+    !!user && !isOwner && (cpost.collaborators || []).includes(user.uid) && (cpost.collabAccepted || []).includes(user.uid);
+
   const menuRow =
     'w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-slate-200 bg-white/5 active:bg-white/10 transition';
 
@@ -482,24 +520,42 @@ const PostCard: React.FC<Props> = ({
         </p>
       )}
 
-      {/* رأس المنشور */}
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <button onClick={() => navigate(`/user/${post.authorId}`)} className="shrink-0">
-          <span className="block p-[2px] rounded-full bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400">
-            <span className="block p-[2px] rounded-full bg-dark-950">
-              <Avatar
-                src={authorPhoto}
-                seed={post.authorId}
-                name={authorName}
-                className="w-9 h-9 rounded-full object-cover bg-dark-900"
-              />
-            </span>
-          </span>
-        </button>
-        <button onClick={() => navigate(`/user/${post.authorId}`)} className="flex-1 min-w-0 text-start">
-          <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
-          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{timeAgo(post.createdAt, lang)}</p>
-        </button>
+        {isCollab ? (
+          <>
+            <button onClick={() => setContribOpen(true)} className="shrink-0" aria-label={t('collab.sheetTitle')}>
+              <CollabAvatarStack list={accepted} size={36} />
+            </button>
+            <button onClick={() => setContribOpen(true)} className="flex-1 min-w-0 text-start">
+              <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{collabNames(accepted)}</h4>
+              <p className="text-[11px] text-slate-500 leading-tight mt-0.5 truncate">
+                {timeAgo(post.createdAt, lang)}
+                {isOwner && pending.length > 0 && (
+                  <span className="text-amber-300"> · {t('collab.pendingCount', { count: pending.length })}</span>
+                )}
+              </p>
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => navigate(`/user/${post.authorId}`)} className="shrink-0">
+              <span className="block p-[2px] rounded-full bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400">
+                <span className="block p-[2px] rounded-full bg-dark-950">
+                  <Avatar
+                    src={authorPhoto}
+                    seed={post.authorId}
+                    name={authorName}
+                    className="w-9 h-9 rounded-full object-cover bg-dark-900"
+                  />
+                </span>
+              </span>
+            </button>
+            <button onClick={() => navigate(`/user/${post.authorId}`)} className="flex-1 min-w-0 text-start">
+              <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
+              <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{timeAgo(post.createdAt, lang)}</p>
+            </button>
+          </>
+        )}
         {post.id && (
           <button
             onClick={() => setMenuOpen(true)}
@@ -512,7 +568,16 @@ const PostCard: React.FC<Props> = ({
         )}
       </div>
 
-      {/* الوسائط بعرض الشاشة */}
+      {pendingMe && (
+        <CollabInviteBanner
+          inviterName={authorName}
+          busy={collabBusy}
+          error={collabErr}
+          onAccept={() => respondCollab(true)}
+          onDecline={() => respondCollab(false)}
+        />
+      )}
+
       <PostMedia
         post={post}
         isVideo={isVideo}
@@ -523,7 +588,6 @@ const PostCard: React.FC<Props> = ({
         mediaAlt={t('postCard.media')}
       />
 
-      {/* شريط الأزرار */}
       <div className="flex items-center gap-4 px-3 pt-3">
         <button
           onClick={likeNow}
@@ -547,14 +611,12 @@ const PostCard: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* عدد الإعجابات */}
       {post.likesCount > 0 && (
         <p className="px-3 mt-2 text-[13.5px] font-extrabold text-white">
           {t('postCard.likes', { count: fmtCount(post.likesCount) })}
         </p>
       )}
 
-      {/* النص المرافق */}
       {caption && (
         <p
           dir="auto"
@@ -574,14 +636,24 @@ const PostCard: React.FC<Props> = ({
         </button>
       )}
 
-      {/* التعليقات */}
       <button onClick={() => onComment(post)} className="block px-3 mt-1.5 text-[13px] text-slate-500 text-start">
         {post.commentsCount > 0
           ? t('postCard.viewComments', { count: fmtCount(post.commentsCount) })
           : t('postCard.addComment')}
       </button>
 
-      {/* قائمة الثلاث نقاط */}
+      {contribOpen && (
+        <ContributorsSheet
+          accepted={accepted}
+          pending={isOwner ? pending : []}
+          meUid={user?.uid}
+          canLeave={iAmCollab}
+          leaving={collabBusy}
+          onLeave={() => respondCollab(false)}
+          onClose={() => setContribOpen(false)}
+        />
+      )}
+
       {menuOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => setMenuOpen(false)}>
           <div
@@ -598,6 +670,12 @@ const PostCard: React.FC<Props> = ({
             {canEdit && (
               <button onClick={startEdit} className={menuRow}>
                 <Pencil className="w-5 h-5 text-primary-400" /> {t('postCard.edit')}
+              </button>
+            )}
+
+            {iAmCollab && (
+              <button onClick={() => respondCollab(false)} disabled={collabBusy} className={`${menuRow} disabled:opacity-60`}>
+                <LogOut className="w-5 h-5 text-primary-400" /> {t('collab.leave')}
               </button>
             )}
 
@@ -692,7 +770,6 @@ const PostCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* نافذة تعديل المنشور */}
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => !saving && setEditing(false)}>
           <div
