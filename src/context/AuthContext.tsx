@@ -313,13 +313,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInGoogle = async (hintEmail?: string): Promise<string | undefined> => {
     let tokenEmail: string | undefined;
+    // نص تشخيصي يُعرض في شاشة الدخول لمعرفة سبب الفشل بدقة
+    let hintDetail = '';
     try {
       if (Capacitor.isNativePlatform()) {
         let idToken: string | undefined;
 
-        // الأولوية دائماً لإضافة GoogleHint (تعمل مع البريد ومن دونه):
-        // - مع البريد: دخول مباشر بالحساب المحدد
-        // - بدون البريد: تظهر قائمة الحسابات مرة واحدة ثم يُحفظ البريد تلقائياً
+        // الأولوية دائماً لإضافة GoogleHint (تعمل مع البريد ومن دونه)
         if (Capacitor.isPluginAvailable('GoogleHint')) {
           try {
             const r = await GoogleHint.signIn({ email: hintEmail || '' });
@@ -327,23 +327,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch (hintErr: any) {
             // إلغاء المستخدم: نوقف العملية ولا ننتقل للطريقة الاحتياطية
             if (isCancelError(hintErr)) throw hintErr;
+            hintDetail = `GoogleHint: ${String(hintErr?.code ?? '')} ${String(hintErr?.message ?? '')}`.trim();
             console.error('GoogleHint failed, falling back:', hintErr);
           }
+        } else {
+          hintDetail = 'GoogleHint plugin not available';
         }
 
         // احتياطي: الإضافة الثانية، فقط إذا لم تنجح GoogleHint
         if (!idToken) {
-          const result = await FirebaseAuthentication.signInWithGoogle({
-            skipNativeAuth: true,
-            useCredentialManager: false,
-          } as any);
-          idToken = result.credential?.idToken;
+          try {
+            const result = await FirebaseAuthentication.signInWithGoogle({
+              skipNativeAuth: true,
+              useCredentialManager: false,
+            } as any);
+            idToken = result.credential?.idToken;
+          } catch (fbErr: any) {
+            if (isCancelError(fbErr)) throw fbErr;
+            try { fbErr.hintDetail = hintDetail; } catch {}
+            throw fbErr;
+          }
         }
 
-        if (!idToken) throw new Error('NO_ID_TOKEN');
+        if (!idToken) {
+          const err: any = new Error('NO_ID_TOKEN');
+          err.hintDetail = hintDetail;
+          throw err;
+        }
         tokenEmail = emailFromIdToken(idToken);
         const cred = GoogleAuthProvider.credential(idToken);
-        await signInWithCredential(auth, cred);
+        try {
+          await signInWithCredential(auth, cred);
+        } catch (credErr: any) {
+          try { credErr.hintDetail = `signInWithCredential (token email: ${tokenEmail || 'none'})`; } catch {}
+          throw credErr;
+        }
       } else {
         const { signInWithPopup } = await import('firebase/auth');
         let provider = googleProvider;
