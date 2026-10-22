@@ -299,7 +299,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           )}
         </div>
         {post.content && (
-          <p className="text-xs text-white/90 line-clamp-3 break-words pointer-events-auto">
+          <p className="selectable text-xs text-white/90 line-clamp-3 break-words pointer-events-auto">
             <MentionText text={post.content} linkClassName="text-white font-black underline underline-offset-2" />
           </p>
         )}
