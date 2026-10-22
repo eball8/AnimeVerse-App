@@ -176,10 +176,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(p);
       writeCachedProfile(p);
       checkDevice(fbUser.uid).catch(() => undefined);
+      // البريد ضروري ليُسجَّل الدخول مباشرة بدون قائمة حسابات غوغل، لذلك نبحث عنه في كل مصدر متاح
+      const accEmail =
+        fbUser.email ||
+        fbUser.providerData.find((x) => !!x?.email)?.email ||
+        (p as { email?: string }).email ||
+        '';
       saveAccount({
         uid: fbUser.uid,
-        email: fbUser.email || '',
-        displayName: p.displayName || fbUser.displayName || (fbUser.email || '').split('@')[0],
+        email: accEmail,
+        displayName: p.displayName || fbUser.displayName || accEmail.split('@')[0],
         photoURL: p.photoURL || fbUser.photoURL || undefined,
         provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
       });
@@ -262,8 +268,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!free) {
         pendingSignUpProfile = null;
         openSignUpGate(false);
-        await cred.user.delete().catch(console.error);
-        await fbSignOut(auth).catch(() => undefined);
+        signUpGate = null;
+        await cred.user.delete().catch(() => undefined);
         const err: any = new Error('USERNAME_TAKEN');
         err.code = 'app/username-taken';
         throw err;
