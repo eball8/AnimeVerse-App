@@ -22,8 +22,16 @@ export const getSavedAccounts = (): SavedAccount[] => {
 
 export const saveAccount = (acc: Omit<SavedAccount, 'lastUsed'>): void => {
   try {
-    const others = getSavedAccounts().filter((a) => a.uid !== acc.uid);
-    localStorage.setItem(KEY, JSON.stringify([{ ...acc, lastUsed: Date.now() }, ...others].slice(0, 5)));
+    const all = getSavedAccounts();
+    const prev = all.find((a) => a.uid === acc.uid);
+    const others = all.filter((a) => a.uid !== acc.uid);
+    // لا نسمح لبريد فارغ بمسح بريد محفوظ سابقاً (هذا ما كان يجعل بعض الحسابات تفتح قائمة غوغل)
+    const email = acc.email || prev?.email || '';
+    const photoURL = acc.photoURL || prev?.photoURL;
+    localStorage.setItem(
+      KEY,
+      JSON.stringify([{ ...acc, email, photoURL, lastUsed: Date.now() }, ...others].slice(0, 5)),
+    );
   } catch {
     /* التخزين غير متاح: نتجاهل */
   }
