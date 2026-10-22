@@ -365,9 +365,9 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data)
             .affectedKeys().hasOnly(['commentsCount'])
           && request.resource.data.commentsCount >= 0
-          && math.abs(
-            request.resource.data.commentsCount - resource.data.commentsCount
-          ) == 1
+          && request.resource.data.commentsCount != resource.data.commentsCount
+          && request.resource.data.commentsCount - resource.data.commentsCount <= 1
+          && request.resource.data.commentsCount - resource.data.commentsCount >= -10
         )
       );
 
@@ -834,7 +834,10 @@ service cloud.firestore {
           'authorName',
           'authorPhotoURL',
           'content',
-          'createdAt'
+          'createdAt',
+          'parentId',
+          'replyToUid',
+          'replyToName'
         ])
         && request.resource.data.postId is string
         && exists(
@@ -844,14 +847,95 @@ service cloud.firestore {
         && validText(request.resource.data.content, 1, 500)
         && (!('authorPhotoURL' in request.resource.data)
             || request.resource.data.authorPhotoURL is string)
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.createdAt == request.time
+        && (
+          (
+            // تعليق رئيسي: بلا حقول رد
+            !('parentId' in request.resource.data)
+            && !('replyToUid' in request.resource.data)
+            && !('replyToName' in request.resource.data)
+          )
+          ||
+          (
+            // رد: يجب أن يتبع تعليقاً رئيسياً (ليس رداً) في نفس المنشور
+            'parentId' in request.resource.data
+            && request.resource.data.parentId is string
+            && validText(request.resource.data.get('replyToUid', ''), 1, 128)
+            && validText(request.resource.data.get('replyToName', ''), 1, 50)
+            && exists(
+              /databases/$(database)/documents/comments/$(request.resource.data.parentId)
+            )
+            && get(
+              /databases/$(database)/documents/comments/$(request.resource.data.parentId)
+            ).data.postId == request.resource.data.postId
+            && !('parentId' in get(
+              /databases/$(database)/documents/comments/$(request.resource.data.parentId)
+            ).data)
+          )
+        );
 
-      allow update: if false;
+      allow update: if signedIn()
+        && !isBanned()
+        && (
+          (
+            // تعديل نص التعليق: صاحبه فقط
+            request.auth.uid == resource.data.authorId
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['content', 'edited', 'editedAt'])
+            && validText(request.resource.data.content, 1, 500)
+            && request.resource.data.edited == true
+            && request.resource.data.editedAt == request.time
+          )
+          ||
+          (
+            // إعجاب / إلغاء إعجاب: أي مستخدم، وبقيمته هو فقط
+            request.resource.data.diff(resource.data)
+              .affectedKeys().hasOnly(['likedBy', 'likesCount'])
+            && request.resource.data.likedBy is list
+            && request.resource.data.likesCount is int
+            && request.resource.data.likesCount >= 0
+            && (
+              (
+                !(request.auth.uid in resource.data.get('likedBy', []))
+                && request.resource.data.likedBy.size()
+                     == resource.data.get('likedBy', []).size() + 1
+                && request.resource.data.likedBy.toSet()
+                     .difference(resource.data.get('likedBy', []).toSet())
+                     .hasOnly([request.auth.uid])
+                && request.resource.data.likesCount
+                     == resource.data.get('likesCount', 0) + 1
+              )
+              ||
+              (
+                request.auth.uid in resource.data.get('likedBy', [])
+                && request.resource.data.likedBy.size()
+                     == resource.data.get('likedBy', []).size() - 1
+                && resource.data.get('likedBy', []).toSet()
+                     .difference(request.resource.data.likedBy.toSet())
+                     .hasOnly([request.auth.uid])
+                && request.resource.data.likesCount
+                     == resource.data.get('likesCount', 0) - 1
+              )
+            )
+          )
+        );
 
+      // الحذف: صاحب التعليق، المشرف، صاحب المنشور، أو صاحب التعليق الرئيسي (لحذف الردود عليه)
       allow delete: if signedIn()
         && (
           request.auth.uid == resource.data.authorId
           || isAdmin()
+          || (
+            exists(/databases/$(database)/documents/posts/$(resource.data.postId))
+            && get(/databases/$(database)/documents/posts/$(resource.data.postId))
+                 .data.authorId == request.auth.uid
+          )
+          || (
+            'parentId' in resource.data
+            && exists(/databases/$(database)/documents/comments/$(resource.data.parentId))
+            && get(/databases/$(database)/documents/comments/$(resource.data.parentId))
+                 .data.authorId == request.auth.uid
+          )
         );
     }
 
