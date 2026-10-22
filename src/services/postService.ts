@@ -573,7 +573,6 @@ export const reportComment = async (c: PostComment, me: string, reason: CommentR
     type: reason === 'spam' ? 'spam' : 'abuse',
     targetId: c.id,
     targetType: 'comment',
-    reporterUid: me,
     reason: `${REPORT_REASON_LABEL[reason]} | منشور: ${c.postId} | كاتب التعليق: ${c.authorId} | «${excerpt}»`.slice(0, 500),
     status: 'pending',
     createdAt: serverTimestamp(),
