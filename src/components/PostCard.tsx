@@ -253,10 +253,10 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
       className="relative w-full overflow-hidden bg-black select-none"
       style={{ aspectRatio: String(ratio) }}
     >
-      {/* خلفية ضبابية عند الصور/الفيديوهات الأطول أو الأعرض من المسموح */}
-      {letterbox && (poster || !isVideo) && (
+      {/* خلفية ضبابية للصور فقط؛ الفيديوهات تبقى بجوانب سوداء نقية (مثل إنستغرام ويوتيوب) */}
+      {letterbox && !isVideo && (
         <img
-          src={isVideo ? poster : post.mediaUrl}
+          src={post.mediaUrl}
           alt=""
           aria-hidden
           className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-60"
