@@ -478,7 +478,6 @@ export const reportUser = async (me: string, targetUid: string, kind: ReportKind
     type: kind,
     targetId: targetUid,
     targetType: 'user',
-    reporterUid: me,
     reason: text,
     status: 'pending',
     createdAt: serverTimestamp(),
