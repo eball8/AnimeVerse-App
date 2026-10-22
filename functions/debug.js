@@ -1,3 +1,4 @@
+// v2
 // صفحة تشخيص مؤقتة (احذفها بعد الانتهاء):
 //   https://animeverse-btn.pages.dev/debug?post=POST_ID
 //   https://animeverse-btn.pages.dev/debug?user=USER_ID
