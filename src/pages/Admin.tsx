@@ -269,6 +269,32 @@ const ReportsTab: React.FC = () => {
         <div key={r.id} className="card p-3 space-y-2">
           <p className="text-xs text-slate-400">{r.type} · {r.targetType} · <span className="text-white">{r.status}</span></p>
           <p className="text-sm text-slate-200 break-words">{r.reason}</p>
+          {r.reportedUsername && (
+            <p className="text-xs text-slate-300 break-all" dir="ltr">
+              المُبلَّغ عنه: <span className="text-white font-bold">@{r.reportedUsername}</span>
+            </p>
+          )}
+          {r.contentType && <p className="text-[11px] text-slate-400">نوع الرسالة: {r.contentType}</p>}
+          {r.contactUsername && (
+            <p className="text-xs text-slate-300 break-all" dir="ltr">
+              مستخدم أرسل المشكلة: <span className="text-white font-bold">@{r.contactUsername}</span>
+            </p>
+          )}
+          {r.appVersion && <p className="text-[11px] text-slate-400">الإصدار: {r.appVersion}</p>}
+          {r.link && (
+            <a href={r.link} target="_blank" rel="noopener noreferrer" className="block text-xs text-primary-400 underline break-all" dir="ltr">
+              {r.link}
+            </a>
+          )}
+          {Array.isArray(r.screenshots) && r.screenshots.length > 0 && (
+            <div className="flex gap-2">
+              {r.screenshots.map((u: string, i: number) => (
+                <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block w-20 h-20 rounded-xl overflow-hidden border border-white/10">
+                  <img src={u} alt="" className="w-full h-full object-cover" loading="lazy" />
+                </a>
+              ))}
+            </div>
+          )}
           <p className="text-[10px] text-slate-500 break-all">{t('adm.target', { id: r.targetId })}</p>
           <div className="flex gap-2">
             {r.status === 'pending' && (
