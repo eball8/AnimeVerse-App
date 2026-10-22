@@ -1,842 +1,738 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
-import { doc, updateDoc } from 'firebase/firestore';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Heart, MessageCircle, Send, Link2, Check, Repeat2, Clapperboard,
-  MoreHorizontal, Pencil, Trash2, X, Loader2, Volume2, VolumeX, Play, Share2, Music2, LogOut,
+  Heart, MessageCircle, Repeat2, Share2, Link2, Volume2, VolumeX, Loader2, Clapperboard,
+  Plus, Users, MoreVertical, Trash2, ArrowLeft, Music2,
 } from 'lucide-react';
-import { db } from '../config/firebase';
-import { isPendingCollaborator, respondToCollabInvite } from '../services/postService';
-import type { Post } from '../services/postService';
-import Avatar from './Avatar';
-import MentionText from './MentionText';
-import {
-  CollabAvatarStack, CollabInviteBanner, ContributorsSheet, useCollab, useCollabNames,
-} from './CollabHeader';
-import { timeAgo } from '../utils/timeAgo';
-import { copyText, postLink, reelLink, shareLink, videoThumb } from '../utils/links';
-import { useI18n } from '../i18n/I18nContext';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { isFeedActive, registerFeedPlayer, reportFeedRatio, useMediaLock } from '../utils/mediaManager';
+import { useI18n } from '../i18n/I18nContext';
+import {
+  deletePost, getFriendsReels, getMyLikedPostIds, getMyRepostMap, getPostById, getReelsPage,
+  repostPost, toggleLike,
+} from '../services/postService';
+import type { Post } from '../services/postService';
+import { getMyFollowStates, toggleFollow } from '../services/followService';
+import type { FollowState } from '../services/followService';
+import { logAdmin } from '../services/adminLog';
+import { pickAuthor, useUserBriefs } from '../services/userCache';
+import { copyText, reelLink, shareLink, videoThumb } from '../utils/links';
+import Avatar from '../components/Avatar';
+import MentionText from '../components/MentionText';
+import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
+import CommentsSheet from '../components/CommentsSheet';
+import { useConfirm } from '../components/ConfirmDialog';
+import { useMediaBlocked, useMediaLock } from '../utils/mediaManager';
 import { useSyncedAudio } from '../utils/syncedAudio';
 
-interface Props {
+type Tab = 'reels' | 'friends';
+
+interface ItemProps {
   post: Post;
+  index: number;
+  active: boolean;
+  near: boolean;
+  muted: boolean;
   liked: boolean;
-  canDelete: boolean;
+  reposted: boolean;
+  followState: FollowState;
+  isMe: boolean;
+  canManage: boolean;
   authorName: string;
   authorPhoto?: string;
   repostName?: string;
+  likedByText?: string;
+  root: React.RefObject<HTMLDivElement>;
+  onVisible: (i: number) => void;
+  onToggleMute: () => void;
+  onAutoplayBlocked: () => void;
   onLike: (p: Post) => void;
   onComment: (p: Post) => void;
-  onDelete: (p: Post) => void;
+  onRepost: (p: Post) => void;
+  onShare: (p: Post) => void;
+  onCopy: (p: Post) => void;
+  onOpenAuthor: (uid: string) => void;
+  onFollow: (p: Post) => void;
+  onMore: (p: Post) => void;
+  onUseAudio: (p: Post) => void;
 }
 
-const openExternal = async (href: string) => {
-  try {
-    if (Capacitor.isNativePlatform()) await Browser.open({ url: href });
-    else window.open(href, '_blank', 'noopener,noreferrer');
-  } catch {
-    window.open(href, '_blank');
-  }
-};
+const DOUBLE_TAP_MS = 280;
 
-const TARGETS: { id: string; label: string; bg: string; glyph: string; href: (u: string, t: string) => string }[] = [
-  {
-    id: 'wa',
-    label: 'WhatsApp',
-    bg: 'bg-[#25D366]',
-    glyph: 'W',
-    href: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t}${u}`)}`,
-  },
-  {
-    id: 'tg',
-    label: 'Telegram',
-    bg: 'bg-[#229ED9]',
-    glyph: 'T',
-    href: (u, t) => `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
-  },
-  {
-    id: 'fb',
-    label: 'Facebook',
-    bg: 'bg-[#1877F2]',
-    glyph: 'f',
-    href: (u) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(u)}`,
-  },
-  {
-    id: 'x',
-    label: 'X',
-    bg: 'bg-black border border-white/20',
-    glyph: 'X',
-    href: (u, t) => `https://twitter.com/intent/tweet?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
-  },
-];
+const ReelItem: React.FC<ItemProps> = (p) => {
+  const { t } = useI18n();
+  const ref = useRef<HTMLDivElement>(null);
+  const vref = useRef<HTMLVideoElement>(null);
+  const lastTap = useRef(0);
+  const tapTimer = useRef<number | null>(null);
+  const heartId = useRef(0);
+  const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const { post, active, near, muted, liked } = p;
+  const blocked = useMediaBlocked();
+  // منشور تعاوني: المساهمون المقبولون يظهرون معاً مع الناشر
+  const { accepted: collabList } = useCollab(post, p.authorName, p.authorPhoto);
+  const collabNames = useCollabNames();
+  const [contribOpen, setContribOpen] = useState(false);
+  const isCollab = collabList.length > 1;
 
-/* ------------------------------------------------------------------
-   حالة كتم الصوت مشتركة بين كل المنشورات (مثل انستغرام):
-   تضغط زر الصوت مرة فتعمل كل الفيديوهات التالية بصوت.
------------------------------------------------------------------- */
-let globalMuted = true;
-const muteListeners = new Set<() => void>();
-const useGlobalMute = (): [boolean, (v: boolean) => void] => {
-  const [muted, setMuted] = useState(globalMuted);
+  // صوت مستعار (ريمكس): يُكتم الفيديو ويُشغَّل الصوت المستعار متزامناً معه
+  const borrowedAudio = post.audioUrl;
+  useSyncedAudio(vref, borrowedAudio, muted, near);
+  // الأسطوانة / خيار استعمال الصوت: تظهر فقط إن سمح صاحب الفيديو (وليس ريمكس ولا إعادة نشر)
+  const audioAllowed = post.allowAudio === true && !post.audioSourceId && !post.repostOfId;
+
   useEffect(() => {
-    const fn = () => setMuted(globalMuted);
-    muteListeners.add(fn);
-    return () => {
-      muteListeners.delete(fn);
-    };
-  }, []);
-  const set = useCallback((v: boolean) => {
-    globalMuted = v;
-    muteListeners.forEach((f) => f());
-  }, []);
-  return [muted, set];
-};
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting && e.intersectionRatio >= 0.6) p.onVisible(p.index);
+      },
+      { root: p.root.current, threshold: [0.6] }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [p.index, p.onVisible, p.root]);
 
-/* نقرة واحدة / نقرتان سريعتان (دبل تاب) */
-const useTap = (onSingle: (() => void) | null, onDouble: () => void) => {
-  const last = useRef(0);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  return () => {
-    const now = Date.now();
-    if (now - last.current < 300) {
-      window.clearTimeout(timer.current);
-      last.current = 0;
-      onDouble();
-    } else {
-      last.current = now;
-      if (onSingle) timer.current = window.setTimeout(onSingle, 280);
-    }
-  };
-};
-
-// نسبة العرض/الارتفاع المسموحة في الفيد (مثل انستغرام: من 4:5 إلى 1.91:1)
-const MIN_RATIO = 0.8;
-const MAX_RATIO = 1.91;
-const clampRatio = (r: number) => Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));
-
-interface MediaProps {
-  post: Post;
-  isVideo: boolean;
-  content: string;
-  liked: boolean;
-  onDoubleLike: () => void;
-  openReelsLabel: string;
-  mediaAlt: string;
-}
-
-/* ---------- الوسائط: بعرض الشاشة كاملاً ---------- */
-const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoubleLike, openReelsLabel, mediaAlt }) => {
-  const navigate = useNavigate();
-  const boxRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerId = useId();
-  const [muted, setGlobalMuted] = useGlobalMute();
-  const [ratio, setRatio] = useState<number>(0.8);
-  const [letterbox, setLetterbox] = useState(false);
-  const [near, setNear] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [burst, setBurst] = useState(0);
-  const [imgFailed, setImgFailed] = useState(false);
-
-  const poster = isVideo ? videoThumb(post.mediaUrl) : undefined;
-
-  const applyRatio = (w: number, h: number) => {
-    if (!w || !h) return;
-    const raw = w / h;
-    setRatio(clampRatio(raw));
-    setLetterbox(raw < MIN_RATIO - 0.01 || raw > MAX_RATIO + 0.01);
-  };
-
-  // تسجيل الفيديو لدى مدير الوسائط: فيديو واحد فقط يعمل، ويتوقف فوراً عند الإخفاء أو الـ Unmount
+  // إيقاف الفيديو وتحرير الموارد عند الخروج من الشاشة (Unmount) أو عند إخفاء العنصر
   useEffect(() => {
-    if (!isVideo || !post.mediaUrl) return;
-    const v = videoRef.current;
-    const off = registerFeedPlayer(playerId, {
-      box: () => boxRef.current,
-      play: () => {
-        videoRef.current?.play().catch(() => undefined);
-      },
-      pause: () => {
-        videoRef.current?.pause();
-      },
-    });
+    const v = vref.current;
     return () => {
-      off();
       if (v) {
         v.pause();
         v.removeAttribute('src');
         v.load();
       }
     };
-  }, [isVideo, post.mediaUrl, playerId]);
-
-  // تحميل مبكر + إبلاغ مدير الوسائط بنسبة ظهور الفيديو
-  useEffect(() => {
-    if (!isVideo || !boxRef.current) return;
-    const el = boxRef.current;
-    const nearIO = new IntersectionObserver(
-      (es) => es.forEach((e) => e.isIntersecting && setNear(true)),
-      { rootMargin: '900px 0px' }
-    );
-    const playIO = new IntersectionObserver(
-      (es) => es.forEach((e) => reportFeedRatio(playerId, e.intersectionRatio)),
-      { threshold: [0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1] }
-    );
-    nearIO.observe(el);
-    playIO.observe(el);
-    return () => {
-      nearIO.disconnect();
-      playIO.disconnect();
-    };
-  }, [isVideo, playerId]);
-
-  // فيديو بصوت مستعار (ريمكس): يُكتم الفيديو دائماً ويُشغَّل الصوت المستعار بدلاً منه
-  const borrowedAudio = isVideo ? post.audioUrl : undefined;
-  useSyncedAudio(videoRef, borrowedAudio, muted, isVideo && near);
+  }, [near]);
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = muted || !!borrowedAudio;
-  }, [muted, near, borrowedAudio]);
+    const v = vref.current;
+    if (!v) return;
+    v.muted = muted || !!borrowedAudio;
+    if (active && !blocked) {
+      v.play().catch(() => {
+        // المتصفح منع التشغيل بالصوت: نشغّله بدون صوت ونُظهر زر الكتم
+        if (!v.muted) {
+          v.muted = true;
+          p.onAutoplayBlocked();
+          v.play().catch(() => {});
+        }
+      });
+    } else v.pause();
+  }, [active, near, muted, blocked, borrowedAudio]);
 
-  // النقر على أي فيديو يفتح شاشة الريلز مباشرة (مثل انستغرام)
-  const openReels = () => {
-    if (!post.id) return;
-    videoRef.current?.pause();
-    navigate(`/reels/${post.id}`);
-  };
-
-  const likeBurst = () => {
-    setBurst((n) => n + 1);
-    if (!liked) onDoubleLike();
-  };
-
-  const onTap = useTap(isVideo && post.id ? openReels : null, likeBurst);
-
-  useEffect(() => {
-    if (!burst) return;
-    const id = window.setTimeout(() => setBurst(0), 800);
-    return () => window.clearTimeout(id);
-  }, [burst]);
-
-  /* منشور نصي فقط: لوحة ملونة بخط كبير */
-  if (!post.mediaUrl) {
-    if (!content) return null;
-    const long = content.length > 220;
-    return (
-      <div
-        onClick={onTap}
-        className="relative w-full min-h-[260px] px-7 py-12 flex items-center justify-center bg-gradient-to-br from-primary-600/30 via-dark-900 to-accent-500/30 select-none"
-      >
-        <p
-          dir="auto"
-          className={`break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
-            long ? 'text-base text-start' : 'text-2xl text-center'
-          }`}
-        >
-          <MentionText text={content} />
-        </p>
-        {burst > 0 && <HeartBurst k={burst} />}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={boxRef}
-      onClick={onTap}
-      className="relative w-full overflow-hidden bg-black select-none"
-      style={{ aspectRatio: String(ratio) }}
-    >
-      {/* خلفية ضبابية عند الصور/الفيديوهات الأطول أو الأعرض من المسموح */}
-      {letterbox && (poster || !isVideo) && (
-        <img
-          src={isVideo ? poster : post.mediaUrl}
-          alt=""
-          aria-hidden
-          className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-60"
-        />
-      )}
-
-      {isVideo ? (
-        <>
-          <video
-            ref={videoRef}
-            src={near ? post.mediaUrl : undefined}
-            poster={poster}
-            loop
-            muted={muted || !!borrowedAudio}
-            playsInline
-            preload={near ? 'metadata' : 'none'}
-            onLoadedMetadata={(e) => applyRatio(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-            onCanPlay={() => {
-              // الفيديو لم يكن جاهزاً لحظة ظهوره (src يُضبط متأخراً)، فنشغّله الآن إن كان هو الفعّال
-              if (isFeedActive(playerId)) videoRef.current?.play().catch(() => undefined);
-            }}
-            onPlay={() => setPaused(false)}
-            onPause={() => setPaused(true)}
-            onTimeUpdate={(e) => {
-              const v = e.currentTarget;
-              if (v.duration) setProgress(v.currentTime / v.duration);
-            }}
-            className={`relative w-full h-full ${letterbox ? 'object-contain' : 'object-cover'}`}
-          />
-
-          {paused && (
-            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                <Play className="w-8 h-8 fill-white text-white ms-1" />
-              </span>
-            </span>
-          )}
-
-          {post.id && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openReels();
-              }}
-              className="absolute top-3 end-3 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm text-white flex items-center justify-center active:scale-90 transition"
-              aria-label={openReelsLabel}
-            >
-              <Clapperboard className="w-[18px] h-[18px]" />
-            </button>
-          )}
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setGlobalMuted(!muted);
-            }}
-            className="absolute bottom-4 end-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm text-white flex items-center justify-center active:scale-90 transition"
-            aria-label="mute"
-          >
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-
-          <div className="absolute inset-x-0 bottom-0 h-[3px]" style={{ background: 'rgba(255,255,255,0.22)' }}>
-            <div className="h-full" style={{ width: `${progress * 100}%`, background: '#fff' }} />
-          </div>
-        </>
-      ) : imgFailed ? (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-xs">{mediaAlt}</div>
-      ) : (
-        <img
-          src={post.mediaUrl}
-          alt={mediaAlt}
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          onLoad={(e) => applyRatio(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
-          onError={() => setImgFailed(true)}
-          className={`relative w-full h-full ${letterbox ? 'object-contain' : 'object-cover'}`}
-        />
-      )}
-
-      {burst > 0 && <HeartBurst k={burst} />}
-    </div>
+  useEffect(
+    () => () => {
+      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+    },
+    []
   );
-};
 
-const HeartBurst: React.FC<{ k: number }> = ({ k }) => (
-  <span key={k} className="absolute inset-0 flex items-center justify-center pointer-events-none">
-    <Heart
-      className="w-28 h-28 animate-heart-pop"
-      style={{ color: '#fff', fill: '#fff', filter: 'drop-shadow(0 6px 24px rgba(0,0,0,.45))' }}
-    />
-  </span>
-);
-
-const fmtCount = (n: number) => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (n >= 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`;
-  return n.toLocaleString();
-};
-
-const PostCard: React.FC<Props> = ({
-  post, liked, canDelete, authorName, authorPhoto, repostName, onLike, onComment, onDelete,
-}) => {
-  const navigate = useNavigate();
-  const { t, lang } = useI18n();
-  const { user } = useAuth();
-
-  const [flash, setFlash] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-  const [popLike, setPopLike] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // نص محلي بعد التعديل (صفحة المنشور الواحد لا تتحدث لحظياً)
-  const [localContent, setLocalContent] = useState<string | null>(null);
-  // إعداد السماح بالصوت بعد تغييره من القائمة (صفحة المنشور لا تتحدث لحظياً)
-  const [localAllowAudio, setLocalAllowAudio] = useState<boolean | null>(null);
-  const [audioBusy, setAudioBusy] = useState(false);
-
-  // المنشور التعاوني: نسخة محلية من قوائم الدعوات بعد القبول/الرفض (صفحة المنشور لا تتحدث لحظياً)
-  const [collabLocal, setCollabLocal] = useState<{ collaborators: string[]; collabAccepted: string[] } | null>(null);
-  const [collabBusy, setCollabBusy] = useState(false);
-  const [collabErr, setCollabErr] = useState('');
-  const [contribOpen, setContribOpen] = useState(false);
-  const collabKey = `${(post.collaborators || []).join(',')}|${(post.collabAccepted || []).join(',')}`;
-  useEffect(() => {
-    setCollabLocal(null);
-  }, [collabKey]);
-  const cpost = collabLocal ? { authorId: post.authorId, ...collabLocal } : post;
-  const { accepted, pending } = useCollab(cpost, authorName, authorPhoto);
-  const collabNames = useCollabNames();
-
-  // أي نافذة منبثقة مفتوحة = إيقاف كل الفيديوهات
-  useMediaLock(menuOpen || editing);
-
-  useEffect(() => {
-    setLocalContent(null);
-  }, [post.content]);
-
-  useEffect(() => {
-    setLocalAllowAudio(null);
-  }, [post.allowAudio]);
-
-  const content = localContent ?? post.content;
-  const isVideo = post.mediaType === 'video';
-  const url = post.id ? (isVideo ? reelLink(post.id) : postLink(post.id)) : '';
-  const isOwner = !!user && post.authorId === user.uid;
-  const canEdit = isOwner && !!post.id;
-  // الصوت يخص الفيديوهات الأصلية فقط (ليس إعادة النشر ولا الفيديو ذو الصوت المستعار)
-  const ownsAudio = isVideo && !!post.mediaUrl && !!post.id && !post.repostOfId && !post.audioSourceId;
-  const audioAllowed = ownsAudio && (localAllowAudio ?? post.allowAudio) === true;
-  const shareText = (content || authorName).slice(0, 100);
-  // النص يظهر تحت الصورة كتعليق؛ المنشور النصي فقط يظهر داخل اللوحة الملونة
-  const caption = post.mediaUrl ? content : '';
-  const longCaption = caption.length > 120 || caption.split('\n').length > 2;
-
-  const doFlash = () => {
-    setFlash(true);
-    setTimeout(() => setFlash(false), 1500);
+  const togglePlay = () => {
+    const v = vref.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
   };
 
-  const onCopy = async () => {
-    if (url && (await copyText(url))) doFlash();
+  const spawnHeart = (x: number, y: number) => {
+    const id = ++heartId.current;
+    setHearts((h) => [...h, { id, x, y }]);
+    window.setTimeout(() => setHearts((h) => h.filter((i) => i.id !== id)), 850);
   };
 
-  const onShare = async () => {
-    if (!url) return;
-    const r = await shareLink(url, authorName);
-    if (r === 'copied') doFlash();
-  };
-
-  const likeNow = () => {
-    if (!liked) {
-      setPopLike(true);
-      setTimeout(() => setPopLike(false), 400);
-    }
-    onLike(post);
-  };
-
-  const useAudio = () => {
-    if (!post.id || !audioAllowed) return;
-    setMenuOpen(false);
-    navigate(`/create-post?audio=${post.id}`);
-  };
-
-  const toggleAllowAudio = async () => {
-    if (!post.id || !isOwner || !ownsAudio || audioBusy) return;
-    const next = !audioAllowed;
-    setAudioBusy(true);
-    setErr('');
-    try {
-      await updateDoc(doc(db, 'posts', post.id), { allowAudio: next });
-      setLocalAllowAudio(next);
-    } catch (e) {
-      console.error(e);
-      setErr(t('audio.saveFail'));
-    } finally {
-      setAudioBusy(false);
-    }
-  };
-
-  const respondCollab = async (accept: boolean) => {
-    if (!user || !post.id || collabBusy) return;
-    setCollabBusy(true);
-    setCollabErr('');
-    try {
-      await respondToCollabInvite(post, user.uid, accept);
-      const col = cpost.collaborators || [];
-      const acc = cpost.collabAccepted || [];
-      setCollabLocal(
-        accept
-          ? { collaborators: col, collabAccepted: Array.from(new Set([...acc, user.uid])) }
-          : { collaborators: col.filter((i) => i !== user.uid), collabAccepted: acc.filter((i) => i !== user.uid) }
-      );
-      setContribOpen(false);
-      setMenuOpen(false);
-    } catch (e) {
-      console.error(e);
-      setCollabErr(t('collab.failed'));
-    } finally {
-      setCollabBusy(false);
-    }
-  };
-
-  const startEdit = () => {
-    setMenuOpen(false);
-    setDraft(content || '');
-    setErr('');
-    setEditing(true);
-  };
-
-  const saveEdit = async () => {
-    if (!post.id || saving) return;
-    const next = draft.trim().slice(0, 2000);
-    if (!next && !post.mediaUrl && !post.repostOfId) {
-      setErr(t('postCard.empty'));
+  // نقرة واحدة = إيقاف/تشغيل. نقرتان سريعتان = إعجاب مع قلب متحرك.
+  const onSurfaceTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      if (tapTimer.current) {
+        window.clearTimeout(tapTimer.current);
+        tapTimer.current = null;
+      }
+      lastTap.current = 0;
+      const rect = e.currentTarget.getBoundingClientRect();
+      spawnHeart(e.clientX - rect.left, e.clientY - rect.top);
+      if (!liked) p.onLike(post); // الضغط المزدوج يضيف إعجاباً فقط ولا يلغيه
       return;
     }
-    setSaving(true);
-    setErr('');
-    try {
-      await updateDoc(doc(db, 'posts', post.id), { content: next });
-      setLocalContent(next);
-      setEditing(false);
-    } catch (e) {
-      console.error(e);
-      setErr(t('postCard.saveFail'));
-    } finally {
-      setSaving(false);
-    }
+    lastTap.current = now;
+    tapTimer.current = window.setTimeout(() => {
+      tapTimer.current = null;
+      togglePlay();
+    }, DOUBLE_TAP_MS);
   };
 
-  // رأس المنشور التعاوني: صور متراكبة + "A و B"؛ ويظهر لصاحب المنشور أيضاً إن كان لديه دعوات معلّقة
-  const isCollab = accepted.length > 1 || (isOwner && pending.length > 0);
-  const pendingMe = isPendingCollaborator(cpost, user?.uid);
-  const iAmCollab =
-    !!user && !isOwner && (cpost.collaborators || []).includes(user.uid) && (cpost.collabAccepted || []).includes(user.uid);
-
-  const menuRow =
-    'w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-slate-200 bg-white/5 active:bg-white/10 transition';
+  const railBtn = 'flex flex-col items-center gap-1 text-white drop-shadow active:scale-90 transition-transform';
+  const followLabel = p.followState === 'following'
+    ? t('reelsUi.following')
+    : p.followState === 'requested'
+    ? t('reelsUi.requested')
+    : t('reelsUi.follow');
 
   return (
-    <div className="border-b border-white/10 pb-3">
-      {repostName && (
-        <p className="px-3 pt-2.5 text-[11px] text-slate-400 flex items-center gap-1.5">
-          <Repeat2 className="w-3.5 h-3.5" /> {t('post.repostedFrom', { name: repostName })}
-        </p>
-      )}
-
-      {/* رأس المنشور */}
-      <div className="flex items-center gap-2.5 px-3 py-2.5">
-        {isCollab ? (
-          <>
-            <button onClick={() => setContribOpen(true)} className="shrink-0" aria-label={t('collab.sheetTitle')}>
-              <CollabAvatarStack list={accepted} size={36} />
-            </button>
-            <button onClick={() => setContribOpen(true)} className="flex-1 min-w-0 text-start">
-              <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{collabNames(accepted)}</h4>
-              <p className="text-[11px] text-slate-500 leading-tight mt-0.5 truncate">
-                {timeAgo(post.createdAt, lang)}
-                {isOwner && pending.length > 0 && (
-                  <span className="text-amber-300"> · {t('collab.pendingCount', { count: pending.length })}</span>
-                )}
-              </p>
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => navigate(`/user/${post.authorId}`)} className="shrink-0">
-              <span className="block p-[2px] rounded-full bg-gradient-to-tr from-primary-500 via-accent-500 to-amber-400">
-                <span className="block p-[2px] rounded-full bg-dark-950">
-                  <Avatar
-                    src={authorPhoto}
-                    seed={post.authorId}
-                    name={authorName}
-                    className="w-9 h-9 rounded-full object-cover bg-dark-900"
-                  />
-                </span>
-              </span>
-            </button>
-            <button onClick={() => navigate(`/user/${post.authorId}`)} className="flex-1 min-w-0 text-start">
-              <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
-              <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{timeAgo(post.createdAt, lang)}</p>
-            </button>
-          </>
-        )}
-        {post.id && (
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label={t('postCard.menu')}
-            title={t('postCard.menu')}
-            className="shrink-0 w-9 h-9 -me-1 rounded-full flex items-center justify-center text-slate-200 active:bg-white/10 transition"
-          >
-            <MoreHorizontal className="w-6 h-6" />
-          </button>
-        )}
-      </div>
-
-      {/* دعوة التعاون (للمدعو فقط) */}
-      {pendingMe && (
-        <CollabInviteBanner
-          inviterName={authorName}
-          busy={collabBusy}
-          error={collabErr}
-          onAccept={() => respondCollab(true)}
-          onDecline={() => respondCollab(false)}
+    <div ref={ref} className="snap-start snap-always h-full w-full relative bg-black overflow-hidden">
+      {near && post.mediaUrl ? (
+        <video
+          ref={vref}
+          src={post.mediaUrl}
+          poster={videoThumb(post.mediaUrl)}
+          loop
+          playsInline
+          muted={muted || !!borrowedAudio}
+          autoPlay={active && !blocked}
+          preload={active ? 'auto' : 'metadata'}
+          className="w-full h-full object-contain"
         />
+      ) : (
+        <img src={videoThumb(post.mediaUrl)} alt="" className="w-full h-full object-contain" />
       )}
 
-      {/* الوسائط بعرض الشاشة */}
-      <PostMedia
-        post={post}
-        isVideo={isVideo}
-        content={content}
-        liked={liked}
-        onDoubleLike={likeNow}
-        openReelsLabel={t('postCard.openReels')}
-        mediaAlt={t('postCard.media')}
-      />
+      {/* طبقة اللمس: نقرة = تشغيل/إيقاف، نقرتان = إعجاب */}
+      <div className="absolute inset-0" onClick={onSurfaceTap} />
 
-      {/* شريط الأزرار */}
-      <div className="flex items-center gap-4 px-3 pt-3">
-        <button
-          onClick={likeNow}
-          aria-label="like"
-          className={`active:scale-90 transition ${liked ? 'text-red-400' : 'text-white'} ${popLike ? 'animate-like-pop' : ''}`}
-        >
-          <Heart className={`w-7 h-7 ${liked ? 'fill-red-400' : ''}`} strokeWidth={liked ? 2 : 1.8} />
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+
+      {/* قلوب الضغط المزدوج */}
+      {hearts.map((h) => (
+        <Heart
+          key={h.id}
+          className="absolute w-24 h-24 fill-red-500 text-red-500 pointer-events-none drop-shadow-lg"
+          style={{ left: h.x - 48, top: h.y - 48, animation: 'avHeartPop 0.85s ease-out forwards' }}
+        />
+      ))}
+
+      {/* الأزرار الجانبية */}
+      <div className="absolute end-3 bottom-8 flex flex-col items-center gap-5 z-10">
+        <button onClick={() => p.onLike(post)} className={railBtn} aria-label={t('reelsUi.like')}>
+          <Heart className={`w-7 h-7 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
+          <span className="text-[11px] font-bold">{post.likesCount}</span>
         </button>
-        <button onClick={() => onComment(post)} aria-label={t('comments.title')} className="text-white active:scale-90 transition">
-          <MessageCircle className="w-7 h-7" strokeWidth={1.8} />
+        <button onClick={() => p.onComment(post)} className={railBtn} aria-label={t('reelsUi.comments')}>
+          <MessageCircle className="w-7 h-7" />
+          <span className="text-[11px] font-bold">{post.commentsCount}</span>
         </button>
-        <button onClick={onShare} aria-label={t('common.share')} className="text-white active:scale-90 transition">
-          <Send className="w-[26px] h-[26px] rtl:-scale-x-100" strokeWidth={1.8} />
+        <button onClick={() => p.onRepost(post)} className={railBtn} aria-label={t('reels.repost')}>
+          <Repeat2 className={`w-7 h-7 ${p.reposted ? 'text-primary-400' : ''}`} strokeWidth={p.reposted ? 3 : 2} />
         </button>
-        <button
-          onClick={onCopy}
-          aria-label={t('common.copyLink')}
-          className="ms-auto text-white active:scale-90 transition"
-        >
-          {flash ? <Check className="w-6 h-6 text-emerald-400" /> : <Link2 className="w-6 h-6" strokeWidth={1.8} />}
+        <button onClick={() => p.onShare(post)} className={railBtn} aria-label={t('common.share')}>
+          <Share2 className="w-6 h-6" />
         </button>
+        <button onClick={() => p.onCopy(post)} className={railBtn} aria-label={t('common.copyLink')}>
+          <Link2 className="w-6 h-6" />
+        </button>
+        <button onClick={p.onToggleMute} className={railBtn} aria-label={t('reelsUi.mute')}>
+          {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+        </button>
+        {p.canManage && (
+          <button onClick={() => p.onMore(post)} className={railBtn} aria-label={t('reelsUi.options')}>
+            <MoreVertical className="w-6 h-6" />
+          </button>
+        )}
+        {/* أسطوانة الصوت: تظهر فقط عندما يسمح صاحب الفيديو باستخدام صوته */}
+        {audioAllowed && (
+          <button
+            onClick={() => p.onUseAudio(post)}
+            className="relative w-9 h-9 active:scale-90 transition-transform"
+            aria-label={t('audio.use')}
+            title={t('audio.use')}
+          >
+            <span
+              className="block w-9 h-9 rounded-full overflow-hidden border-2 border-white/80 bg-dark-900 shadow-lg animate-[spin_5s_linear_infinite]"
+              style={{ animationPlayState: active && !blocked ? 'running' : 'paused' }}
+            >
+              <Avatar
+                src={p.authorPhoto}
+                seed={post.authorId}
+                name={p.authorName}
+                className="w-full h-full object-cover"
+              />
+            </span>
+            <span className="absolute -top-1 -end-1 w-4 h-4 rounded-full bg-primary-500 border border-black/40 flex items-center justify-center">
+              <Music2 className="w-2.5 h-2.5 text-white" />
+            </span>
+          </button>
+        )}
       </div>
 
-      {/* عدد الإعجابات */}
-      {post.likesCount > 0 && (
-        <p className="px-3 mt-2 text-[13.5px] font-extrabold text-white">
-          {t('postCard.likes', { count: fmtCount(post.likesCount) })}
-        </p>
-      )}
+      {/* معلومات الناشر */}
+      <div className="absolute start-3 end-20 bottom-6 space-y-2 pointer-events-none z-10">
+        {p.likedByText && (
+          <p className="text-[11px] text-white/90 flex items-center gap-1">
+            <Heart className="w-3.5 h-3.5 fill-red-500 text-red-500" /> {p.likedByText}
+          </p>
+        )}
+        {p.repostName && (
+          <p className="text-[11px] text-white/80 flex items-center gap-1">
+            <Repeat2 className="w-3.5 h-3.5" /> {t('post.repostedFrom', { name: p.repostName })}
+          </p>
+        )}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {isCollab ? (
+            <button onClick={() => setContribOpen(true)} className="flex items-center gap-2 min-w-0">
+              <CollabAvatarStack list={collabList} size={36} ringClass="ring-black/60" />
+              <span className="text-sm font-black text-white drop-shadow truncate">{collabNames(collabList)}</span>
+            </button>
+          ) : (
+            <button onClick={() => p.onOpenAuthor(post.authorId)} className="flex items-center gap-2 min-w-0">
+              <Avatar
+                src={p.authorPhoto}
+                seed={post.authorId}
+                name={p.authorName}
+                className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900 shrink-0"
+              />
+              <span className="text-sm font-black text-white drop-shadow truncate">{p.authorName}</span>
+            </button>
+          )}
+          {!p.isMe && (
+            <button
+              onClick={() => p.onFollow(post)}
+              className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-black border active:scale-95 transition ${
+                p.followState === 'none'
+                  ? 'bg-primary-500 border-primary-500 text-white'
+                  : 'bg-white/10 border-white/60 text-white'
+              }`}
+            >
+              {followLabel}
+            </button>
+          )}
+        </div>
+        {post.content && (
+          <p className="text-xs text-white/90 line-clamp-3 break-words pointer-events-auto">
+            <MentionText text={post.content} linkClassName="text-white font-black underline underline-offset-2" />
+          </p>
+        )}
+        {borrowedAudio && (
+          <p className="text-[11px] text-white/80 flex items-center gap-1">
+            <Music2 className="w-3.5 h-3.5" /> {t('audio.original')}
+          </p>
+        )}
+      </div>
 
-      {/* النص المرافق */}
-      {caption && (
-        <p
-          dir="auto"
-          className={`px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
-            expanded ? '' : 'line-clamp-2'
-          }`}
-        >
-          <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
-            {authorName}
-          </button>
-          <MentionText text={caption} />
-        </p>
-      )}
-      {caption && longCaption && !expanded && (
-        <button onClick={() => setExpanded(true)} className="px-3 text-[13px] text-slate-500 font-semibold">
-          {t('postCard.more')}
-        </button>
-      )}
-
-      {/* التعليقات */}
-      <button onClick={() => onComment(post)} className="block px-3 mt-1.5 text-[13px] text-slate-500 text-start">
-        {post.commentsCount > 0
-          ? t('postCard.viewComments', { count: fmtCount(post.commentsCount) })
-          : t('postCard.addComment')}
-      </button>
-
-      {/* قائمة المساهمين */}
       {contribOpen && (
         <ContributorsSheet
-          accepted={accepted}
-          pending={isOwner ? pending : []}
-          meUid={user?.uid}
-          canLeave={iAmCollab}
-          leaving={collabBusy}
-          onLeave={() => respondCollab(false)}
+          accepted={collabList}
+          pending={[]}
+          canLeave={false}
+          onLeave={() => undefined}
           onClose={() => setContribOpen(false)}
         />
       )}
-
-      {/* قائمة الثلاث نقاط */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => setMenuOpen(false)}>
-          <div
-            className="w-full bg-dark-900 border-t border-white/10 rounded-t-3xl p-4 space-y-2 pb-[max(1rem,env(safe-area-inset-bottom))]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-1">
-              <h3 className="text-sm font-black text-white">{t('postCard.menu')}</h3>
-              <button onClick={() => setMenuOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-white/10">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {canEdit && (
-              <button onClick={startEdit} className={menuRow}>
-                <Pencil className="w-5 h-5 text-primary-400" /> {t('postCard.edit')}
-              </button>
-            )}
-
-            {iAmCollab && (
-              <button onClick={() => respondCollab(false)} disabled={collabBusy} className={`${menuRow} disabled:opacity-60`}>
-                <LogOut className="w-5 h-5 text-primary-400" /> {t('collab.leave')}
-              </button>
-            )}
-
-            {audioAllowed && (
-              <button onClick={useAudio} className={menuRow}>
-                <Music2 className="w-5 h-5 text-primary-400" /> {t('audio.use')}
-              </button>
-            )}
-
-            {isOwner && ownsAudio && (
-              <button
-                onClick={toggleAllowAudio}
-                disabled={audioBusy}
-                role="switch"
-                aria-checked={audioAllowed}
-                className={`${menuRow} disabled:opacity-60`}
-              >
-                <Music2 className="w-5 h-5 text-primary-400" />
-                <span className="flex-1 text-start">{t('audio.allowShort')}</span>
-                <span
-                  className={`relative w-10 h-[22px] rounded-full shrink-0 transition-colors ${
-                    audioAllowed ? 'bg-primary-500' : 'bg-white/20'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-all ${
-                      audioAllowed ? 'start-[20px]' : 'start-[2px]'
-                    }`}
-                  />
-                </span>
-              </button>
-            )}
-            {err && !editing && <p className="text-[11px] text-red-400 px-1">{err}</p>}
-
-            <button
-              onClick={async () => {
-                await onCopy();
-                setMenuOpen(false);
-              }}
-              className={menuRow}
-            >
-              <Link2 className="w-5 h-5 text-primary-400" /> {t('common.copyLink')}
-            </button>
-
-            <button
-              onClick={async () => {
-                setMenuOpen(false);
-                await onShare();
-              }}
-              className={menuRow}
-            >
-              <Share2 className="w-5 h-5 text-primary-400" /> {t('common.share')}
-            </button>
-
-            {url && (
-              <div className="pt-2">
-                <p className="text-[11px] text-slate-500 pb-2">{t('postCard.shareVia')}</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {TARGETS.map((tg) => (
-                    <button
-                      key={tg.id}
-                      onClick={() => {
-                        setMenuOpen(false);
-                        openExternal(tg.href(url, shareText));
-                      }}
-                      className="flex flex-col items-center gap-1.5 active:scale-95 transition"
-                    >
-                      <span
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white text-lg font-black ${tg.bg}`}
-                      >
-                        {tg.glyph}
-                      </span>
-                      <span className="text-[10px] text-slate-400">{tg.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {canDelete && (
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onDelete(post);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/20 active:bg-red-500/20 transition mt-2"
-              >
-                <Trash2 className="w-5 h-5" /> {t('postCard.delete')}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* نافذة تعديل المنشور */}
-      {editing && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-end" onClick={() => !saving && setEditing(false)}>
-          <div
-            className="w-full bg-dark-900 border-t border-white/10 rounded-t-3xl p-4 space-y-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-white">{t('postCard.editTitle')}</h3>
-              <button
-                onClick={() => !saving && setEditing(false)}
-                className="p-1 rounded-lg text-slate-400 hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              maxLength={2000}
-              rows={6}
-              placeholder={t('postCard.placeholder')}
-              className="w-full p-3 rounded-2xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500 resize-none"
-            />
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span className="text-red-400">{err}</span>
-              <span className="tabular-nums">{draft.length}/2000</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setEditing(false)}
-                disabled={saving}
-                className="flex-1 py-3 rounded-2xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold disabled:opacity-50"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                onClick={saveEdit}
-                disabled={saving || draft.trim() === (content || '').trim()}
-                className="flex-1 btn-primary py-3 rounded-2xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />} {t('postCard.save')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
-export default PostCard;
+const Reels: React.FC = () => {
+  const { id } = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+  const { user, profile, isAdmin } = useAuth();
+  const { t } = useI18n();
+  const confirm = useConfirm();
+
+  const [tab, setTab] = useState<Tab>('reels');
+  const [items, setItems] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [done, setDone] = useState(false);
+  const [active, setActive] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [liked, setLiked] = useState<Set<string>>(new Set());
+  const [follows, setFollows] = useState<Record<string, FollowState>>({});
+  const [reposts, setReposts] = useState<Record<string, string>>({});
+  const [likers, setLikers] = useState<Record<string, string[]>>({});
+  const [commentPost, setCommentPost] = useState<Post | null>(null);
+  const [menuPost, setMenuPost] = useState<Post | null>(null);
+  const [toast, setToast] = useState('');
+  const cursorRef = useRef<QueryDocumentSnapshot | null>(null);
+  const loadingMore = useRef(false);
+  const repostBusy = useRef<Set<string>>(new Set());
+  const followBusy = useRef<Set<string>>(new Set());
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // قائمة الخيارات المنبثقة = إيقاف الفيديو (التعليقات تقفل الوسائط بنفسها)
+  useMediaLock(!!menuPost);
+
+  const likerIds = Object.values(likers).reduce<string[]>((a, b) => a.concat(b), []);
+  const briefs = useUserBriefs([
+    ...items.map((x) => x.authorId),
+    ...items.map((x) => x.repostOfAuthorId),
+    ...likerIds,
+  ]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(''), 1800);
+  };
+
+  // تحميل الخلاصة (حسب التبويب)
+  useEffect(() => {
+    let off = false;
+    setLoading(true);
+    setActive(0);
+    cursorRef.current = null;
+    loadingMore.current = false;
+    (async () => {
+      if (tab === 'friends') {
+        if (!user) {
+          setItems([]);
+          setDone(true);
+          return;
+        }
+        const res = await getFriendsReels(user.uid);
+        if (off) return;
+        const map: Record<string, string[]> = {};
+        res.forEach((r) => {
+          if (r.post.id) map[r.post.id] = r.likedBy;
+        });
+        setLikers(map);
+        setItems(res.map((r) => r.post));
+        setDone(true);
+        return;
+      }
+      const first = id ? await getPostById(id).catch(() => null) : null;
+      const page = await getReelsPage(null);
+      if (off) return;
+      cursorRef.current = page.cursor;
+      setDone(page.done);
+      setLikers({});
+      setItems(
+        first && first.mediaType === 'video'
+          ? [first, ...page.items.filter((x) => x.id !== first.id)]
+          : page.items
+      );
+    })()
+      .catch((e) => console.error(e))
+      .finally(() => {
+        if (!off) setLoading(false);
+      });
+    return () => {
+      off = true;
+    };
+  }, [id, tab, user?.uid]);
+
+  // إعجاباتي + متابعاتي + إعادات نشري
+  useEffect(() => {
+    if (!user) return;
+    getMyLikedPostIds(user.uid).then(setLiked).catch(console.error);
+    getMyFollowStates(user.uid).then(setFollows).catch(console.error);
+    getMyRepostMap(user.uid).then(setReposts).catch(console.error);
+  }, [user?.uid]);
+
+  // تحميل صفحة جديدة عندما نقترب من النهاية (تبويب Reels فقط)
+  useEffect(() => {
+    if (tab !== 'reels' || done || loading || loadingMore.current) return;
+    if (active < items.length - 3) return;
+    loadingMore.current = true;
+    getReelsPage(cursorRef.current)
+      .then((page) => {
+        cursorRef.current = page.cursor;
+        setDone(page.done);
+        setItems((prev) => {
+          const seen = new Set(prev.map((x) => x.id));
+          return [...prev, ...page.items.filter((x) => !seen.has(x.id))];
+        });
+      })
+      .catch(console.error)
+      .finally(() => {
+        loadingMore.current = false;
+      });
+  }, [tab, active, items.length, done, loading]);
+
+  const onVisible = useCallback((i: number) => setActive(i), []);
+
+  const patch = (pid: string | undefined, fn: (x: Post) => Post) =>
+    setItems((prev) => prev.map((x) => (x.id === pid ? fn(x) : x)));
+
+  const onLike = async (post: Post) => {
+    if (!user || !post.id) return;
+    const pid = post.id;
+    const was = liked.has(pid);
+    setLiked((s) => {
+      const n = new Set(s);
+      if (was) n.delete(pid);
+      else n.add(pid);
+      return n;
+    });
+    patch(pid, (x) => ({ ...x, likesCount: Math.max(0, x.likesCount + (was ? -1 : 1)) }));
+    try {
+      await toggleLike(post, user.uid, was);
+    } catch (e) {
+      console.error(e);
+      setLiked((s) => {
+        const n = new Set(s);
+        if (was) n.add(pid);
+        else n.delete(pid);
+        return n;
+      });
+      patch(pid, (x) => ({ ...x, likesCount: Math.max(0, x.likesCount + (was ? 1 : -1)) }));
+    }
+  };
+
+  // إعادة النشر: تبديل فوري بدون تأكيد وبدون إشعارات عند الإلغاء
+  const onRepost = async (post: Post) => {
+    if (!user || !profile || !post.id) return;
+    const orig = post.repostOfId || post.id;
+    if (repostBusy.current.has(orig)) return;
+    repostBusy.current.add(orig);
+    const existing = reposts[orig];
+    try {
+      if (existing) {
+        setReposts((prev) => {
+          const n = { ...prev };
+          delete n[orig];
+          return n;
+        });
+        try {
+          await deletePost(existing);
+        } catch (e) {
+          setReposts((prev) => ({ ...prev, [orig]: existing }));
+          throw e;
+        }
+      } else {
+        setReposts((prev) => ({ ...prev, [orig]: 'pending' }));
+        try {
+          const newId = await repostPost(post, {
+            uid: user.uid,
+            displayName: profile.displayName,
+            photoURL: profile.photoURL,
+          });
+          setReposts((prev) => ({ ...prev, [orig]: newId }));
+        } catch (e) {
+          setReposts((prev) => {
+            const n = { ...prev };
+            delete n[orig];
+            return n;
+          });
+          throw e;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      showToast(t('reels.repostFail'));
+    } finally {
+      repostBusy.current.delete(orig);
+    }
+  };
+
+  const onFollow = async (post: Post) => {
+    if (!user) return;
+    const target = post.authorId;
+    if (target === user.uid || followBusy.current.has(target)) return;
+    followBusy.current.add(target);
+    const cur = follows[target] ?? 'none';
+    // تحديث فوري للواجهة (متفائل)
+    setFollows((prev) => ({ ...prev, [target]: cur === 'none' ? 'following' : 'none' }));
+    try {
+      const next = await toggleFollow(user.uid, target, cur);
+      setFollows((prev) => ({ ...prev, [target]: next }));
+    } catch (e) {
+      console.error(e);
+      setFollows((prev) => ({ ...prev, [target]: cur }));
+      showToast(t('reelsUi.followFail'));
+    } finally {
+      followBusy.current.delete(target);
+    }
+  };
+
+  const onShare = async (post: Post) => {
+    if (!post.id) return;
+    const a = pickAuthor(briefs, post.authorId, post.authorName);
+    const r = await shareLink(reelLink(post.id), a.name);
+    if (r === 'copied') showToast(t('common.linkCopied'));
+  };
+
+  const onCopy = async (post: Post) => {
+    if (!post.id) return;
+    if (await copyText(reelLink(post.id))) showToast(t('common.linkCopied'));
+  };
+
+  const onDelete = async (post: Post) => {
+    if (!post.id) return;
+    if (!(await confirm({ title: t('post.deleteConfirm') }))) return;
+    try {
+      await deletePost(post.id);
+      if (isAdmin && post.authorId !== user?.uid) {
+        logAdmin('delete_post', 'post', post.id, (post.content || '').slice(0, 80));
+      }
+      setItems((prev) => prev.filter((x) => x.id !== post.id));
+      setActive((a) => Math.max(0, Math.min(a, items.length - 2)));
+      setReposts((prev) => {
+        const n = { ...prev };
+        Object.keys(n).forEach((k) => {
+          if (n[k] === post.id) delete n[k];
+        });
+        return n;
+      });
+    } catch (e) {
+      console.error(e);
+      showToast(t('common.error'));
+    }
+  };
+
+  const likedByText = (pid?: string): string | undefined => {
+    if (tab !== 'friends' || !pid) return undefined;
+    const ids = likers[pid];
+    if (!ids || ids.length === 0) return undefined;
+    const name = pickAuthor(briefs, ids[0], '...').name;
+    return ids.length > 1
+      ? t('reelsUi.likedByMore', { name, count: ids.length - 1 })
+      : t('reelsUi.likedBy', { name });
+  };
+
+  return (
+    <div
+      className="fixed inset-x-0 top-0 z-30 bg-black force-dark"
+      style={{ bottom: 'var(--app-nav-h, calc(3.7rem + env(safe-area-inset-bottom)))' }}
+    >
+      {/* حركة قلب الإعجاب */}
+      <style>{`@keyframes avHeartPop{0%{transform:scale(0.3);opacity:0}20%{transform:scale(1.15);opacity:1}45%{transform:scale(0.95)}100%{transform:scale(1.25) translateY(-30px);opacity:0}}`}</style>
+
+      <div className="max-w-2xl mx-auto h-full relative">
+        {loading ? (
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
+            {tab === 'friends' ? <Users className="w-12 h-12 text-slate-600" /> : <Clapperboard className="w-12 h-12 text-slate-600" />}
+            <p className="text-sm text-slate-400">{tab === 'friends' ? t('reelsUi.friendsEmpty') : t('reels.empty')}</p>
+            {tab === 'reels' && (
+              <button onClick={() => navigate('/create-post')} className="btn-primary px-6 py-2">
+                +
+              </button>
+            )}
+          </div>
+        ) : (
+          <div ref={rootRef} className="h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar">
+            {items.map((post, i) => {
+              const a = pickAuthor(briefs, post.authorId, post.authorName, post.authorPhotoURL);
+              const rp = post.repostOfAuthorId ? pickAuthor(briefs, post.repostOfAuthorId, '...').name : undefined;
+              const orig = post.repostOfId || post.id || '';
+              const isMe = post.authorId === user?.uid;
+              return (
+                <ReelItem
+                  key={post.id}
+                  post={post}
+                  index={i}
+                  active={i === active}
+                  near={Math.abs(i - active) <= 1}
+                  muted={muted}
+                  liked={!!post.id && liked.has(post.id)}
+                  reposted={!!orig && !!reposts[orig]}
+                  followState={follows[post.authorId] ?? 'none'}
+                  isMe={isMe}
+                  canManage={isMe || isAdmin}
+                  authorName={a.name}
+                  authorPhoto={a.photo}
+                  repostName={rp}
+                  likedByText={likedByText(post.id)}
+                  root={rootRef}
+                  onVisible={onVisible}
+                  onToggleMute={() => setMuted((m) => !m)}
+                  onAutoplayBlocked={() => setMuted(true)}
+                  onLike={onLike}
+                  onComment={setCommentPost}
+                  onRepost={onRepost}
+                  onShare={onShare}
+                  onCopy={onCopy}
+                  onOpenAuthor={(uid) => navigate(`/user/${uid}`)}
+                  onFollow={onFollow}
+                  onMore={setMenuPost}
+                  onUseAudio={(pp) => pp.id && navigate(`/create-post?audio=${pp.id}`)}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {/* تدرّج علوي + زر الإنشاء (+) + تبويبات Reels | Friends */}
+        <div className="absolute top-0 inset-x-0 h-28 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10" />
+        <div
+          className="absolute top-0 inset-x-0 z-20 pointer-events-none"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.6rem)' }}
+        >
+          <div className="relative flex items-center justify-center px-3 h-10">
+            {id && (
+              <button
+                onClick={() => navigate(-1)}
+                aria-label={t('common.back')}
+                className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/create-post')}
+              aria-label={t('reelsUi.create')}
+              title={t('reelsUi.create')}
+              className={`pointer-events-auto absolute ${id ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/35 backdrop-blur border border-white/25 flex items-center justify-center text-white active:scale-90 transition`}
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+
+            <div className="pointer-events-auto flex items-center gap-4" dir="ltr">
+              {(['reels', 'friends'] as Tab[]).map((k, idx) => (
+                <React.Fragment key={k}>
+                  {idx === 1 && <span className="w-px h-4 bg-white/40" />}
+                  <button
+                    onClick={() => tab !== k && setTab(k)}
+                    className={`text-[15px] font-black drop-shadow pb-0.5 border-b-2 transition ${
+                      tab === k ? 'text-white border-white' : 'text-white/60 border-transparent'
+                    }`}
+                  >
+                    {k === 'reels' ? t('reelsUi.tabReels') : t('reelsUi.tabFriends')}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {toast && (
+          <div className="absolute top-20 inset-x-0 flex justify-center pointer-events-none z-30">
+            <span className="px-4 py-2 rounded-full bg-black/80 text-white text-xs font-bold">{toast}</span>
+          </div>
+        )}
+      </div>
+
+      {commentPost && (
+        <CommentsSheet
+          post={commentPost}
+          onClose={() => setCommentPost(null)}
+          onCountChange={(n) => patch(commentPost.id, (x) => ({ ...x, commentsCount: n }))}
+        />
+      )}
+
+      {/* قائمة خيارات الريلز (حذف) */}
+      {menuPost &&
+        createPortal(
+          <div className="fixed inset-0 z-[90] bg-black/70 flex items-end" onClick={() => setMenuPost(null)}>
+            <div
+              className="w-full max-w-2xl mx-auto bg-dark-900 border-t border-white/10 rounded-t-3xl p-4 space-y-2 pb-[max(1rem,env(safe-area-inset-bottom))]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => {
+                  const target = menuPost;
+                  setMenuPost(null);
+                  onDelete(target);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold text-red-400 bg-red-500/10 border border-red-500/20 active:bg-red-500/20 transition"
+              >
+                <Trash2 className="w-5 h-5" /> {t('reelsUi.delete')}
+              </button>
+              <button
+                onClick={() => setMenuPost(null)}
+                className="w-full py-3 rounded-2xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+};
+
+export default Reels;
