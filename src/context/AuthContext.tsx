@@ -44,7 +44,7 @@ interface AuthContextType {
   isModerator: boolean;
   signInEmail: (email: string, password: string) => Promise<void>;
   signUpEmail: (data: SignUpData) => Promise<void>;
-  signInGoogle: (hintEmail?: string) => Promise<void>;
+  signInGoogle: (hintEmail?: string) => Promise<string | undefined>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   resendVerification: () => Promise<void>;
@@ -286,7 +286,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fbUpdateProfile(cred.user, { displayName }).catch(console.error);
   };
 
-  const signInGoogle = async (hintEmail?: string) => {
+  // يستخرج البريد من رمز غوغل نفسه (مضمون لأن requestEmail مفعّل) ليُحفظ حتى لو كان user.email فارغاً
+  const emailFromIdToken = (token?: string): string | undefined => {
+    try {
+      if (!token) return undefined;
+      const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const json = decodeURIComponent(
+        atob(part).split('').map((c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''),
+      );
+      return (JSON.parse(json).email as string | undefined) || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const signInGoogle = async (hintEmail?: string): Promise<string | undefined> => {
+    let tokenEmail: string | undefined;
     try {
       if (Capacitor.isNativePlatform()) {
         let idToken: string | undefined;
@@ -301,6 +316,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           idToken = result.credential?.idToken;
         }
         if (!idToken) throw new Error('NO_ID_TOKEN');
+        tokenEmail = emailFromIdToken(idToken);
         const cred = GoogleAuthProvider.credential(idToken);
         await signInWithCredential(auth, cred);
       } else {
@@ -319,7 +335,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             photoURL: cred.user.photoURL || undefined,
           });
         }
+        tokenEmail = cred.user.email || undefined;
       }
+      return tokenEmail || hintEmail;
     } catch (error: any) {
       const code = String(error?.code ?? '');
       const msg = String(error?.message ?? '');
