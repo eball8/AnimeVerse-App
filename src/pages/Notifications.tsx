@@ -43,6 +43,7 @@ const icons: Record<NotificationType, typeof Bell> = {
 // حتى تظهر بلغة التطبيق الحالية (يعمل مع الإشعارات القديمة والجديدة معاً).
 const EXACT_TEXT_KEYS: Record<string, string> = {
   'أعجب بمنشورك': 'notif.liked',
+  'أعجب بتعليقك': 'notif.commentLiked',
   'أعاد نشر منشورك': 'notif.reposted',
   'أشار إليك في منشور': 'notif.mentioned',
   'شاركك في منشور تعاوني': 'notif.collab',
@@ -52,6 +53,7 @@ const EXACT_TEXT_KEYS: Record<string, string> = {
   'أرسل لك طلب متابعة': 'notif.requested',
 };
 const COMMENT_PREFIX = 'علّق على منشورك: ';
+const REPLY_PREFIX = 'ردّ على تعليقك: ';
 const DEVICE_PREFIX = 'تم تسجيل الدخول من جهاز جديد: ';
 const UNKNOWN_DEVICE_AR = 'جهاز غير معروف';
 
@@ -65,6 +67,9 @@ const Notifications: React.FC = () => {
     if (key) return t(key);
     if (raw.startsWith(COMMENT_PREFIX)) {
       return t('notif.commented', { text: raw.slice(COMMENT_PREFIX.length) });
+    }
+    if (raw.startsWith(REPLY_PREFIX)) {
+      return t('notif.repliedComment', { text: raw.slice(REPLY_PREFIX.length) });
     }
     if (raw.startsWith(DEVICE_PREFIX)) {
       const device = raw.slice(DEVICE_PREFIX.length);
