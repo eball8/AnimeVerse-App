@@ -27,6 +27,10 @@ import {
 import type { DeviceItem, PlayerPref } from '../services/settingsService';
 import { clearMyFriendActivity } from '../services/postService';
 import Avatar from '../components/Avatar';
+import ReportFlow from '../components/ReportFlow';
+import { searchUsers } from '../services/searchService';
+import { profileLink } from '../utils/links';
+import type { UserProfile } from '../types';
 import DatePickerSheet from '../components/DatePickerSheet';
 import { calcAge } from '../utils/age';
 import { deactivateAccount, deleteAccount } from '../services/accountService';
@@ -814,48 +818,114 @@ const useAppVersion = (): string => {
   return v;
 };
 
-// ---------- الإبلاغ عن مشكلة ----------
+// ---------- الإبلاغ عن مشكلة / عن أحدهم ----------
 const SupportSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const version = useAppVersion();
-  const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const { lang } = useI18n();
+  const { user } = useAuth();
+  const L = (ar: string, en: string, fr: string) => (lang === 'ar' ? ar : lang === 'fr' ? fr : en);
 
-  const send = async () => {
-    if (text.trim().length < 5) return setMsg({ kind: 'err', text: t('sx.reportShort') });
-    setBusy(true);
-    setMsg(null);
+  const [mode, setMode] = useState<'menu' | 'someone'>('menu');
+  const [reportApp, setReportApp] = useState(false);
+  const [term, setTerm] = useState('');
+  const [results, setResults] = useState<UserProfile[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [target, setTarget] = useState<UserProfile | null>(null);
+
+  const runSearch = async () => {
+    if (term.trim().replace(/^@/, '').length < 2 || searching) return;
+    setSearching(true);
     try {
-      await sendProblemReport(text, version);
-      setText('');
-      setMsg({ kind: 'ok', text: t('sx.reportSent') });
-    } catch (e) {
-      console.error(e);
-      setMsg({ kind: 'err', text: t('sx.reportFail') });
+      const list = await searchUsers(term);
+      setResults(list.filter((u) => u.uid !== user?.uid));
     } finally {
-      setBusy(false);
+      setSearched(true);
+      setSearching(false);
     }
   };
 
   return (
-    <SubPage title={t('sx.reportTitle')} onBack={onBack}>
-      <p className="text-xs text-slate-400 leading-relaxed">
-        {t('sx.reportHint')}
-      </p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value.slice(0, 400))}
-        rows={6}
-        placeholder={t('sx.reportPlaceholder')}
-        className={inputCls}
-        disabled={busy}
-      />
-      <p className="text-[11px] text-slate-500 text-end">{text.length}/400</p>
-      <button onClick={send} disabled={busy} className={btnCls}>
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {t('sx.sendReport')}
-      </button>
-      {msg && <Notice kind={msg.kind} text={msg.text} />}
+    <SubPage
+      title={mode === 'menu' ? L('الإبلاغ والدعم', 'Reports & support', 'Signalements et aide') : L('الإبلاغ عن أحدهم', 'Report someone', "Signaler quelqu'un")}
+      onBack={mode === 'menu' ? onBack : () => setMode('menu')}
+    >
+      {mode === 'menu' ? (
+        <div className="card divide-y divide-white/5">
+          <Row
+            icon={AlertCircle}
+            label={L('الإبلاغ عن مشكلة في التطبيق', 'Report a problem with the app', "Signaler un problème de l'appli")}
+            onClick={() => setReportApp(true)}
+          />
+          <Row
+            icon={UserX}
+            label={L('الإبلاغ عن أحدهم', 'Report someone', "Signaler quelqu'un")}
+            onClick={() => setMode('someone')}
+          />
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {L(
+              'ابحث عن المستخدم باسمه أو اسم المستخدم ثم اخترْه لتبلّغ عنه. بلاغك مجهول الهوية.',
+              'Search for the user by name or username, then pick them to report. Your report is anonymous.',
+              "Recherchez l'utilisateur par nom ou pseudo puis choisissez-le pour le signaler. Votre signalement est anonyme."
+            )}
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={term}
+              onChange={(e) => setTerm(e.target.value.slice(0, 40))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') runSearch();
+              }}
+              placeholder={L('اسم المستخدم', 'Username', "Nom d'utilisateur")}
+              className={inputCls}
+            />
+            <button
+              onClick={runSearch}
+              disabled={searching}
+              className="px-4 rounded-xl bg-primary-500/20 border border-primary-500/30 text-primary-300 text-sm font-bold disabled:opacity-50 flex items-center"
+            >
+              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : L('بحث', 'Search', 'Chercher')}
+            </button>
+          </div>
+          {searched && results.length === 0 && (
+            <p className="text-center text-xs text-slate-500 py-6">{L('لا نتائج', 'No results', 'Aucun résultat')}</p>
+          )}
+          {results.length > 0 && (
+            <div className="card divide-y divide-white/5">
+              {results.map((u) => (
+                <button
+                  key={u.uid}
+                  onClick={() => setTarget(u)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-start active:bg-white/5"
+                >
+                  <Avatar src={u.photoURL} seed={u.uid} name={u.displayName} className="w-10 h-10 rounded-full object-cover bg-dark-900" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-white truncate">{u.displayName}</span>
+                    <span className="block text-[11px] text-slate-500 truncate" dir="ltr">@{u.username}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {reportApp && (
+        <ReportFlow targetType="app" targetId="app" appVersion={version} onClose={() => setReportApp(false)} />
+      )}
+      {target && (
+        <ReportFlow
+          targetType="user"
+          targetId={target.uid}
+          reportedUid={target.uid}
+          reportedName={target.displayName}
+          link={profileLink(target.uid)}
+          onClose={() => setTarget(null)}
+        />
+      )}
     </SubPage>
   );
 };
