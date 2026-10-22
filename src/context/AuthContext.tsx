@@ -110,6 +110,17 @@ const writeCachedProfile = (p: UserProfile | null) => {
   } catch {}
 };
 
+// هل الخطأ ناتج عن إلغاء المستخدم للعملية؟
+const isCancelError = (error: any): boolean => {
+  const code = String(error?.code ?? '');
+  const msg = String(error?.message ?? '');
+  return (
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request' ||
+    /12501|12502|cancel/i.test(code + ' ' + msg)
+  );
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -305,16 +316,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (Capacitor.isNativePlatform()) {
         let idToken: string | undefined;
-        if (hintEmail && Capacitor.isPluginAvailable('GoogleHint')) {
-          const r = await GoogleHint.signIn({ email: hintEmail });
-          idToken = r.idToken;
-        } else {
+
+        // الأولوية دائماً لإضافة GoogleHint (تعمل مع البريد ومن دونه):
+        // - مع البريد: دخول مباشر بالحساب المحدد
+        // - بدون البريد: تظهر قائمة الحسابات مرة واحدة ثم يُحفظ البريد تلقائياً
+        if (Capacitor.isPluginAvailable('GoogleHint')) {
+          try {
+            const r = await GoogleHint.signIn({ email: hintEmail || '' });
+            idToken = r.idToken;
+          } catch (hintErr: any) {
+            // إلغاء المستخدم: نوقف العملية ولا ننتقل للطريقة الاحتياطية
+            if (isCancelError(hintErr)) throw hintErr;
+            console.error('GoogleHint failed, falling back:', hintErr);
+          }
+        }
+
+        // احتياطي: الإضافة الثانية، فقط إذا لم تنجح GoogleHint
+        if (!idToken) {
           const result = await FirebaseAuthentication.signInWithGoogle({
             skipNativeAuth: true,
             useCredentialManager: false,
           } as any);
           idToken = result.credential?.idToken;
         }
+
         if (!idToken) throw new Error('NO_ID_TOKEN');
         tokenEmail = emailFromIdToken(idToken);
         const cred = GoogleAuthProvider.credential(idToken);
@@ -339,13 +364,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return tokenEmail || hintEmail;
     } catch (error: any) {
-      const code = String(error?.code ?? '');
-      const msg = String(error?.message ?? '');
-      const cancelled =
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request' ||
-        /12501|12502|cancel/i.test(code + ' ' + msg);
-      if (cancelled) {
+      if (isCancelError(error)) {
         const e: any = new Error('GOOGLE_SIGNIN_CANCELLED');
         e.cancelled = true;
         throw e;
