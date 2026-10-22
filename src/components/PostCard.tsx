@@ -235,7 +235,7 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
       >
         <p
           dir="auto"
-          className={`break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
+          className={`selectable break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
             long ? 'text-base text-start' : 'text-2xl text-center'
           }`}
         >
@@ -635,7 +635,7 @@ const PostCard: React.FC<Props> = ({
       {caption && (
         <p
           dir="auto"
-          className={`px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
+          className={`selectable px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
             expanded ? '' : 'line-clamp-2'
           }`}
         >
