@@ -81,7 +81,7 @@ export const setShareLikesWithFriends = (v: boolean): void => {
   shareLikesWithFriends = v;
 };
 
-const extractMentionIds = async (content: string, authorId: string): Promise<string[]> => {
+export const extractMentionIds = async (content: string, authorId: string): Promise<string[]> => {
   const names = new Set<string>();
   const re = /(^|\s)@([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)/g;
   let m: RegExpExecArray | null;
@@ -463,6 +463,17 @@ export const addComment = async (
   
   markPostInteraction(post.authorId); // ← تسجيل التفاعل
   notify(post.authorId, 'comment', `علّق على منشورك: ${content.slice(0, 60)}`, post.id);
+
+  // الإشارات داخل التعليق: إشعار لكل شخص ذُكر (عدا صاحب المنشور فقد وصله إشعار التعليق)
+  if (content.includes('@')) {
+    extractMentionIds(content, author.uid)
+      .then((ids) =>
+        ids
+          .filter((id) => id !== post.authorId)
+          .forEach((id) => notify(id, 'comment', 'أشار إليك في تعليق', post.id))
+      )
+      .catch((e) => console.error('comment mentions failed:', e));
+  }
 };
 
 export const deleteComment = async (c: PostComment): Promise<void> => {
