@@ -24,6 +24,27 @@
     color: rgb(var(--av-fg-rgb));
   }
   
+  /* منع تحديد النص والنسخ على مستوى التطبيق كله */
+  html, body, #root {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* حقول الإدخال يجب أن تبقى قابلة للكتابة والتحديد */
+  input, textarea, [contenteditable=""], [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  /* الأماكن المسموح فيها بالتحديد والنسخ: كابشن، تعليقات، رسائل، أسماء مستخدمين */
+  .selectable, .selectable * {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
