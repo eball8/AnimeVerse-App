@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import {
@@ -368,8 +369,8 @@ const PostShareSheet: React.FC<PostShareSheetProps> = ({ post, url, authorName, 
       .slice(0, MAX_FRIENDS_SHOWN);
   }, [friendIds, briefs, search]);
 
-  return (
-    <div className="fixed inset-0 z-[120] bg-black/60 flex items-end justify-center" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[300] bg-black/60 flex items-end justify-center" onClick={onClose}>
       <div
         className="w-full max-w-md bg-dark-900 border-t border-white/10 rounded-t-3xl flex flex-col h-[78vh] max-h-[78vh]"
         onClick={(e) => e.stopPropagation()}
@@ -500,7 +501,8 @@ const PostShareSheet: React.FC<PostShareSheetProps> = ({ post, url, authorName, 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
