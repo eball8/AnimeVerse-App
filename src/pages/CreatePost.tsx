@@ -209,6 +209,8 @@ const CreatePost: React.FC = () => {
     []
   );
 
+  const applyFile = (selected: File): boolean => {
+    if (selected.size > MAX_BYTES) {
       setError(t('cp.errTooBig'));
       return false;
     }
