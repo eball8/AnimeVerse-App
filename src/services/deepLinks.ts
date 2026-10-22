@@ -1,3 +1,5 @@
+import { APP_URL, WEB_HOST } from '../utils/links';
+
 export type DeepLinkTarget =
   | { type: 'post'; id: string }
   | { type: 'anime'; id: string }
@@ -8,6 +10,8 @@ export type DeepLinkTarget =
 const MAX_ID_LENGTH = 200;
 
 const ALLOWED_HOSTS = new Set([
+  WEB_HOST.toLowerCase(),
+  `www.${WEB_HOST.toLowerCase()}`,
   'animeverse.app',
   'www.animeverse.app',
 ]);
@@ -29,12 +33,12 @@ function validId(value: string | null): value is string {
  * تحليل رابط AnimeVerse إلى وجهة داخل التطبيق.
  *
  * الصيغ المدعومة:
- * https://animeverse.app/post/POST_ID
- * https://animeverse.app/anime/ANIME_ID
- * https://animeverse.app/episode/EPISODE_ID
- * https://animeverse.app/profile/USER_ID
- * https://animeverse.app/user/USER_ID (رابط مشاركة الملف الشخصي / رمز QR)
- * https://animeverse.app/story/STORY_ID
+ * https://HOST/post/POST_ID
+ * https://HOST/anime/ANIME_ID
+ * https://HOST/episode/EPISODE_ID
+ * https://HOST/profile/USER_ID
+ * https://HOST/user/USER_ID (رابط مشاركة الملف الشخصي / رمز QR)
+ * https://HOST/story/STORY_ID
  *
  * كما يدعم المسارات النسبية داخل التطبيق.
  */
@@ -46,7 +50,7 @@ export function parseDeepLink(
   }
 
   try {
-    const url = new URL(input, 'https://animeverse.app');
+    const url = new URL(input, APP_URL);
 
     if (
       url.protocol !== 'https:' ||
@@ -109,23 +113,23 @@ export function createDeepLink(
     post: 'post',
     anime: 'anime',
     episode: 'episode',
-    profile: 'profile',
+    profile: 'user',
     story: 'story',
   };
 
-  return `https://animeverse.app/${paths[target.type]}/${encodeURIComponent(target.id)}`;
+  return `${APP_URL}/${paths[target.type]}/${encodeURIComponent(target.id)}`;
 }
 
 /**
  * رابط مشاركة الملف الشخصي (يُستعمل في رمز QR وكل خيارات المشاركة):
- * https://animeverse.app/user/{userId}
+ * https://HOST/user/{userId}
  */
 export function userProfileLink(userId: string): string {
   if (!validId(userId)) {
     throw new Error('Invalid user ID');
   }
 
-  return `https://animeverse.app/user/${encodeURIComponent(userId)}`;
+  return `${APP_URL}/user/${encodeURIComponent(userId)}`;
 }
 
 const PENDING_ROUTE_KEY = 'av_pending_route';
