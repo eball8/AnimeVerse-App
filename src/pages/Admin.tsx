@@ -19,6 +19,7 @@ import VerifiedBadge from '../components/VerifiedBadge';
 import { useConfirm } from '../components/ConfirmDialog';
 import { PickerField } from '../components/OptionPicker';
 import AdminUpdateTab from '../components/AdminUpdateTab';
+import ReportsAdminTab from '../components/ReportsAdminTab';
 
 type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'announce' | 'update' | 'logs';
 
@@ -248,90 +249,6 @@ const PostsTab: React.FC = () => {
           <button onClick={() => remove(p)} className={`${smallBtn} border-red-500/40 text-red-400`}>
             <Trash2 className="w-3.5 h-3.5" /> {t('adm.delete')}
           </button>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/* -------------------------------- البلاغات -------------------------------- */
-const ReportsTab: React.FC = () => {
-  const { t } = useI18n();
-  const errMsg = useErr();
-  const { user } = useAuth();
-  const [reports, setReports] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
-        setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (e) { errMsg(e); }
-      setLoading(false);
-    })();
-  }, []);
-
-  const setStatus = async (id: string, status: 'resolved' | 'dismissed') => {
-    try {
-      await updateDoc(doc(db, 'reports', id), { status, resolvedBy: user?.uid, resolvedAt: serverTimestamp() });
-      logAdmin(status === 'resolved' ? 'resolve_report' : 'dismiss_report', 'report', id);
-      setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status } : r)));
-    } catch (e) { errMsg(e); }
-  };
-  const remove = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'reports', id));
-      logAdmin('delete_report', 'report', id);
-      setReports((rs) => rs.filter((r) => r.id !== id));
-    } catch (e) { errMsg(e); }
-  };
-
-  if (loading) return <Spinner />;
-  if (!reports.length) return <p className="text-center text-sm text-slate-500 py-10">{t('adm.noReports')}</p>;
-
-  return (
-    <div className="space-y-3">
-      {reports.map((r) => (
-        <div key={r.id} className="card p-3 space-y-2">
-          <p className="text-xs text-slate-400">{r.type} · {r.targetType} · <span className="text-white">{r.status}</span></p>
-          <p className="text-sm text-slate-200 break-words">{r.reason}</p>
-          {r.reportedUsername && (
-            <p className="text-xs text-slate-300 break-all" dir="ltr">
-              المُبلَّغ عنه: <span className="text-white font-bold">@{r.reportedUsername}</span>
-            </p>
-          )}
-          {r.contentType && <p className="text-[11px] text-slate-400">نوع الرسالة: {r.contentType}</p>}
-          {r.contactUsername && (
-            <p className="text-xs text-slate-300 break-all" dir="ltr">
-              مستخدم أرسل المشكلة: <span className="text-white font-bold">@{r.contactUsername}</span>
-            </p>
-          )}
-          {r.appVersion && <p className="text-[11px] text-slate-400">الإصدار: {r.appVersion}</p>}
-          {r.link && (
-            <a href={r.link} target="_blank" rel="noopener noreferrer" className="block text-xs text-primary-400 underline break-all" dir="ltr">
-              {r.link}
-            </a>
-          )}
-          {Array.isArray(r.screenshots) && r.screenshots.length > 0 && (
-            <div className="flex gap-2">
-              {r.screenshots.map((u: string, i: number) => (
-                <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block w-20 h-20 rounded-xl overflow-hidden border border-white/10">
-                  <img src={u} alt="" className="w-full h-full object-cover" loading="lazy" />
-                </a>
-              ))}
-            </div>
-          )}
-          <p className="text-[10px] text-slate-500 break-all">{t('adm.target', { id: r.targetId })}</p>
-          <div className="flex gap-2">
-            {r.status === 'pending' && (
-              <>
-                <button onClick={() => setStatus(r.id, 'resolved')} className={`${smallBtn} border-emerald-500/40 text-emerald-400`}>{t('adm.resolved')}</button>
-                <button onClick={() => setStatus(r.id, 'dismissed')} className={`${smallBtn} border-white/20 text-slate-300`}>{t('adm.dismiss')}</button>
-              </>
-            )}
-            <button onClick={() => remove(r.id)} className={`${smallBtn} border-red-500/40 text-red-400`}><Trash2 className="w-3.5 h-3.5" /></button>
-          </div>
         </div>
       ))}
     </div>
@@ -691,7 +608,7 @@ const Admin: React.FC = () => {
       {tab === 'stats' && <StatsTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'posts' && <PostsTab />}
-      {tab === 'reports' && <ReportsTab />}
+      {tab === 'reports' && <ReportsAdminTab />}
       {tab === 'episodes' && <EpisodesTab />}
       {tab === 'anime' && <AnimeTab />}
       {tab === 'announce' && <AnnounceTab />}
