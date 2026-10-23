@@ -10,6 +10,8 @@ import {
 import { db } from '../config/firebase';
 import { isPendingCollaborator, respondToCollabInvite } from '../services/postService';
 import type { Post } from '../services/postService';
+import VerifiedBadge from './VerifiedBadge';
+import type { BadgeType } from '../types';
 import Avatar from './Avatar';
 import MentionText from './MentionText';
 import PostShareSheet from './PostShareSheet';
@@ -30,6 +32,7 @@ interface Props {
   canDelete: boolean;
   authorName: string;
   authorPhoto?: string;
+  authorBadge?: BadgeType;
   repostName?: string;
   onLike: (p: Post) => void;
   onComment: (p: Post) => void;
@@ -361,7 +364,7 @@ const fmtCount = (n: number) => {
 };
 
 const PostCard: React.FC<Props> = ({
-  post, liked, canDelete, authorName, authorPhoto, repostName, onLike, onComment, onDelete,
+  post, liked, canDelete, authorName, authorPhoto, authorBadge, repostName, onLike, onComment, onDelete,
 }) => {
   const navigate = useNavigate();
   const { t, lang } = useI18n();
@@ -565,7 +568,10 @@ const PostCard: React.FC<Props> = ({
               </span>
             </button>
             <button onClick={() => navigate(`/user/${post.authorId}`)} className="flex-1 min-w-0 text-start">
-              <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h4 className="text-[13.5px] font-extrabold text-white truncate leading-tight">{authorName}</h4>
+                <VerifiedBadge badge={authorBadge} withText />
+              </div>
               <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{timeAgo(post.createdAt, lang)}</p>
             </button>
           </>
@@ -645,6 +651,7 @@ const PostCard: React.FC<Props> = ({
         >
           <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
             {authorName}
+            <VerifiedBadge badge={authorBadge} className="ms-1" />
           </button>
           <MentionText text={caption} />
         </p>
