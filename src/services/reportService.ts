@@ -5,6 +5,8 @@ import { uploadVideoToCloudinary } from './cloudinaryService';
 /* ------------------------------------------------------------------
    نظام البلاغات الموحّد.
    - هوية المُبلِّغ لا تُحفظ نهائياً (لا reporterUid) فلا يعرفها أحد.
+   - لكل بلاغ رقم تذكرة عشوائي يُحفظ في جهاز المُبلِّغ فقط،
+     ومنه يستقبل ردّ الإدارة دون كشف هويته.
    - يدعم حتى 3 لقطات شاشة، واسم المستخدم المُبلَّغ عنه، ورابط المحتوى.
 ------------------------------------------------------------------ */
 
@@ -58,6 +60,55 @@ export const reportFileError = (file: File): string | null => {
   return null;
 };
 
+/* ---- تذاكر الردود (محفوظة في جهاز المُبلِّغ فقط) ---- */
+const TICKETS_KEY = 'av_report_tickets_v1';
+const TICKET_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+export interface LocalTicket {
+  id: string;
+  targetType: ReportTargetType;
+  createdAt: number;
+  seen: boolean;
+}
+
+const makeTicketId = (): string => {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+const readTickets = (): LocalTicket[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]');
+    if (!Array.isArray(v)) return [];
+    const now = Date.now();
+    return v.filter(
+      (x): x is LocalTicket =>
+        x && typeof x.id === 'string' && typeof x.createdAt === 'number' && now - x.createdAt < TICKET_TTL_MS
+    );
+  } catch {
+    return [];
+  }
+};
+
+const writeTickets = (list: LocalTicket[]): void => {
+  try {
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(list.slice(-100)));
+  } catch {
+    /* لا يؤثر على عمل التطبيق */
+  }
+};
+
+export const getTickets = (): LocalTicket[] => readTickets();
+
+const rememberTicket = (id: string, targetType: ReportTargetType): void => {
+  writeTickets([...readTickets(), { id, targetType, createdAt: Date.now(), seen: false }]);
+};
+
+export const markTicketSeen = (id: string): void => {
+  writeTickets(readTickets().map((t) => (t.id === id ? { ...t, seen: true } : t)));
+};
+
 export const submitReport = async (input: ReportInput): Promise<void> => {
   const targetId = clip(input.targetId, 200);
   if (!targetId) throw new Error('NO_TARGET');
@@ -72,6 +123,7 @@ export const submitReport = async (input: ReportInput): Promise<void> => {
   const details = clip(input.details, 1000);
   const label = clip(input.categoryLabel, 120);
   const reason = (details ? `${label} — ${details}` : label || input.category).slice(0, 500);
+  const ticketId = makeTicketId();
 
   const data: Record<string, unknown> = {
     type: typeFor(input),
@@ -80,6 +132,7 @@ export const submitReport = async (input: ReportInput): Promise<void> => {
     category: clip(input.category, 40) || 'other',
     reason,
     status: 'pending',
+    ticketId,
     createdAt: serverTimestamp(),
   };
   if (details) data.details = details;
@@ -92,6 +145,7 @@ export const submitReport = async (input: ReportInput): Promise<void> => {
   if (screenshots.length) data.screenshots = screenshots;
 
   await addDoc(collection(db, 'reports'), data);
+  rememberTicket(ticketId, input.targetType);
 };
 
 /* ---- منع تكرار البلاغ على نفس المحتوى من نفس الجهاز ---- */
