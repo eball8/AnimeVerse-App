@@ -9,6 +9,7 @@ import { notify } from './notificationService';
 import { getMutualFriendIds } from './followService';
 import { isValidUsername } from '../utils/username';
 import { markPostInteraction } from './storyService'; // ← أضفنا هذا السطر
+import { isVisibleByReach, loadStandings } from './accountStatusService';
 
 export interface Post {
   id?: string;
@@ -99,6 +100,28 @@ const hideRestrictedReposts = async (posts: Post[]): Promise<Post[]> => {
     if (p.authorId === me) return true;
     return friends.has(p.authorId);
   });
+};
+
+/**
+ * تقليل الوصول حسب حالة حساب صاحب المنشور (أصفر 50% / أحمر 15% / مغلق 0%).
+ * القرار ثابت لكل منشور (لا يتغير مع كل تحديث)، وصاحب المنشور يرى منشوراته دائماً.
+ * يُطبَّق على الفيد (المجتمع) والريلز فقط، أما الملف الشخصي والروابط المباشرة فتبقى تعمل.
+ */
+const applyReach = async (posts: Post[]): Promise<Post[]> => {
+  const me = auth.currentUser?.uid;
+  const authors = Array.from(new Set(posts.map((p) => p.authorId).filter((a) => !!a && a !== me)));
+  if (!authors.length) return posts;
+  try {
+    const levels = await loadStandings(authors);
+    return posts.filter((p) => {
+      if (!p.id || p.authorId === me) return true;
+      const level = levels[p.authorId] ?? 'green';
+      return level === 'green' || isVisibleByReach(p.id, level);
+    });
+  } catch (e) {
+    console.error('reach filter failed:', e);
+    return posts;
+  }
 };
 
 export const POSTS_CHANGED_EVENT = 'av:posts-changed';
@@ -229,6 +252,7 @@ export const subscribeToPosts = (callback: (posts: Post[]) => void, max = 20) =>
     snapshot.forEach((d) => posts.push({ id: d.id, ...d.data() } as Post));
     const mine = ++seq;
     hideRestrictedReposts(posts)
+      .then(applyReach)
       .then((visible) => {
         if (!closed && mine === seq) callback(visible);
       })
@@ -284,13 +308,14 @@ const fetchReelsRaw = async (cursor: QueryDocumentSnapshot | null, size: number)
 };
 
 export const getReelsPage = async (cursor: QueryDocumentSnapshot | null, size = 8): Promise<ReelsPage> => {
-  // قد تُخفى بعض الإعادات بسبب الخصوصية، لذلك نجلب صفحات إضافية حتى تمتلئ الصفحة أو ينتهي المحتوى
+  // قد تُخفى بعض الإعادات بسبب الخصوصية أو بعض المنشورات بسبب تقليل الوصول،
+  // لذلك نجلب صفحات إضافية حتى تمتلئ الصفحة أو ينتهي المحتوى
   let cur = cursor;
   const out: Post[] = [];
   for (let i = 0; i < 6; i++) {
     const page = await fetchReelsRaw(cur, size);
     cur = page.cursor;
-    const visible = await hideRestrictedReposts(page.items);
+    const visible = await applyReach(await hideRestrictedReposts(page.items));
     out.push(...visible);
     if (page.done) return { items: out, cursor: cur, done: true };
     if (out.length >= Math.ceil(size / 2)) return { items: out, cursor: cur, done: false };
