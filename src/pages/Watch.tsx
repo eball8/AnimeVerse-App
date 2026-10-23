@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import EpisodeRating from '../components/EpisodeRating';
 import { getPlayerPref } from '../services/settingsService';
+import { EZV_STORE_URL, openExternal, playInEzv } from '../services/ezvPlayer';
 
 const Watch: React.FC = () => {
   const { t } = useI18n();
@@ -82,31 +83,29 @@ const Watch: React.FC = () => {
     }
   };
 
-  // تشغيل السيرفر (استخدام Intent لفتح EZV Player)
-  const handlePlayServer = (link: string) => {
+  // تشغيل السيرفر: يفتح الرابط مباشرة داخل EZV Player، أو في المتصفح حسب اختيار المستخدم
+  const handlePlayServer = async (link: string, serverName = '') => {
     if (!link || link === '#') {
       alert(t('wt.noLink'));
       return;
     }
 
     if (getPlayerPref() === 'browser') {
-      window.open(link, '_blank');
+      await openExternal(link);
       return;
     }
 
-    const packageName = 'com.player.easy';
-    const intentUrl = `intent://${link.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=${packageName};end`;
+    const title = `${t('wt.title')} - ${t('wt.episode', { n: episodeNumber ?? '' })} ${serverName}`.trim();
+    const result = await playInEzv(link, title);
+    if (result === 'opened') return;
 
-    try {
-      window.location.href = intentUrl;
-      setTimeout(() => {
-        if (document.visibilityState === 'visible') {
-          window.open(link, '_blank');
-        }
-      }, 1500);
-    } catch (e) {
-      window.open(link, '_blank');
+    if (result === 'not-installed') {
+      if (window.confirm(t('wt.ezvMissing'))) await openExternal(EZV_STORE_URL);
+      else await openExternal(link);
+      return;
     }
+    // فشل غير متوقع (أو تشغيل من المتصفح): ننتقل للمتصفح بدل ترك المستخدم بلا شيء
+    await openExternal(link);
   };
 
   if (loading) {
@@ -160,7 +159,7 @@ const Watch: React.FC = () => {
               {servers.map((server) => (
                 <div key={server.id} className="relative group">
                   <button
-                    onClick={() => handlePlayServer(server.link)}
+                    onClick={() => handlePlayServer(server.link, server.name)}
                     className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
                   >
                     <span className="text-xs font-bold text-white mb-1">{server.name}</span>
