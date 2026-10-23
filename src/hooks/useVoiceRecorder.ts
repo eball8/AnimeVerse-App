@@ -52,7 +52,25 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
   }, []);
 
   const start = useCallback(async (): Promise<void> => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // إعدادات صوت أنقى: قناة واحدة، إلغاء الصدى وتقليل الضجيج، وإيقاف التضخيم التلقائي (سبب شائع للتشويش)
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+        },
+      });
+    } catch (e: any) {
+      // إن رفض الجهاز هذه الإعدادات نرجع للإعداد العادي، أما رفض الإذن فنمرره كما هو
+      if (e?.name === 'OverconstrainedError' || e?.name === 'TypeError') {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } else {
+        throw e;
+      }
+    }
     streamRef.current = stream;
     chunksRef.current = [];
     
@@ -60,7 +78,7 @@ export const useVoiceRecorder = (onAutoStop?: (r: VoiceResult | null) => void) =
     let rec: MediaRecorder;
 
     try {
-      rec = new MediaRecorder(stream, { mimeType: preferredMime });
+      rec = new MediaRecorder(stream, { mimeType: preferredMime, audioBitsPerSecond: 64000 });
     } catch {
       // في حال رفض الجهاز الصيغة، نستخدم الافتراضي
       rec = new MediaRecorder(stream);
