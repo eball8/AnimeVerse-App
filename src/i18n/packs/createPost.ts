@@ -4,7 +4,7 @@ import type { Lang } from '../translations';
 type Dict = Record<string, string>;
 
 const ar: Dict = {
-  'cp.errTooBig': 'حجم الملف كبير جداً (الحد الأقصى 50 ميجابايت).',
+  'cp.errTooBig': 'حجم الملف كبير جداً (الحد الأقصى 30 ميجابايت).',
   'cp.errNotMedia': 'الملف المختار ليس صورة أو فيديو.',
   'cp.errGallery': 'تعذّر تحميل المعرض.',
   'cp.errOpenFile': 'تعذّر فتح الملف المختار.',
@@ -43,7 +43,7 @@ const ar: Dict = {
 };
 
 const en: Dict = {
-  'cp.errTooBig': 'The file is too large (max 50 MB).',
+  'cp.errTooBig': 'The file is too large (max 30 MB).',
   'cp.errNotMedia': 'The selected file is not an image or a video.',
   'cp.errGallery': 'Could not load the gallery.',
   'cp.errOpenFile': 'Could not open the selected file.',
@@ -82,7 +82,7 @@ const en: Dict = {
 };
 
 const fr: Dict = {
-  'cp.errTooBig': 'Le fichier est trop volumineux (max 50 Mo).',
+  'cp.errTooBig': 'Le fichier est trop volumineux (max 30 Mo).',
   'cp.errNotMedia': 'Le fichier choisi n’est ni une image ni une vidéo.',
   'cp.errGallery': 'Impossible de charger la galerie.',
   'cp.errOpenFile': 'Impossible d’ouvrir le fichier choisi.',
@@ -121,7 +121,7 @@ const fr: Dict = {
 };
 
 const es: Dict = {
-  'cp.errTooBig': 'El archivo es demasiado grande (máx. 50 MB).',
+  'cp.errTooBig': 'El archivo es demasiado grande (máx. 30 MB).',
   'cp.errNotMedia': 'El archivo elegido no es una imagen ni un video.',
   'cp.errGallery': 'No se pudo cargar la galería.',
   'cp.errOpenFile': 'No se pudo abrir el archivo elegido.',
