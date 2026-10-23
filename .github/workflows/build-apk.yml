@@ -84,6 +84,7 @@ jobs:
           cp android-config/native/GalleryPlugin.java android/app/src/main/java/com/animeverse/app/GalleryPlugin.java
           cp android-config/native/GoogleHintPlugin.java android/app/src/main/java/com/animeverse/app/GoogleHintPlugin.java
           cp android-config/native/DeviceIdPlugin.java android/app/src/main/java/com/animeverse/app/DeviceIdPlugin.java
+          cp android-config/native/EzvPlayerPlugin.java android/app/src/main/java/com/animeverse/app/EzvPlayerPlugin.java
           cp android-config/native/MainActivity.java android/app/src/main/java/com/animeverse/app/MainActivity.java
 
       - name: Add Google Play Services Auth dependency
