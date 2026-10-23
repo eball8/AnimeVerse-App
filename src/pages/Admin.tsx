@@ -12,7 +12,9 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { logAdmin } from '../services/adminLog';
 import { uploadVideoToCloudinary } from '../services/cloudinaryService';
-import type { UserProfile, UserRole } from '../types';
+import type { BadgeType, UserProfile, UserRole } from '../types';
+import { badgeOf } from '../types';
+import VerifiedBadge from '../components/VerifiedBadge';
 
 type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'announce' | 'logs';
 
@@ -131,7 +133,7 @@ const UsersTab: React.FC = () => {
           <button onClick={() => showEmail(u.uid)} className="w-full flex items-center gap-3 text-start">
             <img src={u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.uid}`} alt="" className="w-10 h-10 rounded-full bg-dark-900" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">{u.displayName} {u.isVerified && '✔️'}</p>
+              <p className="text-sm font-bold text-white truncate"><span className="inline-flex items-center gap-1.5">{u.displayName} <VerifiedBadge badge={badgeOf(u)} /></span></p>
               <p className="text-[11px] text-slate-500 truncate">@{u.username} · {u.role}{u.isBanned ? ` · ${t('adm.bannedTag')}` : ''}</p>
             </div>
           </button>
@@ -146,9 +148,26 @@ const UsersTab: React.FC = () => {
                 >
                   <Ban className="w-3.5 h-3.5" /> {u.isBanned ? t('adm.unban') : t('adm.ban')}
                 </button>
-                <button onClick={() => patch(u, { isVerified: !u.isVerified }, u.isVerified ? 'unverify_user' : 'verify_user')} className={`${smallBtn} border-primary-500/40 text-primary-400`}>
-                  <BadgeCheck className="w-3.5 h-3.5" /> {u.isVerified ? t('adm.unverify') : t('adm.verify')}
-                </button>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-primary-400">
+                  <BadgeCheck className="w-3.5 h-3.5" /> {t('adm.badge')}
+                  <select
+                    value={badgeOf(u) ?? ''}
+                    onChange={(e) => {
+                      const v = (e.target.value || null) as BadgeType | null;
+                      patch(
+                        u,
+                        { verifiedBadge: v, isVerified: v !== null },
+                        v ? 'verify_user' : 'unverify_user',
+                        `${u.username} → ${v ?? 'none'}`
+                      );
+                    }}
+                    className="px-2 py-1.5 rounded-xl bg-dark-950 border border-white/10 text-xs text-white"
+                  >
+                    <option value="">{t('adm.badgeNone')}</option>
+                    <option value="gold">{t('adm.badgeGold')}</option>
+                    <option value="red">{t('adm.badgeRed')}</option>
+                  </select>
+                </label>
                 <select
                   value={u.role}
                   disabled={u.uid === user?.uid}
