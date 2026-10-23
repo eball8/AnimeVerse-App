@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import E2EEGate from '../components/E2EEGate';
 import { useConfirm } from '../components/ConfirmDialog';
 import StoryViewer from '../components/StoryViewer';
@@ -463,7 +464,10 @@ const ConversationList: React.FC<{
                 {!isGroup && info?.online && <span className={`absolute bottom-0 end-0 w-3.5 h-3.5 ${PRESENCE_DOT_CLASS}`} />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm truncate ${unread ? 'font-black text-white' : 'font-bold text-white'}`}>{name}</p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className={`text-sm truncate ${unread ? 'font-black text-white' : 'font-bold text-white'}`}>{name}</p>
+                  {!isGroup && <VerifiedBadge badge={b?.badge} withText />}
+                </div>
                 {isRequests ? (
                   <p className="text-[11px] text-slate-400 mt-0.5 truncate">{t('msgInbox.wantsToMessage')}</p>
                 ) : status ? (
