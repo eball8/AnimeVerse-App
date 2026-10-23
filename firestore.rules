@@ -739,6 +739,27 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ---------- 9-د. حالة الحساب (مستوى فقط، يكتبه الأدمن) ----------
+    match /accountStanding/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- 9-هـ. الطعون على القرارات (طعن واحد لكل حساب) ----------
+    match /appeals/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'kind', 'message', 'status', 'createdAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.kind in ['warning', 'restrict', 'ban']
+        && validText(request.resource.data.message, 10, 1000)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && exists(/databases/$(database)/documents/moderation/$(uid));
+      allow update, delete: if isAdmin();
+    }
+
     // ---------- 10. المحادثات ----------
     match /conversations/{convId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
@@ -1057,7 +1078,8 @@ service cloud.firestore {
           'follow',
           'request',
           'mention',
-          'new_device'
+          'new_device',
+          'moderation'
         ]
         && validText(request.resource.data.fromName, 1, 50)
         && validText(request.resource.data.text, 0, 200)
@@ -1070,7 +1092,13 @@ service cloud.firestore {
           )
           ||
           (
-            request.resource.data.type != 'new_device'
+            request.resource.data.type == 'moderation'
+            && isAdmin()
+            && validText(request.resource.data.toUid, 1, 128)
+          )
+          ||
+          (
+            request.resource.data.type in ['like', 'comment', 'follow', 'request', 'mention']
             && request.resource.data.toUid != request.auth.uid
             && validText(request.resource.data.toUid, 1, 128)
             && !isBlockedBy(request.resource.data.toUid)
