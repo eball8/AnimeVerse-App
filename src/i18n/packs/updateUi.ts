@@ -1,4 +1,4 @@
-// ترجمات: لوحة التحديث + تعديل/حذف السيرفرات
+// ترجمات: لوحة التحديث + تبويب النشر في الأدمن + تعديل/حذف السيرفرات
 import type { Lang } from '../translations';
 
 type Dict = Record<string, string>;
@@ -12,6 +12,19 @@ const ar: Dict = {
   'wt.edit': 'تعديل',
   'wt.delete': 'حذف',
   'wt.confirmDeleteServer': 'هل تريد حذف هذا السيرفر؟',
+  'adm.tab.update': 'التحديث',
+  'upd.adm.title': 'نشر التحديث للمستخدمين',
+  'upd.adm.hint': 'ارفع كل تعديلاتك أولاً وانتظر انتهاء البناء في GitHub، ثم اضغط نشر ليصل التنبيه للجميع.',
+  'upd.adm.latest': 'آخر بناء جاهز',
+  'upd.adm.published': 'آخر بناء نُشر للمستخدمين',
+  'upd.adm.manual': 'اكتب رقم البناء (تعذّر جلبه تلقائياً)',
+  'upd.adm.publish': 'نشر التحديث للجميع',
+  'upd.adm.already': 'هذا البناء منشور بالفعل',
+  'upd.adm.confirm': 'نشر التحديث للجميع؟',
+  'upd.adm.confirmMsg': 'ستظهر لوحة "تحديث جديد" لجميع مستخدمي التطبيق فوراً.',
+  'upd.adm.confirmBtn': 'نشر',
+  'upd.adm.done': 'تم نشر التحديث ✅',
+  'upd.adm.refresh': 'تحديث الأرقام',
 };
 
 const en: Dict = {
@@ -23,6 +36,19 @@ const en: Dict = {
   'wt.edit': 'Edit',
   'wt.delete': 'Delete',
   'wt.confirmDeleteServer': 'Delete this server?',
+  'adm.tab.update': 'Update',
+  'upd.adm.title': 'Publish the update to users',
+  'upd.adm.hint': 'Push all your changes first and wait for the GitHub build to finish, then press Publish so everyone gets the notice.',
+  'upd.adm.latest': 'Latest build ready',
+  'upd.adm.published': 'Last build published to users',
+  'upd.adm.manual': 'Enter the build number (could not be fetched)',
+  'upd.adm.publish': 'Publish update to everyone',
+  'upd.adm.already': 'This build is already published',
+  'upd.adm.confirm': 'Publish the update to everyone?',
+  'upd.adm.confirmMsg': 'The "New update" panel will appear to all app users right away.',
+  'upd.adm.confirmBtn': 'Publish',
+  'upd.adm.done': 'Update published ✅',
+  'upd.adm.refresh': 'Refresh numbers',
 };
 
 const fr: Dict = {
@@ -34,6 +60,19 @@ const fr: Dict = {
   'wt.edit': 'Modifier',
   'wt.delete': 'Supprimer',
   'wt.confirmDeleteServer': 'Supprimer ce serveur ?',
+  'adm.tab.update': 'Mise à jour',
+  'upd.adm.title': 'Publier la mise à jour aux utilisateurs',
+  'upd.adm.hint': "Poussez d'abord toutes vos modifications et attendez la fin du build GitHub, puis appuyez sur Publier.",
+  'upd.adm.latest': 'Dernier build prêt',
+  'upd.adm.published': 'Dernier build publié',
+  'upd.adm.manual': 'Saisissez le numéro de build (récupération impossible)',
+  'upd.adm.publish': 'Publier la mise à jour pour tous',
+  'upd.adm.already': 'Ce build est déjà publié',
+  'upd.adm.confirm': 'Publier la mise à jour pour tous ?',
+  'upd.adm.confirmMsg': 'Le panneau « Nouvelle mise à jour » apparaîtra immédiatement pour tous les utilisateurs.',
+  'upd.adm.confirmBtn': 'Publier',
+  'upd.adm.done': 'Mise à jour publiée ✅',
+  'upd.adm.refresh': 'Actualiser les numéros',
 };
 
 const es: Dict = {
@@ -45,6 +84,19 @@ const es: Dict = {
   'wt.edit': 'Editar',
   'wt.delete': 'Eliminar',
   'wt.confirmDeleteServer': '¿Eliminar este servidor?',
+  'adm.tab.update': 'Actualización',
+  'upd.adm.title': 'Publicar la actualización a los usuarios',
+  'upd.adm.hint': 'Sube primero todos tus cambios y espera a que termine la compilación en GitHub; luego pulsa Publicar.',
+  'upd.adm.latest': 'Última compilación lista',
+  'upd.adm.published': 'Última compilación publicada',
+  'upd.adm.manual': 'Escribe el número de compilación (no se pudo obtener)',
+  'upd.adm.publish': 'Publicar actualización para todos',
+  'upd.adm.already': 'Esta compilación ya está publicada',
+  'upd.adm.confirm': '¿Publicar la actualización para todos?',
+  'upd.adm.confirmMsg': 'El panel «Nueva actualización» aparecerá de inmediato a todos los usuarios.',
+  'upd.adm.confirmBtn': 'Publicar',
+  'upd.adm.done': 'Actualización publicada ✅',
+  'upd.adm.refresh': 'Actualizar números',
 };
 
 const pack: Record<Lang, Dict> = { ar, en, fr, es };
