@@ -12,6 +12,7 @@ import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { logAdmin } from '../services/adminLog';
 import { timeAgo } from '../utils/timeAgo';
 import Avatar from './Avatar';
+import VerifiedBadge from './VerifiedBadge';
 import MentionText from './MentionText';
 import MentionInput from './MentionInput';
 import { useConfirm } from './ConfirmDialog';
@@ -225,6 +226,7 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
             <span className="selectable">{a.name}</span>
+            <VerifiedBadge badge={a.badge} />
             {c.authorId === post.authorId && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
                 {t('cm.creator')}
