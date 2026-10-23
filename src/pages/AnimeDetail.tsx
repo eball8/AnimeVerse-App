@@ -7,6 +7,8 @@ import { getAnimeById } from '../services/animeService';
 import type { Anime } from '../services/animeService';
 import { isCustomId, getCustomAnime } from '../services/customAnimeService';
 import { getAnimeExtra } from '../services/malService';
+import { listAnimeEpisodeNumbers } from '../services/episodeService';
+import { useAuth } from '../context/AuthContext';
 import type { AnimeExtra } from '../services/malService';
 import { useI18n } from '../i18n/I18nContext';
 import LibraryControls from '../components/LibraryControls';
@@ -17,6 +19,9 @@ const AnimeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const { isAdmin } = useAuth();
+  const [addedEps, setAddedEps] = useState<number[]>([]);
+  const [newEp, setNewEp] = useState('');
   const [anime, setAnime] = useState<Anime | null>(null);
   const [extra, setExtra] = useState<AnimeExtra | null>(null);
   const [appRating, setAppRating] = useState<{ avg: number; count: number } | null>(null);
@@ -51,6 +56,21 @@ const AnimeDetail: React.FC = () => {
       cancelled = true;
     };
   }, [id]);
+
+  // حلقات الأنمي المستمر: فقط ما أضافه الأدمن يدوياً (لا نعتمد على أرقام الـ API)
+  useEffect(() => {
+    if (!anime) return;
+    let cancelled = false;
+    setAddedEps([]);
+    listAnimeEpisodeNumbers(String(anime.mal_id))
+      .then((n) => {
+        if (!cancelled) setAddedEps(n);
+      })
+      .catch((e) => console.error('added episodes failed:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [anime]);
 
   // متوسط تقييمات مستخدمي التطبيق لكل حلقات هذا الأنمي (قراءة مجمّعة رخيصة)
   useEffect(() => {
@@ -97,15 +117,17 @@ const AnimeDetail: React.FC = () => {
 
   const status = extra?.status && extra.status !== 'unknown' ? extra.status : anime.airing ? 'airing' : 'finished';
   const total = extra?.totalEpisodes ?? anime.episodes ?? null;
-  const aired = extra?.airedEpisodes ?? null;
-  const listCount = status === 'airing' ? (aired ?? total ?? 0) : status === 'upcoming' ? 0 : (total ?? 0);
+  const isAiring = status === 'airing';
+  // المنتهي: حلقاته الحقيقية كاملة (لن تتغير). المستمر: لا نعرض إلا الحلقات التي أضافها الأدمن.
+  const episodeList: number[] = isAiring
+    ? addedEps
+    : status === 'upcoming'
+    ? []
+    : Array.from({ length: total ?? 0 }, (_, i) => i + 1);
+  const listCount = episodeList.length;
 
   const episodesText =
-    status === 'airing'
-      ? `${aired ?? '?'} / ${total ?? '?'}`
-      : status === 'upcoming'
-      ? String(total ?? t('anime.tba'))
-      : String(total ?? '?');
+    status === 'upcoming' ? String(total ?? t('anime.tba')) : String(total ?? '?');
 
   const statusLabel =
     status === 'airing' ? t('anime.airing') : status === 'upcoming' ? t('anime.upcoming') : t('anime.finished');
@@ -256,10 +278,32 @@ const AnimeDetail: React.FC = () => {
               <h3 className="text-sm font-black text-white mb-3">
                 {t('anime.listTitle')} ({listCount})
               </h3>
+              {isAiring && (
+                <p className="text-[11px] text-slate-500 leading-relaxed">{t('anime.airingEpsNote')}</p>
+              )}
+              {isAiring && isAdmin && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const n = parseInt(newEp, 10);
+                    if (n > 0) navigate(`/watch/${anime.mal_id}/${n}`);
+                  }}
+                  className="card p-3 flex items-center gap-2"
+                >
+                  <input
+                    inputMode="numeric"
+                    value={newEp}
+                    onChange={(e) => setNewEp(e.target.value.replace(/\D/g, ''))}
+                    placeholder={t('anime.addEpisodePh')}
+                    className="flex-1 px-3 py-2 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500"
+                  />
+                  <button className="btn-primary px-4 py-2 text-xs font-bold">{t('anime.go')}</button>
+                </form>
+              )}
               {listCount === 0 && (
                 <p className="text-center text-xs text-slate-500 py-6">{t('anime.notAired')}</p>
               )}
-              {Array.from({ length: Math.min(listCount, visibleEps) }, (_, i) => i + 1).map((ep) => (
+              {episodeList.slice(0, visibleEps).map((ep) => (
                 <button
                   key={ep}
                   onClick={() => navigate(`/watch/${anime.mal_id}/${ep}`)}
