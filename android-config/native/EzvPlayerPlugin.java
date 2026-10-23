@@ -17,9 +17,11 @@ import org.json.JSONObject;
 
 import java.util.Locale;
 
-// يفتح رابط الحلقة داخل EZV Player (com.player.easy) ويشغّله مباشرة.
-// - رابط فيديو مباشر (mp4/m3u8...): يمرَّر كـ qualities عادي.
-// - رابط صفحة (embed): يمرَّر مع الوسم #webview_indicated فيشغّله EZV داخل WebView الخاص به.
+// يفتح رابط الحلقة داخل EZV Player (com.player.easy) بنفس طريقة تطبيق Anime Slayer:
+// ACTION_VIEW + ExoPlayerActivity + extras (title, anime_title, qualities, default_quality, headers)
+// ملاحظة مهمة: لا نستخدم from_network أبدًا، لأنه يجعل EZV يتجاهل qualities ووضع WebView.
+// - رابط فيديو مباشر (mp4/m3u8...): يمرَّر داخل qualities فيشغّله ExoPlayer.
+// - رابط صفحة (embed): يُضاف له #webview_indicated فيفتحه EZV داخل WebView الخاص به.
 @CapacitorPlugin(name = "EzvPlayer")
 public class EzvPlayerPlugin extends Plugin {
 
@@ -104,10 +106,13 @@ public class EzvPlayerPlugin extends Plugin {
         boolean direct = isDirectVideo(url);
         if (referer == null || referer.isEmpty()) referer = originOf(url);
 
-        // المحاولة 1 (لصفحات embed فقط): وضع WebView الخاص بـ EZV عبر extras.
-        if (!direct) try {
-            String finalUrl = direct ? url : (url.contains(WEBVIEW_TAG) ? url : url + WEBVIEW_TAG);
+        // الصفحات (embed) تحتاج الوسم ليفتحها EZV داخل WebView، والروابط المباشرة تبقى كما هي.
+        String finalUrl = direct ? url : (url.contains(WEBVIEW_TAG) ? url : url + WEBVIEW_TAG);
 
+        // EZV يتطلب عنوانين غير فارغين (title و anime_title) وإلا يغلق نفسه فورًا.
+        String safeTitle = (title == null || title.trim().isEmpty()) ? "AnimeVerse" : title.trim();
+
+        try {
             JSONArray qualities = new JSONArray()
                 .put(new JSONObject().put("title", "Auto").put("url", finalUrl));
 
@@ -117,55 +122,25 @@ public class EzvPlayerPlugin extends Plugin {
             }
             headers.put(new JSONObject().put("name", "User-Agent").put("value", DEFAULT_UA));
 
+            // نفس صيغة Anime Slayer تمامًا (بدون from_network وبدون path)
             Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(finalUrl), "video/*");
+            intent.setPackage(EZV_PACKAGE);
             intent.setComponent(new ComponentName(EZV_PACKAGE, EZV_ACTIVITY));
-            intent.putExtra("from_network", true);
-            String animeTitle = (title == null || title.isEmpty()) ? "EZV" : title;
-            intent.putExtra("title", animeTitle);
-            intent.putExtra("anime_title", animeTitle);
-            intent.putExtra("path", finalUrl);
-            intent.putExtra("uri_path", finalUrl);
+            intent.putExtra("title", safeTitle);
+            intent.putExtra("anime_title", safeTitle);
             intent.putExtra("qualities", qualities.toString());
             intent.putExtra("default_quality", 0);
+            intent.putExtra("skip_from", 0L);
+            intent.putExtra("skip_to", 0L);
             intent.putExtra("headers", headers.toString());
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(intent);
             call.resolve();
-            return;
+        } catch (ActivityNotFoundException e) {
+            call.reject("NOT_SUPPORTED");
         } catch (Exception e) {
-            // ننتقل للمحاولة 2
+            call.reject("LAUNCH_FAILED");
         }
-
-        // المحاولة 2: VIEW العادي (الطريقة المعلنة في Manifest الخاص بـ EZV) للروابط المباشرة.
-        String[] types = new String[] { "video/*", null };
-        for (String type : types) {
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW);
-                Uri uri = Uri.parse(url);
-                if (type != null) intent.setDataAndType(uri, type);
-                else intent.setData(uri);
-                intent.setPackage(EZV_PACKAGE);
-                intent.putExtra("title", title);
-                try {
-                    JSONArray h = new JSONArray();
-                    if (referer != null) {
-                        h.put(new JSONObject().put("name", "Referer").put("value", referer));
-                    }
-                    h.put(new JSONObject().put("name", "User-Agent").put("value", DEFAULT_UA));
-                    intent.putExtra("headers", h.toString());
-                } catch (Exception ignored) {
-                }
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                getContext().startActivity(intent);
-                call.resolve();
-                return;
-            } catch (ActivityNotFoundException e) {
-                // جرّب الصيغة التالية
-            } catch (Exception e) {
-                call.reject("LAUNCH_FAILED");
-                return;
-            }
-        }
-        call.reject("NOT_SUPPORTED");
     }
-        }
+}
