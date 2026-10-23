@@ -97,6 +97,7 @@ const PostView: React.FC = () => {
                 canDelete={post.authorId === user?.uid || isAdmin}
                 authorName={a.name}
                 authorPhoto={a.photo}
+                authorBadge={a.badge}
                 repostName={rp}
                 onLike={onLike}
                 onComment={() => setShowComments(true)}
