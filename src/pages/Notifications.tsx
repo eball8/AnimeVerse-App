@@ -58,12 +58,20 @@ const REPLY_PREFIX = 'ردّ على تعليقك: ';
 const DEVICE_PREFIX = 'تم تسجيل الدخول من جهاز جديد: ';
 const UNKNOWN_DEVICE_AR = 'جهاز غير معروف';
 
+// إشعارات حالة الحساب (إنذار / تقييد / إغلاق) يرسلها الأدمن، ونصها يكون mod:<code>
+const MOD_TYPE = 'moderation';
+const MOD_PREFIX = 'mod:';
+const MOD_DANGER_CODES = ['danger', 'restrict', 'ban'];
+
 const Notifications: React.FC = () => {
   const { user } = useAuth();
   const { t, lang } = useI18n();
 
   const localizeText = (n: AppNotification): string => {
     const raw = (n.text || '').trim();
+    if (raw.startsWith(MOD_PREFIX)) {
+      return t(`as.notif.${raw.slice(MOD_PREFIX.length)}`);
+    }
     const key = EXACT_TEXT_KEYS[raw];
     if (key) return t(key);
     if (raw.startsWith(COMMENT_PREFIX)) {
@@ -138,6 +146,11 @@ const Notifications: React.FC = () => {
   }, []);
 
   const openNotification = (notification: AppNotification) => {
+    if (String(notification.type) === MOD_TYPE) {
+      navigate('/account-status');
+      return;
+    }
+
     if (
       notification.type === 'follow' ||
       notification.type === 'request'
@@ -217,6 +230,12 @@ const Notifications: React.FC = () => {
 
           const isSecurity =
             notification.type === 'new_device';
+          const isModeration = String(notification.type) === MOD_TYPE;
+          const isSystem = isSecurity || isModeration;
+          const modCode = (notification.text || '').startsWith(MOD_PREFIX)
+            ? notification.text.slice(MOD_PREFIX.length)
+            : '';
+          const isDanger = isModeration && MOD_DANGER_CODES.includes(modCode);
 
           return (
             <button
@@ -229,9 +248,15 @@ const Notifications: React.FC = () => {
                   : 'bg-primary-500/10 border-primary-500/30'
               }`}
             >
-              {isSecurity ? (
-                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-amber-500/15 shrink-0">
-                  <ShieldAlert className="w-5 h-5 text-amber-400" />
+              {isSystem ? (
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                    isDanger ? 'bg-red-500/15' : 'bg-amber-500/15'
+                  }`}
+                >
+                  <ShieldAlert
+                    className={`w-5 h-5 ${isDanger ? 'text-red-400' : 'text-amber-400'}`}
+                  />
                 </div>
               ) : (
                 <Avatar
@@ -243,15 +268,21 @@ const Notifications: React.FC = () => {
               )}
 
               <div className="flex-1 min-w-0">
-                {isSecurity && (
-                  <p className="text-xs font-bold text-amber-400 mb-1">
-                    {t('notif.securityAlert')}
+                {isSystem && (
+                  <p
+                    className={`text-xs font-bold mb-1 ${
+                      isDanger ? 'text-red-400' : 'text-amber-400'
+                    }`}
+                  >
+                    {isModeration ? t('as.notifLabel') : t('notif.securityAlert')}
                   </p>
                 )}
 
                 <p className="text-xs text-white break-words">
                   <b>
-                    {isSecurity
+                    {isModeration
+                      ? t('as.notifFrom')
+                      : isSecurity
                       ? t('notif.accountSecurity')
                       : author.name === 'مستخدم'
                       ? t('notif.someone')
@@ -267,7 +298,9 @@ const Notifications: React.FC = () => {
 
               <Icon
                 className={`w-4 h-4 shrink-0 ${
-                  isSecurity
+                  isDanger
+                    ? 'text-red-400'
+                    : isSystem
                     ? 'text-amber-400'
                     : 'text-primary-400'
                 }`}
