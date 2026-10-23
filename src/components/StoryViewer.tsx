@@ -6,6 +6,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from './Avatar';
+import VerifiedBadge from './VerifiedBadge';
 import {
   deleteStory, markStorySeen, recordStoryView, sendStoryReply, setStoryLiked, storyMillis, subscribeStoryViews,
 } from '../services/storyService';
@@ -326,7 +327,7 @@ const StoryViewer: React.FC<Props> = ({ groups, startGroup, onClose }) => {
               className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900"
             />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate hover:underline">{author.name}</p>
+              <p className="text-sm font-bold text-white truncate hover:underline inline-flex items-center gap-1.5">{author.name}<VerifiedBadge badge={author.badge} /></p>
               <p className="text-[10px] text-white/70">{timeAgo(story.createdAt, lang)}</p>
             </div>
           </button>
