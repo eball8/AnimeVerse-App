@@ -102,6 +102,7 @@ service cloud.firestore {
         && !('email' in request.resource.data)
         && request.resource.data.role == 'user'
         && request.resource.data.isVerified == false
+        && !('verifiedBadge' in request.resource.data)
         && request.resource.data.isBanned == false
         && request.resource.data.followersCount == 0
         && request.resource.data.followingCount == 0
@@ -118,6 +119,7 @@ service cloud.firestore {
             .hasAny([
               'role',
               'isVerified',
+              'verifiedBadge',
               'isBanned',
               'followersCount',
               'followingCount',
@@ -143,9 +145,12 @@ service cloud.firestore {
         || (
           isAdmin()
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['isBanned', 'isVerified', 'role', 'updatedAt'])
+            .hasOnly(['isBanned', 'isVerified', 'verifiedBadge', 'role', 'updatedAt'])
           && request.resource.data.isBanned is bool
           && request.resource.data.isVerified is bool
+          && (!('verifiedBadge' in request.resource.data)
+              || request.resource.data.verifiedBadge == null
+              || request.resource.data.verifiedBadge in ['gold', 'red'])
           && request.resource.data.role in ['admin', 'moderator', 'user']
         )
         || (
