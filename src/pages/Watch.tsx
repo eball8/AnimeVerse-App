@@ -5,6 +5,7 @@ import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import { registerEpisode } from '../services/episodeService';
 import EpisodeRating from '../components/EpisodeRating';
 import { getPlayerPref } from '../services/settingsService';
 import { EZV_STORE_URL, openExternal, playInEzv } from '../services/ezvPlayer';
@@ -66,6 +67,7 @@ const Watch: React.FC = () => {
         quality: newQuality || 'HD',
         link: newLink,
       });
+      await registerEpisode(animeId, Number(episodeNumber)).catch((e) => console.error(e));
 
       setServers((prev) => [
         ...prev.filter((s) => s.id !== serverId),
