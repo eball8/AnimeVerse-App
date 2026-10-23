@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRight, Star, PlayCircle, Loader2, Info, ListVideo, BarChart2, Users } from 'lucide-react';
+import { ArrowRight, Star, PlayCircle, Loader2, Info, ListVideo, BarChart2, Users, Lock, Unlock } from 'lucide-react';
 import { average, collection, count, getAggregateFromServer, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { getAnimeById } from '../services/animeService';
@@ -8,6 +8,7 @@ import type { Anime } from '../services/animeService';
 import { isCustomId, getCustomAnime } from '../services/customAnimeService';
 import { getAnimeExtra } from '../services/malService';
 import { listAnimeEpisodeNumbers } from '../services/episodeService';
+import { isAnimeUnlocked, lockAnime, unlockAnime } from '../services/animeLockService';
 import { useAuth } from '../context/AuthContext';
 import type { AnimeExtra } from '../services/malService';
 import { useI18n } from '../i18n/I18nContext';
@@ -21,6 +22,8 @@ const AnimeDetail: React.FC = () => {
   const { t } = useI18n();
   const { isAdmin } = useAuth();
   const [addedEps, setAddedEps] = useState<number[]>([]);
+  const [unlocked, setUnlocked] = useState<boolean | null>(null);
+  const [lockBusy, setLockBusy] = useState(false);
   const [newEp, setNewEp] = useState('');
   const [anime, setAnime] = useState<Anime | null>(null);
   const [extra, setExtra] = useState<AnimeExtra | null>(null);
@@ -72,6 +75,19 @@ const AnimeDetail: React.FC = () => {
     };
   }, [anime]);
 
+  // حالة قفل الأنمي (الافتراضي: مقفل مؤقتاً حتى يفتحه الأدمن)
+  useEffect(() => {
+    if (!anime) return;
+    let cancelled = false;
+    setUnlocked(null);
+    isAnimeUnlocked(String(anime.mal_id)).then((v) => {
+      if (!cancelled) setUnlocked(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [anime]);
+
   // متوسط تقييمات مستخدمي التطبيق لكل حلقات هذا الأنمي (قراءة مجمّعة رخيصة)
   useEffect(() => {
     if (!anime) return;
@@ -114,6 +130,27 @@ const AnimeDetail: React.FC = () => {
   }
 
   const imageUrl = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
+
+  const isLocked = unlocked !== true;
+  const showLockedForUser = isLocked && !isAdmin;
+
+  const toggleLock = async () => {
+    const title = anime.title_english || anime.title;
+    const opening = unlocked !== true;
+    if (!window.confirm(t(opening ? 'lock.unlockConfirm' : 'lock.relockConfirm'))) return;
+    setLockBusy(true);
+    try {
+      if (opening) await unlockAnime(String(anime.mal_id), title, imageUrl);
+      else await lockAnime(String(anime.mal_id), title);
+      setUnlocked(opening);
+      alert(t(opening ? 'lock.unlockDone' : 'lock.relockDone'));
+    } catch (e: any) {
+      console.error(e);
+      alert(t('lock.err', { msg: e?.message || String(e) }));
+    } finally {
+      setLockBusy(false);
+    }
+  };
 
   const status = extra?.status && extra.status !== 'unknown' ? extra.status : anime.airing ? 'airing' : 'finished';
   const total = extra?.totalEpisodes ?? anime.episodes ?? null;
@@ -238,6 +275,7 @@ const AnimeDetail: React.FC = () => {
               }`}
             >
               <tab.icon className="w-4 h-4" /> {tab.label}
+              {tab.id === 'episodes' && showLockedForUser && <Lock className="w-3 h-3 text-amber-400" />}
             </button>
           ))}
         </div>
@@ -273,11 +311,58 @@ const AnimeDetail: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'episodes' && (
+          {activeTab === 'episodes' && showLockedForUser && (
+            <div className="card p-6 text-center space-y-3">
+              {unlocked === null ? (
+                <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto" />
+              ) : (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-amber-500/15 flex items-center justify-center mx-auto">
+                    <Lock className="w-8 h-8 text-amber-400" />
+                  </div>
+                  <h3 className="text-base font-black text-white">{t('lock.title')}</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">{t('lock.desc')}</p>
+                  <p className="text-[11px] text-slate-500">{t('lock.hint')}</p>
+                  <button onClick={() => setActiveTab('details')} className="btn-primary px-5 py-2 text-xs font-bold">
+                    {t('anime.details')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'episodes' && !showLockedForUser && (
             <div className="space-y-2">
               <h3 className="text-sm font-black text-white mb-3">
                 {t('anime.listTitle')} ({listCount})
               </h3>
+              {isAdmin && (
+                <div
+                  className={`card p-3 space-y-2 ${
+                    unlocked ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'
+                  }`}
+                >
+                  <p className="text-[11px] text-slate-300 leading-relaxed flex items-center gap-1.5">
+                    {unlocked ? (
+                      <Unlock className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                    )}
+                    {unlocked ? t('lock.adminOpen') : t('lock.adminLocked')}
+                  </p>
+                  <button
+                    onClick={toggleLock}
+                    disabled={lockBusy || unlocked === null}
+                    className={
+                      unlocked
+                        ? 'w-full py-2 rounded-xl border border-white/20 text-slate-300 text-xs font-bold disabled:opacity-50'
+                        : 'btn-primary w-full py-2 text-xs font-bold disabled:opacity-50'
+                    }
+                  >
+                    {lockBusy ? '...' : unlocked ? t('lock.relockBtn') : t('lock.unlockBtn')}
+                  </button>
+                </div>
+              )}
               {isAiring && (
                 <p className="text-[11px] text-slate-500 leading-relaxed">{t('anime.airingEpsNote')}</p>
               )}
