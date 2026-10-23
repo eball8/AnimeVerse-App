@@ -13,6 +13,7 @@ import {
   MessageCircle,
   UserPlus,
   Megaphone,
+  PartyPopper,
   ShieldAlert,
 } from 'lucide-react';
 
@@ -162,23 +163,40 @@ const Notifications: React.FC = () => {
         </h2>
       </div>
 
-      {anns.map((announcement) => (
-        <div
-          key={announcement.id}
-          className="card p-4 flex gap-3 border-primary-500/30 bg-primary-500/10"
-        >
-          <Megaphone className="w-5 h-5 text-primary-400 shrink-0" />
+      {anns.map((announcement) => {
+        const isUnlock =
+          announcement.kind === 'anime_unlocked' && !!announcement.animeId;
+        const AnnIcon = isUnlock ? PartyPopper : Megaphone;
+        const annTitle = isUnlock
+          ? t('lock.annTitle', { title: announcement.animeTitle || '' })
+          : announcement.title;
+        const annBody = isUnlock ? t('lock.annBody') : announcement.body;
 
-          <div className="min-w-0">
-            <p className="text-sm font-black text-white">
-              {announcement.title}
-            </p>
-            <p className="text-xs text-slate-300 mt-1 break-words">
-              {announcement.body}
-            </p>
+        return (
+          <div
+            key={announcement.id}
+            className="card p-4 flex gap-3 border-primary-500/30 bg-primary-500/10"
+          >
+            <AnnIcon className="w-5 h-5 text-primary-400 shrink-0" />
+
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-white">{annTitle}</p>
+              <p className="text-xs text-slate-300 mt-1 break-words">
+                {annBody}
+              </p>
+              {isUnlock && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/anime/${announcement.animeId}`)}
+                  className="btn-primary px-4 py-1.5 text-xs font-bold mt-3"
+                >
+                  {t('lock.watchNow')}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {items.length === 0 && anns.length === 0 && (
         <p className="text-center text-sm text-slate-500 py-16">
