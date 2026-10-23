@@ -216,9 +216,9 @@ const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
 
 const PAGE_QUERY = `
-  query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $genre: String, $status: MediaStatus) {
+  query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $genre: String, $status: MediaStatus, $format: MediaFormat, $formatNotIn: [MediaFormat]) {
     Page(page: $page, perPage: $perPage) {
-      media(type: ANIME, isAdult: false, sort: $sort, search: $search, genre: $genre, status: $status) {
+      media(type: ANIME, isAdult: false, sort: $sort, search: $search, genre: $genre, status: $status, format: $format, format_not_in: $formatNotIn) {
         ${MEDIA_FIELDS}
       }
     }
@@ -263,4 +263,15 @@ export const getAnimeByGenre = async (genreId: number, limit = 20): Promise<Anim
   const genre = GENRES[genreId - 1];
   if (!genre) return [];
   return loadPage('genre', { page: 1, perPage: limit, sort: ['POPULARITY_DESC'], genre }, 30 * MIN);
+};
+
+// ---------- أقسام الاستكشاف ----------
+export type ExploreSection = 'airing' | 'finished' | 'movies';
+
+// مستمرة: قيد العرض. منتهية: انتهى عرضها (بدون الأفلام). أفلام: أفلام الأنمي (المنتهية).
+export const getAnimeBySection = (section: ExploreSection, page = 1, limit = 24): Promise<Anime[]> => {
+  const base = { page, perPage: limit, sort: ['POPULARITY_DESC'] };
+  if (section === 'airing') return loadPage('sec-airing', { ...base, status: 'RELEASING' }, 30 * MIN);
+  if (section === 'movies') return loadPage('sec-movies', { ...base, format: 'MOVIE', status: 'FINISHED' }, 30 * MIN);
+  return loadPage('sec-finished', { ...base, status: 'FINISHED', formatNotIn: ['MOVIE'] }, 30 * MIN);
 };
