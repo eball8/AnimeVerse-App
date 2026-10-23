@@ -104,8 +104,8 @@ public class EzvPlayerPlugin extends Plugin {
         boolean direct = isDirectVideo(url);
         if (referer == null || referer.isEmpty()) referer = originOf(url);
 
-        // المحاولة 1: تشغيل مباشر عبر extras التي يقرؤها EZV نفسه.
-        try {
+        // المحاولة 1 (لصفحات embed فقط): وضع WebView الخاص بـ EZV عبر extras.
+        if (!direct) try {
             String finalUrl = direct ? url : (url.contains(WEBVIEW_TAG) ? url : url + WEBVIEW_TAG);
 
             JSONArray qualities = new JSONArray()
@@ -136,7 +136,7 @@ public class EzvPlayerPlugin extends Plugin {
             // ننتقل للمحاولة 2
         }
 
-        // المحاولة 2 (احتياطية): فتح عبر VIEW العادي، مفيدة للروابط المباشرة فقط.
+        // المحاولة 2: VIEW العادي (الطريقة المعلنة في Manifest الخاص بـ EZV) للروابط المباشرة.
         String[] types = new String[] { "video/*", null };
         for (String type : types) {
             try {
@@ -146,6 +146,15 @@ public class EzvPlayerPlugin extends Plugin {
                 else intent.setData(uri);
                 intent.setPackage(EZV_PACKAGE);
                 intent.putExtra("title", title);
+                try {
+                    JSONArray h = new JSONArray();
+                    if (referer != null) {
+                        h.put(new JSONObject().put("name", "Referer").put("value", referer));
+                    }
+                    h.put(new JSONObject().put("name", "User-Agent").put("value", DEFAULT_UA));
+                    intent.putExtra("headers", h.toString());
+                } catch (Exception ignored) {
+                }
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
                 call.resolve();
@@ -159,4 +168,4 @@ public class EzvPlayerPlugin extends Plugin {
         }
         call.reject("NOT_SUPPORTED");
     }
-                             }
+        }
