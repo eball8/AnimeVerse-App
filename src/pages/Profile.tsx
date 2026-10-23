@@ -15,6 +15,8 @@ import InsightsCard from '../components/InsightsCard';
 import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
 import type { UserProfile } from '../types';
+import VerifiedBadge from '../components/VerifiedBadge';
+import { badgeOf } from '../types';
 
 type Counts = { followers: number; following: number; posts: number };
 
@@ -148,6 +150,11 @@ const Profile: React.FC = () => {
           @{profile?.username}
           {profile?.pronouns ? <span className="text-slate-400"> · {profile.pronouns}</span> : null}
         </p>
+        {badgeOf(profile) && (
+          <div className="mt-1.5 flex justify-center">
+            <VerifiedBadge badge={badgeOf(profile)} withText />
+          </div>
+        )}
         {genderLabel && <p className="text-[11px] text-slate-500 mt-0.5">{genderLabel}</p>}
         {profile?.bio && (
           <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
