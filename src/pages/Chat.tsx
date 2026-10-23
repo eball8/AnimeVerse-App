@@ -13,6 +13,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import E2EEGate from '../components/E2EEGate';
 import ChatOptionsSheet, { ReportSheet } from '../components/ChatOptionsSheet';
 import ReportFlow from '../components/ReportFlow';
@@ -1079,7 +1080,10 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
               {isOnline && <span className={`absolute bottom-0 end-0 w-3 h-3 ${PRESENCE_DOT_CLASS}`} />}
             </div>
             <div className="min-w-0 text-start">
-              <p className="text-sm font-black text-white truncate">{name}</p>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <p className="text-sm font-black text-white truncate">{name}</p>
+                {!isGroup && <VerifiedBadge badge={briefs[other]?.badge} withText />}
+              </div>
               {presenceText
                 ? <p className={`text-[11px] truncate ${isOnline ? 'text-primary-400 font-bold' : 'text-slate-300'}`}>{presenceText}</p>
                 : <p className="text-[10px] text-emerald-400 flex items-center gap-1"><Lock className="w-3 h-3" /> {t('chat.encrypted')}</p>}
@@ -1142,7 +1146,7 @@ const ChatBody: React.FC<{ me: string; other: string }> = ({ me, other }) => {
 
             return (
               <div key={m.id} id={`msg-${m.id}`} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                {!mine && isGroup && (<span className="text-[10px] text-slate-300 mb-1 px-1">{nameOf(m.senderId)}</span>)}
+                {!mine && isGroup && (<span className="text-[10px] text-slate-300 mb-1 px-1 inline-flex items-center gap-1">{nameOf(m.senderId)}<VerifiedBadge badge={briefs[m.senderId]?.badge} className="[&>svg]:w-3 [&>svg]:h-3" /></span>)}
                 <div className="relative max-w-[80%]">
                   <div
                     onPointerDown={(e) => startPress(e, m)}
