@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRight, Play, Server, Plus, X, Loader2 } from 'lucide-react';
+import { ArrowRight, Play, Server, Plus, X, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { registerEpisode } from '../services/episodeService';
+import { logAdmin } from '../services/adminLog';
 import EpisodeRating from '../components/EpisodeRating';
 import { getPlayerPref } from '../services/settingsService';
 import { EZV_STORE_URL, openExternal, playInEzv } from '../services/ezvPlayer';
@@ -20,10 +21,13 @@ const Watch: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState('');
   const [newQuality, setNewQuality] = useState('');
   const [newLink, setNewLink] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const epKey = `${animeId}_${episodeNumber}`;
 
   useEffect(() => {
     const fetchServers = async () => {
@@ -44,6 +48,31 @@ const Watch: React.FC = () => {
     fetchServers();
   }, [animeId, episodeNumber]);
 
+  const resetForm = () => {
+    setEditingId(null);
+    setNewServerName('');
+    setNewQuality('');
+    setNewLink('');
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    resetForm();
+  };
+
+  const openAdd = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEdit = (server: any) => {
+    setEditingId(server.id);
+    setNewServerName(server.name || '');
+    setNewQuality(server.quality || '');
+    setNewLink(server.link || '');
+    setShowModal(true);
+  };
+
   const handleSaveServer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!animeId || !episodeNumber || !newServerName || !newLink) return;
@@ -57,31 +86,59 @@ const Watch: React.FC = () => {
     }
 
     try {
-      const episodeRef = doc(db, 'episodes', `${animeId}_${episodeNumber}`);
-      // تنظيف اسم السيرفر لكي لا يكسر مسار Firestore
-      const serverId =
-        newServerName.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '') || `s_${Date.now()}`;
+      const episodeRef = doc(db, 'episodes', epKey);
 
-      await setDoc(doc(episodeRef, 'servers', serverId), {
-        name: newServerName,
-        quality: newQuality || 'HD',
-        link: newLink,
-      });
-      await registerEpisode(animeId, Number(episodeNumber)).catch((e) => console.error(e));
+      if (editingId) {
+        // تعديل سيرفر موجود (نفس المعرّف، نغيّر الاسم والجودة والرابط)
+        await updateDoc(doc(episodeRef, 'servers', editingId), {
+          name: newServerName,
+          quality: newQuality || 'HD',
+          link: newLink,
+        });
+        logAdmin('edit_server', 'episode', epKey, newServerName);
+        setServers((prev) =>
+          prev.map((s) =>
+            s.id === editingId
+              ? { ...s, name: newServerName, quality: newQuality || 'HD', link: newLink }
+              : s
+          )
+        );
+      } else {
+        // تنظيف اسم السيرفر لكي لا يكسر مسار Firestore
+        const serverId =
+          newServerName.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '') || `s_${Date.now()}`;
 
-      setServers((prev) => [
-        ...prev.filter((s) => s.id !== serverId),
-        { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink },
-      ]);
-      setShowModal(false);
-      setNewServerName('');
-      setNewQuality('');
-      setNewLink('');
+        await setDoc(doc(episodeRef, 'servers', serverId), {
+          name: newServerName,
+          quality: newQuality || 'HD',
+          link: newLink,
+        });
+        await registerEpisode(animeId, Number(episodeNumber)).catch((e) => console.error(e));
+        logAdmin('add_server', 'episode', epKey, newServerName);
+
+        setServers((prev) => [
+          ...prev.filter((s) => s.id !== serverId),
+          { id: serverId, name: newServerName, quality: newQuality || 'HD', link: newLink },
+        ]);
+      }
+      closeModal();
     } catch (error: any) {
       console.error('Firebase Error:', error);
       alert(t('wt.errorPrefix', { msg: error.message || t('wt.checkPerms') }));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteServer = async (server: any) => {
+    if (!window.confirm(t('wt.confirmDeleteServer'))) return;
+    try {
+      await deleteDoc(doc(db, 'episodes', epKey, 'servers', server.id));
+      logAdmin('delete_server', 'episode', epKey, server.name || server.id);
+      setServers((prev) => prev.filter((s) => s.id !== server.id));
+    } catch (error: any) {
+      console.error('Firebase Error:', error);
+      alert(t('wt.errorPrefix', { msg: error.message || t('wt.checkPerms') }));
     }
   };
 
@@ -145,7 +202,7 @@ const Watch: React.FC = () => {
             </div>
             {isAdmin && (
               <button
-                onClick={() => setShowModal(true)}
+                onClick={openAdd}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-500/20 text-primary-400 text-xs font-bold border border-primary-500/30 active:scale-95"
               >
                 <Plus className="w-4 h-4" /> {t('wt.add')}
@@ -159,7 +216,7 @@ const Watch: React.FC = () => {
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {servers.map((server) => (
-                <div key={server.id} className="relative group">
+                <div key={server.id} className="space-y-1">
                   <button
                     onClick={() => handlePlayServer(server.link, server.name)}
                     className="w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition active:scale-95"
@@ -167,6 +224,24 @@ const Watch: React.FC = () => {
                     <span className="text-xs font-bold text-white mb-1">{server.name}</span>
                     <span className="text-[10px] text-slate-400">{server.quality}</span>
                   </button>
+                  {isAdmin && (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => openEdit(server)}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary-500/15 text-primary-400 text-[10px] font-bold border border-primary-500/30 active:scale-95"
+                        aria-label={t('wt.edit')}
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> {t('wt.edit')}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteServer(server)}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-[10px] font-bold border border-red-500/30 active:scale-95"
+                        aria-label={t('wt.delete')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> {t('wt.delete')}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -181,9 +256,11 @@ const Watch: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-dark-900 border border-white/10 rounded-3xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-black text-white">{t('wt.addServer')}</h3>
+              <h3 className="text-lg font-black text-white">
+                {editingId ? t('wt.editServer') : t('wt.addServer')}
+              </h3>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="p-1 rounded-lg text-slate-400 hover:bg-white/10"
                 aria-label={t('wt.close')}
               >
