@@ -60,10 +60,17 @@ export const registerEpisode = async (animeId: string, episodeNumber: number): P
   );
 };
 
-// أحدث الحلقات المضافة (الأحدث أولاً)
+// أحدث الحلقات المضافة (الأحدث أولاً) — بدون الأنميات المقفلة مؤقتاً
 export const listLatestEpisodes = async (n = 30): Promise<EpisodeItem[]> => {
-  const snap = await getDocs(query(collection(db, 'episodes'), orderBy('updatedAt', 'desc'), limit(n)));
-  return snap.docs.map((d) => toItem(d.id, d.data())).filter((x): x is EpisodeItem => !!x && !!x.imageUrl);
+  const [snap, unlockSnap] = await Promise.all([
+    getDocs(query(collection(db, 'episodes'), orderBy('updatedAt', 'desc'), limit(n * 3))),
+    getDocs(query(collection(db, 'episodes'), where('unlocked', '==', true))),
+  ]);
+  const unlocked = new Set(unlockSnap.docs.map((d) => d.id.replace(/_unlock$/, '')));
+  return snap.docs
+    .map((d) => toItem(d.id, d.data()))
+    .filter((x): x is EpisodeItem => !!x && !!x.imageUrl && unlocked.has(x.animeId))
+    .slice(0, n);
 };
 
 // أرقام الحلقات التي أضافها الأدمن لأنمي معيّن (تُستخدم للأنميات المستمرة)
