@@ -156,6 +156,7 @@ const ProfilePostsViewer: React.FC<Props> = ({ posts, startId, title, onClose, o
                   canDelete={post.authorId === user?.uid || isAdmin}
                   authorName={a.name}
                   authorPhoto={a.photo}
+                  authorBadge={a.badge}
                   repostName={rp}
                   onLike={onLike}
                   onComment={(p) => setOpenId(p.id || null)}
