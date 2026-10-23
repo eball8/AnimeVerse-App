@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GalleryPlugin.class);
         registerPlugin(GoogleHintPlugin.class);
         registerPlugin(DeviceIdPlugin.class);
+        registerPlugin(EzvPlayerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
