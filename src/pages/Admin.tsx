@@ -16,6 +16,8 @@ import { uploadVideoToCloudinary } from '../services/cloudinaryService';
 import type { BadgeType, UserProfile, UserRole } from '../types';
 import { badgeOf } from '../types';
 import VerifiedBadge from '../components/VerifiedBadge';
+import { useConfirm } from '../components/ConfirmDialog';
+import { PickerField } from '../components/OptionPicker';
 
 type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'announce' | 'logs';
 
@@ -76,6 +78,7 @@ const StatsTab: React.FC = () => {
 const UsersTab: React.FC = () => {
   const { t } = useI18n();
   const errMsg = useErr();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +114,7 @@ const UsersTab: React.FC = () => {
   };
 
   const remove = async (u: UserProfile) => {
-    if (!confirm(t('adm.confirmDeleteProfile', { name: u.displayName }))) return;
+    if (!(await confirm({ title: t('adm.confirmDeleteProfile', { name: u.displayName }) }))) return;
     try {
       await deleteDoc(doc(db, 'users', u.uid));
       setUsers((us) => us.filter((x) => x.uid !== u.uid));
@@ -149,12 +152,18 @@ const UsersTab: React.FC = () => {
                 >
                   <Ban className="w-3.5 h-3.5" /> {u.isBanned ? t('adm.unban') : t('adm.ban')}
                 </button>
-                <label className="flex items-center gap-1.5 text-xs font-bold text-primary-400">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-primary-400">
                   <BadgeCheck className="w-3.5 h-3.5" /> {t('adm.badge')}
-                  <select
+                  <PickerField
+                    title={t('adm.badge')}
                     value={badgeOf(u) ?? ''}
-                    onChange={(e) => {
-                      const v = (e.target.value || null) as BadgeType | null;
+                    options={[
+                      { value: '', label: t('adm.badgeNone') },
+                      { value: 'gold', label: t('adm.badgeGold'), color: '#facc15' },
+                      { value: 'red', label: t('adm.badgeRed'), color: '#f87171' },
+                    ]}
+                    onSelect={(val) => {
+                      const v = (val || null) as BadgeType | null;
                       patch(
                         u,
                         { verifiedBadge: v, isVerified: v !== null },
@@ -162,23 +171,19 @@ const UsersTab: React.FC = () => {
                         `${u.username} → ${v ?? 'none'}`
                       );
                     }}
-                    className="px-2 py-1.5 rounded-xl bg-dark-950 border border-white/10 text-xs text-white"
-                  >
-                    <option value="">{t('adm.badgeNone')}</option>
-                    <option value="gold">{t('adm.badgeGold')}</option>
-                    <option value="red">{t('adm.badgeRed')}</option>
-                  </select>
-                </label>
-                <select
+                  />
+                </div>
+                <PickerField
+                  title="Role"
                   value={u.role}
                   disabled={u.uid === user?.uid}
-                  onChange={(e) => patch(u, { role: e.target.value as UserRole }, 'change_role', `${u.role} → ${e.target.value}`)}
-                  className="px-2 py-1.5 rounded-xl bg-dark-950 border border-white/10 text-xs text-white disabled:opacity-40"
-                >
-                  <option value="user">user</option>
-                  <option value="moderator">moderator</option>
-                  <option value="admin">admin</option>
-                </select>
+                  options={[
+                    { value: 'user', label: 'user' },
+                    { value: 'moderator', label: 'moderator' },
+                    { value: 'admin', label: 'admin' },
+                  ]}
+                  onSelect={(val) => patch(u, { role: val as UserRole }, 'change_role', `${u.role} → ${val}`)}
+                />
                 <button disabled={u.uid === user?.uid} onClick={() => remove(u)} className={`${smallBtn} border-red-500/40 text-red-400 disabled:opacity-40`}>
                   <Trash2 className="w-3.5 h-3.5" /> {t('adm.deleteProfile')}
                 </button>
@@ -195,6 +200,7 @@ const UsersTab: React.FC = () => {
 const PostsTab: React.FC = () => {
   const { t } = useI18n();
   const errMsg = useErr();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -209,7 +215,7 @@ const PostsTab: React.FC = () => {
   }, []);
 
   const remove = async (p: any) => {
-    if (!confirm(t('adm.confirmDeletePost'))) return;
+    if (!(await confirm({ title: t('adm.confirmDeletePost') }))) return;
     try {
       const [cs, ls] = await Promise.all([
         getDocs(query(collection(db, 'comments'), where('postId', '==', p.id), limit(300))),
@@ -335,6 +341,7 @@ const ReportsTab: React.FC = () => {
 const EpisodesTab: React.FC = () => {
   const { t } = useI18n();
   const errMsg = useErr();
+  const confirm = useConfirm();
   const [animeId, setAnimeId] = useState('');
   const [ep, setEp] = useState('');
   const [servers, setServers] = useState<any[] | null>(null);
@@ -366,7 +373,7 @@ const EpisodesTab: React.FC = () => {
   };
 
   const remove = async (id: string) => {
-    if (!confirm(t('adm.confirmDeleteServer'))) return;
+    if (!(await confirm({ title: t('adm.confirmDeleteServer') }))) return;
     try {
       await deleteDoc(doc(epPath(), 'servers', id));
       logAdmin('delete_server', 'episode', key(), id);
@@ -417,6 +424,7 @@ const emptyAnime = {
 const AnimeTab: React.FC = () => {
   const { t } = useI18n();
   const errMsg = useErr();
+  const confirm = useConfirm();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ ...emptyAnime });
@@ -486,7 +494,7 @@ const AnimeTab: React.FC = () => {
   };
 
   const remove = async (a: any) => {
-    if (!confirm(t('adm.confirmDeleteAnime', { title: a.title }))) return;
+    if (!(await confirm({ title: t('adm.confirmDeleteAnime', { title: a.title }) }))) return;
     try {
       await deleteDoc(doc(db, 'customAnime', a.id));
       logAdmin('delete_anime', 'anime', a.id, a.title);
@@ -511,9 +519,13 @@ const AnimeTab: React.FC = () => {
         {form.imageUrl && <img src={form.imageUrl} alt="" className="h-32 rounded-xl object-cover" />}
         <input className={input} placeholder={t('adm.trailerPh')} value={form.trailerUrl} onChange={(e) => set('trailerUrl', e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
-          <select className={input} value={form.type} onChange={(e) => set('type', e.target.value)}>
-            {['TV', 'Movie', 'OVA', 'ONA', 'Special'].map((x) => <option key={x}>{x}</option>)}
-          </select>
+          <PickerField
+            title="Type"
+            full
+            value={form.type}
+            options={['TV', 'Movie', 'OVA', 'ONA', 'Special'].map((x) => ({ value: x, label: x }))}
+            onSelect={(v) => set('type', v)}
+          />
           <input className={input} inputMode="numeric" placeholder={t('adm.episodesPh')} value={form.episodes} onChange={(e) => set('episodes', e.target.value)} />
           <input className={input} inputMode="numeric" placeholder={t('adm.yearPh')} value={form.year} onChange={(e) => set('year', e.target.value)} />
           <input className={input} inputMode="decimal" placeholder={t('adm.scorePh')} value={form.score} onChange={(e) => set('score', e.target.value)} />
@@ -547,6 +559,7 @@ const AnimeTab: React.FC = () => {
 const AnnounceTab: React.FC = () => {
   const { t } = useI18n();
   const errMsg = useErr();
+  const confirm = useConfirm();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -580,7 +593,7 @@ const AnnounceTab: React.FC = () => {
     } catch (err) { errMsg(err); }
   };
   const remove = async (a: any) => {
-    if (!confirm(t('adm.confirmDeleteAnn'))) return;
+    if (!(await confirm({ title: t('adm.confirmDeleteAnn') }))) return;
     try {
       await deleteDoc(doc(db, 'announcements', a.id));
       logAdmin('delete_announcement', 'announcement', a.id, a.title);
