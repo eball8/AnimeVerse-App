@@ -60,6 +60,8 @@ const Notice: React.FC<{ kind: 'ok' | 'err' | 'warn'; text: string }> = ({ kind,
   );
 };
 
+const SUPPORT_EMAIL = 'support@animeverse.com';
+
 const dayUnit = (t: (k: string) => string, n: number) => (n === 1 ? t('sx.unitDay') : t('sx.unitDays'));
 
 const BackLabel: React.FC = () => {
@@ -1220,6 +1222,12 @@ const Settings: React.FC = () => {
               <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('settings.sec.support')}</h3>
               <div className="card divide-y divide-white/5">
                 <Row icon={AlertCircle} label={t('settings.report')} onClick={() => setActiveSection('support')} />
+                <Row
+                  icon={Mail}
+                  label={t('settings.supportEmail')}
+                  onClick={() => { window.location.href = `mailto:${SUPPORT_EMAIL}`; }}
+                  right={<span dir="ltr" className="text-xs text-slate-400">{SUPPORT_EMAIL}</span>}
+                />
                 <Row icon={Info} label={t('settings.about')} onClick={() => setActiveSection('about')} />
               </div>
             </div>
