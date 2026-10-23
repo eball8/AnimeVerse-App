@@ -21,6 +21,8 @@ import { copyText, reelLink, videoThumb } from '../utils/links';
 import PostShareSheet from '../components/PostShareSheet';
 import ReportFlow from '../components/ReportFlow';
 import Avatar from '../components/Avatar';
+import VerifiedBadge from '../components/VerifiedBadge';
+import type { BadgeType } from '../types';
 import MentionText from '../components/MentionText';
 import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
 import CommentsSheet from '../components/CommentsSheet';
@@ -42,6 +44,7 @@ interface ItemProps {
   isMe: boolean;
   canManage: boolean;
   authorName: string;
+  authorBadge?: BadgeType;
   authorPhoto?: string;
   repostName?: string;
   likedByText?: string;
@@ -291,6 +294,7 @@ const ReelItem: React.FC<ItemProps> = (p) => {
                 className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60 bg-dark-900 shrink-0"
               />
               <span className="text-sm font-black text-white drop-shadow truncate">{p.authorName}</span>
+              <VerifiedBadge badge={p.authorBadge} withText />
             </button>
           )}
           {!p.isMe && (
@@ -632,6 +636,7 @@ const Reels: React.FC = () => {
                   isMe={isMe}
                   canManage={isMe || isAdmin}
                   authorName={a.name}
+                  authorBadge={a.badge}
                   authorPhoto={a.photo}
                   repostName={rp}
                   likedByText={likedByText(post.id)}
