@@ -33,6 +33,7 @@ import Notifications from './pages/Notifications';
 import Admin from './pages/Admin';
 import DeepLinkHandler from './components/DeepLinkHandler';
 import UpdatePrompt from './components/UpdatePrompt';
+import ModerationGate from './components/ModerationGate';
 
 const Spinner: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-dark-950">
@@ -66,6 +67,7 @@ const App: React.FC = () => {
           <HashRouter>
             <DeepLinkHandler />
             <UpdatePrompt />
+            <ModerationGate />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<SignUp />} />
