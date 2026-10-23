@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { logAdmin } from './adminLog';
+import { standingFor } from './accountStatusService';
 
 /* ------------------------------------------------------------------
    نظام الإشراف: إنذارات، تقييد مؤقت، حظر، وردود على المُبلِّغين.
@@ -177,6 +178,55 @@ const saveEvidence = async (
   });
 };
 
+/* ---------------------- حالة الحساب + إشعار المخالِف ---------------------- */
+const updateStandingAndNotify = async (
+  offender: string,
+  eff: ModAction,
+  plan: ModPlan,
+  category: string,
+  adminUid: string
+): Promise<void> => {
+  // بلاغات إيذاء النفس لا تغيّر حالة الحساب ولا تُحتسب مخالفة
+  if (WELFARE_CATEGORIES.includes(category)) return;
+  try {
+    const st = standingFor(plan.strikes, eff);
+    await setDoc(
+      doc(db, 'accountStanding', offender),
+      {
+        level: st.level,
+        strikes: plan.strikes,
+        until: st.days > 0 ? Timestamp.fromMillis(Date.now() + st.days * DAY) : null,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const code =
+      eff === 'ban'
+        ? 'ban'
+        : eff === 'restrict'
+        ? 'restrict'
+        : st.level === 'red'
+        ? 'danger'
+        : eff === 'delete'
+        ? 'delete'
+        : 'warn';
+
+    await addDoc(collection(db, 'notifications'), {
+      toUid: offender,
+      fromUid: adminUid,
+      fromName: 'AnimeVerse',
+      type: 'moderation',
+      text: `mod:${code}`,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    // فشل الإشعار أو الحالة لا يجب أن يوقف تنفيذ القرار نفسه
+    console.error('account status update failed:', e);
+  }
+};
+
 /* ---------------------- تنفيذ القرار ---------------------- */
 export const applyAction = async (
   main: ReportDoc,
@@ -222,6 +272,8 @@ export const applyAction = async (
         createdAt: serverTimestamp(),
         ...(until ? { until } : {}),
       });
+
+      await updateStandingAndNotify(offender, eff, plan, String(main.category ?? ''), adminUid);
 
       if (eff === 'ban') {
         await updateDoc(doc(db, 'users', offender), { isBanned: true, updatedAt: serverTimestamp() });
