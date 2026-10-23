@@ -2,12 +2,23 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, Pencil, Bookmark, Shield, Lock, ShieldCheck, Settings as SettingsIcon, LogOut, Users, Link2, Share2, Check, ChevronLeft,
+  CheckCircle2, AlertTriangle, ShieldAlert, Ban,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { updateUserProfile } from '../services/userService';
 import { copyText, profileLink, shareLink } from '../utils/links';
+import { useAccountStatus } from '../hooks/useAccountStatus';
+import { LEVEL_UI } from '../services/accountStatusService';
+import type { StatusLevel } from '../services/accountStatusService';
 import Avatar from './Avatar';
+
+const LEVEL_ICON: Record<StatusLevel, React.ElementType> = {
+  green: CheckCircle2,
+  yellow: AlertTriangle,
+  red: ShieldAlert,
+  closed: Ban,
+};
 
 interface RowProps {
   icon: React.ElementType;
@@ -17,9 +28,10 @@ interface RowProps {
   right?: React.ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  iconClass?: string;
 }
 
-const Row: React.FC<RowProps> = ({ icon: Icon, label, sub, onClick, right, danger, disabled }) => (
+const Row: React.FC<RowProps> = ({ icon: Icon, label, sub, onClick, right, danger, disabled, iconClass }) => (
   <button
     onClick={onClick}
     disabled={disabled}
@@ -27,7 +39,7 @@ const Row: React.FC<RowProps> = ({ icon: Icon, label, sub, onClick, right, dange
       danger ? 'text-red-400' : 'text-white'
     }`}
   >
-    <Icon className={`w-5 h-5 shrink-0 ${danger ? 'text-red-400' : 'text-primary-400'}`} />
+    <Icon className={`w-5 h-5 shrink-0 ${iconClass ?? (danger ? 'text-red-400' : 'text-primary-400')}`} />
     <span className="flex-1 min-w-0">
       <span className="block text-sm font-bold truncate">{label}</span>
       {sub && <span className="block text-[11px] text-slate-500 truncate">{sub}</span>}
@@ -49,11 +61,14 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
   const { t } = useI18n();
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const status = useAccountStatus(open ? user?.uid : undefined);
 
   if (!open || !user) return null;
 
   const isPrivate = profile?.accountType === 'private';
   const link = profileLink(user.uid);
+  const level: StatusLevel = status?.level ?? 'green';
+  const levelUi = LEVEL_UI[level];
 
   const go = (path: string) => {
     onClose();
@@ -137,6 +152,20 @@ const SettingsMenu: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
           </Section>
 
           <Section title={t('ui.privacy')}>
+            <Row
+              icon={LEVEL_ICON[level]}
+              iconClass={levelUi.text}
+              label={t('as.title')}
+              onClick={() => go('/account-status')}
+              right={
+                <span
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black ${levelUi.bg} ${levelUi.border} ${levelUi.text}`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${levelUi.dot}`} />
+                  {t(`as.label.${level}`)}
+                </span>
+              }
+            />
             <Row
               icon={Lock}
               label={t('profile.private')}
