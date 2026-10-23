@@ -6,6 +6,8 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import type { UserProfile } from '../types';
+import { badgeOf } from '../types';
+import VerifiedBadge from '../components/VerifiedBadge';
 import {
   getFollowCounts, getFollowState, followUser, unfollowUser, cancelRequest,
 } from '../services/followService';
@@ -202,6 +204,11 @@ const UserProfilePage: React.FC = () => {
           @{p.username}
           {p.pronouns ? <span className="text-slate-400"> · {p.pronouns}</span> : null}
         </p>
+        {badgeOf(p) && (
+          <div className="mt-1.5 flex justify-center">
+            <VerifiedBadge badge={badgeOf(p)} withText />
+          </div>
+        )}
         {p.bio && <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
 
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
