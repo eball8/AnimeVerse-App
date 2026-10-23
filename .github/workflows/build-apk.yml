@@ -127,3 +127,4 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk AnimeVerse.apk
           gh release view latest >/dev/null 2>&1 || gh release create latest --title "AnimeVerse (آخر نسخة)" --notes "أحدث نسخة من التطبيق" --latest
           gh release upload latest AnimeVerse.apk --clobber
+          gh release edit latest --notes "build=${{ github.run_number }}"
