@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { collection, documentId, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { badgeOf } from '../types';
+import type { BadgeType } from '../types';
 
 export interface UserBrief {
   uid: string;
   displayName: string;
   photoURL?: string;
   username?: string;
+  badge?: BadgeType;
 }
 
 const TTL_MS = 30000;
@@ -41,6 +44,7 @@ const fetchBriefs = async (uids: string[]): Promise<void> => {
               displayName: x.displayName || '',
               photoURL: x.photoURL || undefined,
               username: x.username,
+              badge: badgeOf(x),
             },
           });
         });
@@ -92,6 +96,7 @@ export const useUserBriefs = (uids: Array<string | undefined>): Record<string, U
       displayName: profile.displayName,
       photoURL: profile.photoURL,
       username: profile.username,
+      badge: badgeOf(profile),
     };
   }
   return out;
@@ -102,8 +107,8 @@ export const pickAuthor = (
   uid: string,
   fallbackName: string,
   fallbackPhoto?: string
-): { name: string; photo?: string } => {
+): { name: string; photo?: string; badge?: BadgeType } => {
   const b = briefs[uid];
-  if (b) return { name: b.displayName || fallbackName, photo: b.photoURL };
+  if (b) return { name: b.displayName || fallbackName, photo: b.photoURL, badge: b.badge };
   return { name: fallbackName, photo: fallbackPhoto };
 };
