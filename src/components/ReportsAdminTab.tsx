@@ -4,6 +4,7 @@ import { AlertTriangle, Ban, Check, Clock, Loader2, ShieldAlert, Trash2, X } fro
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from './ConfirmDialog';
+import AppealsAdminTab from './AppealsAdminTab';
 import { logAdmin } from '../services/adminLog';
 import {
   URGENT_CATEGORIES, WELFARE_CATEGORIES, applyAction, canDeleteTarget, closeBugReport,
@@ -129,6 +130,8 @@ const ReportsAdminTab: React.FC = () => {
 
   return (
     <div className="space-y-3">
+      <AppealsAdminTab />
+
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => setShowAll((v) => !v)}
