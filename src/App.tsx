@@ -31,9 +31,11 @@ import EditProfile from './pages/EditProfile';
 import Library from './pages/Library';
 import Notifications from './pages/Notifications';
 import Admin from './pages/Admin';
+import AccountStatus from './pages/AccountStatus';
 import DeepLinkHandler from './components/DeepLinkHandler';
 import UpdatePrompt from './components/UpdatePrompt';
 import ModerationGate from './components/ModerationGate';
+import AccountClosedGate from './components/AccountClosedGate';
 
 const Spinner: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-dark-950">
@@ -68,6 +70,7 @@ const App: React.FC = () => {
             <DeepLinkHandler />
             <UpdatePrompt />
             <ModerationGate />
+            <AccountClosedGate />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<SignUp />} />
@@ -93,6 +96,7 @@ const App: React.FC = () => {
                 <Route path="user/:uid" element={<UserProfilePage />} />
                 <Route path="library" element={<Library />} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="account-status" element={<AccountStatus />} />
                 <Route path="admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="anime/:id" element={<AnimeDetail />} />
