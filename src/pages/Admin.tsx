@@ -1,3 +1,4 @@
+import { registerEpisode } from '../services/episodeService';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   collection, query, orderBy, limit, getDocs, getDoc, doc, where, updateDoc, deleteDoc, setDoc,
@@ -357,6 +358,7 @@ const EpisodesTab: React.FC = () => {
     const id = name.replace(/[\/\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '') || `s_${Date.now()}`;
     try {
       await setDoc(doc(epPath(), 'servers', id), { name, quality: quality || 'HD', link });
+      await registerEpisode(animeId.trim(), Number(ep.trim())).catch((e) => console.error(e));
       logAdmin('add_server', 'episode', key(), name);
       setName(''); setQuality(''); setLink('');
       load();
