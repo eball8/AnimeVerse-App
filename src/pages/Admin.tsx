@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import {
   Shield, Users, FileText, Flag, Server, Search, Trash2, Ban, BadgeCheck, Loader2,
-  BarChart3, Megaphone, Film, ScrollText,
+  BarChart3, Megaphone, Film, ScrollText, Rocket,
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -18,8 +18,9 @@ import { badgeOf } from '../types';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useConfirm } from '../components/ConfirmDialog';
 import { PickerField } from '../components/OptionPicker';
+import AdminUpdateTab from '../components/AdminUpdateTab';
 
-type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'announce' | 'logs';
+type Tab = 'stats' | 'users' | 'posts' | 'reports' | 'episodes' | 'anime' | 'announce' | 'update' | 'logs';
 
 const input =
   'w-full px-3 py-2.5 rounded-xl bg-dark-950 border border-white/10 text-white text-sm outline-none focus:border-primary-500';
@@ -667,6 +668,7 @@ const Admin: React.FC = () => {
     { id: 'episodes', label: t('adm.tab.episodes'), icon: Server },
     { id: 'anime', label: t('adm.tab.anime'), icon: Film },
     { id: 'announce', label: t('adm.tab.announce'), icon: Megaphone },
+    { id: 'update', label: t('adm.tab.update'), icon: Rocket },
     { id: 'logs', label: t('adm.tab.logs'), icon: ScrollText },
   ];
   return (
@@ -693,6 +695,7 @@ const Admin: React.FC = () => {
       {tab === 'episodes' && <EpisodesTab />}
       {tab === 'anime' && <AnimeTab />}
       {tab === 'announce' && <AnnounceTab />}
+      {tab === 'update' && <AdminUpdateTab />}
       {tab === 'logs' && <LogsTab />}
     </div>
   );
