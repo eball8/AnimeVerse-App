@@ -61,6 +61,23 @@ public class EzvPlayerPlugin extends Plugin {
         }
     }
 
+    // روابط MEGA العادية (/file/) لا تُشغَّل كفيديو؛ نحوّلها لصيغة embed التي تعرض مشغّلًا.
+    private static String toEmbedIfMega(String url) {
+        try {
+            Uri u = Uri.parse(url);
+            String host = u.getHost();
+            if (host == null) return url;
+            host = host.toLowerCase(Locale.ROOT);
+            boolean mega = host.equals("mega.nz") || host.endsWith(".mega.nz")
+                || host.equals("mega.io") || host.endsWith(".mega.io");
+            if (mega && url.contains("/file/")) {
+                return url.replace("/file/", "/embed/");
+            }
+        } catch (Exception ignored) {
+        }
+        return url;
+    }
+
     @PluginMethod
     public void isInstalled(PluginCall call) {
         JSObject ret = new JSObject();
@@ -83,6 +100,7 @@ public class EzvPlayerPlugin extends Plugin {
             return;
         }
 
+        url = toEmbedIfMega(url);
         boolean direct = isDirectVideo(url);
         if (referer == null || referer.isEmpty()) referer = originOf(url);
 
@@ -102,8 +120,11 @@ public class EzvPlayerPlugin extends Plugin {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setComponent(new ComponentName(EZV_PACKAGE, EZV_ACTIVITY));
             intent.putExtra("from_network", true);
-            intent.putExtra("title", title);
-            intent.putExtra("anime_title", title);
+            String animeTitle = (title == null || title.isEmpty()) ? "EZV" : title;
+            intent.putExtra("title", animeTitle);
+            intent.putExtra("anime_title", animeTitle);
+            intent.putExtra("path", finalUrl);
+            intent.putExtra("uri_path", finalUrl);
             intent.putExtra("qualities", qualities.toString());
             intent.putExtra("default_quality", 0);
             intent.putExtra("headers", headers.toString());
@@ -138,4 +159,4 @@ public class EzvPlayerPlugin extends Plugin {
         }
         call.reject("NOT_SUPPORTED");
     }
-                }
+            }
