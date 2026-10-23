@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Search as SearchIcon, Loader2, X, Play } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import Avatar from '../components/Avatar';
+import VerifiedBadge from '../components/VerifiedBadge';
+import { badgeOf } from '../types';
 import { searchPosts, searchUsers } from '../services/searchService';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import type { Post } from '../services/postService';
@@ -95,7 +97,10 @@ const Search: React.FC = () => {
               >
                 <Avatar src={u.photoURL} seed={u.uid} name={u.displayName} className="w-10 h-10 rounded-full object-cover bg-dark-900" />
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{u.displayName}</p>
+                  <p className="text-sm font-bold text-white truncate flex items-center gap-1.5">
+                    <span className="truncate">{u.displayName}</span>
+                    <VerifiedBadge badge={badgeOf(u)} withText />
+                  </p>
                   <p className="text-[11px] text-slate-500 truncate">@{u.username}</p>
                 </div>
               </button>
