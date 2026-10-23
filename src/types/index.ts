@@ -3,6 +3,11 @@ import { Timestamp } from 'firebase/firestore';
 export type UserRole = 'admin' | 'moderator' | 'user';
 export type AccountType = 'public' | 'private';
 export type Gender = 'male' | 'female' | 'none';
+// شارة التوثيق: ذهبية (مسؤولون ومميزون) أو حمراء (حسابات متفاعلة) — يمنحها الأدمن فقط
+export type BadgeType = 'gold' | 'red';
+
+export const badgeOf = (u?: { verifiedBadge?: BadgeType | null; isVerified?: boolean } | null): BadgeType | undefined =>
+  u?.verifiedBadge === 'gold' || u?.verifiedBadge === 'red' ? u.verifiedBadge : u?.isVerified ? 'gold' : undefined;
 
 export interface UserProfile {
   uid: string;
@@ -20,6 +25,7 @@ export interface UserProfile {
   role: UserRole;
   accountType: AccountType;
   isVerified: boolean;
+  verifiedBadge?: BadgeType | null;
   isEmailVerified?: boolean;
   isBanned: boolean;
   isDeactivated?: boolean;
