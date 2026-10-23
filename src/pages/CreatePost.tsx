@@ -23,7 +23,7 @@ type Mode = 'post' | 'story';
 type Filter = 'all' | 'images' | 'videos';
 type Access = 'checking' | 'granted' | 'denied';
 
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 30 * 1024 * 1024;
 
 const FILTERS: { key: Filter; labelKey: string }[] = [
   { key: 'all', labelKey: 'cp.fAll' },
