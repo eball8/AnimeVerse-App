@@ -5,6 +5,7 @@ import {
   Palette, Trash2, MessageSquare, Info, LogOut, ChevronLeft,
   CheckCircle2, AlertCircle, Loader2, Globe, Check, Mail, KeyRound,
   ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink, UserX, PauseCircle, Archive,
+  Flag,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -1092,7 +1093,7 @@ const ManageAccountSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 const Settings: React.FC = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { t, pref, setPref, systemLang } = useI18n();
+  const { t, lang, pref, setPref, systemLang } = useI18n();
 
   const [activeSection, setActiveSection] = useState<string>('main');
   const [loading, setLoading] = useState(false);
@@ -1122,6 +1123,9 @@ const Settings: React.FC = () => {
 
   const currentLangName =
     pref === 'system' ? t('settings.langSystem') : LANGUAGES.find((l) => l.code === pref)?.name || '';
+
+  const myReportsLabel =
+    lang === 'ar' ? 'بلاغاتك' : lang === 'fr' ? 'Vos signalements' : 'Your reports';
 
   const renderContent = () => {
     switch (activeSection) {
@@ -1222,6 +1226,7 @@ const Settings: React.FC = () => {
               <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('settings.sec.support')}</h3>
               <div className="card divide-y divide-white/5">
                 <Row icon={AlertCircle} label={t('settings.report')} onClick={() => setActiveSection('support')} />
+                <Row icon={Flag} label={myReportsLabel} onClick={() => navigate('/my-reports')} />
                 <Row
                   icon={Mail}
                   label={t('settings.supportEmail')}
