@@ -5,7 +5,7 @@ import {
   Palette, Trash2, MessageSquare, Info, LogOut, ChevronLeft,
   CheckCircle2, AlertCircle, Loader2, Globe, Check, Mail, KeyRound,
   ShieldCheck, ShieldAlert, Moon, Sun, MonitorSmartphone, ExternalLink, UserX, PauseCircle, Archive,
-  Flag,
+  Flag, AlertTriangle, Ban,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -36,6 +36,9 @@ import DatePickerSheet from '../components/DatePickerSheet';
 import { calcAge } from '../utils/age';
 import { deactivateAccount, deleteAccount } from '../services/accountService';
 import SecuritySection from '../components/SecuritySection';
+import { useAccountStatus } from '../hooks/useAccountStatus';
+import { LEVEL_UI } from '../services/accountStatusService';
+import type { StatusLevel } from '../services/accountStatusService';
 
 // ---------- عناصر مشتركة ----------
 const inputCls =
@@ -44,6 +47,14 @@ const btnCls =
   'w-full py-2.5 rounded-xl bg-primary-500/20 border border-primary-500/30 text-primary-300 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]';
 const dangerBtnCls =
   'w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]';
+
+// أيقونة حالة الحساب حسب المستوى (نفس أيقونات القائمة الجانبية)
+const LEVEL_ICON: Record<StatusLevel, React.ElementType> = {
+  green: CheckCircle2,
+  yellow: AlertTriangle,
+  red: ShieldAlert,
+  closed: Ban,
+};
 
 const Notice: React.FC<{ kind: 'ok' | 'err' | 'warn'; text: string }> = ({ kind, text }) => {
   const color =
@@ -90,15 +101,15 @@ const InfoRow: React.FC<{ label: string; value?: React.ReactNode }> = ({ label, 
 );
 
 const Row: React.FC<{
-  icon: any; label: string; onClick: () => void; right?: React.ReactNode; disabled?: boolean;
-}> = ({ icon: Icon, label, onClick, right, disabled }) => (
+  icon: any; label: string; onClick: () => void; right?: React.ReactNode; disabled?: boolean; iconClass?: string;
+}> = ({ icon: Icon, label, onClick, right, disabled, iconClass }) => (
   <button
     onClick={onClick}
     disabled={disabled}
     className="w-full flex items-center justify-between p-4 hover:bg-white/5 text-start"
   >
     <div className="flex items-center gap-3">
-      <Icon className="w-5 h-5 text-slate-400" />
+      <Icon className={`w-5 h-5 ${iconClass ?? 'text-slate-400'}`} />
       <span className="text-sm font-bold text-white">{label}</span>
     </div>
     {right ?? <ChevronLeft className="w-4 h-4 text-slate-500 rtl:rotate-0 ltr:rotate-180" />}
@@ -1099,6 +1110,9 @@ const Settings: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  // حالة الحساب (نفس مصدر القائمة الجانبية)
+  const accountStatus = useAccountStatus(user?.uid);
+
   if (!user) return <Navigate to="/login" replace />;
 
   const back = () => setActiveSection('main');
@@ -1126,6 +1140,9 @@ const Settings: React.FC = () => {
 
   const myReportsLabel =
     lang === 'ar' ? 'بلاغاتك' : lang === 'fr' ? 'Vos signalements' : 'Your reports';
+
+  const statusLevel: StatusLevel = accountStatus?.level ?? 'green';
+  const statusUi = LEVEL_UI[statusLevel];
 
   const renderContent = () => {
     switch (activeSection) {
@@ -1225,6 +1242,20 @@ const Settings: React.FC = () => {
             <div>
               <h3 className="text-xs font-black text-primary-400 mb-2 px-1">{t('settings.sec.support')}</h3>
               <div className="card divide-y divide-white/5">
+                <Row
+                  icon={LEVEL_ICON[statusLevel]}
+                  iconClass={statusUi.text}
+                  label={t('as.title')}
+                  onClick={() => navigate('/account-status')}
+                  right={
+                    <span
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black ${statusUi.bg} ${statusUi.border} ${statusUi.text}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${statusUi.dot}`} />
+                      {t(`as.label.${statusLevel}`)}
+                    </span>
+                  }
+                />
                 <Row icon={AlertCircle} label={t('settings.report')} onClick={() => setActiveSection('support')} />
                 <Row icon={Flag} label={myReportsLabel} onClick={() => navigate('/my-reports')} />
                 <Row
