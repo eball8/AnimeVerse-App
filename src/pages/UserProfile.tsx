@@ -213,7 +213,7 @@ const UserProfilePage: React.FC = () => {
             <VerifiedBadge badge={badgeOf(p)} withText />
           </div>
         )}
-        {p.bio && <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
+        {p.bio && <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto">{p.bio}</p>}
 
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/10">
           <div>
