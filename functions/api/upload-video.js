@@ -5,12 +5,14 @@
 //   - متغير R2_PUBLIC_URL (بدون / في النهاية)
 //   - متغير FIREBASE_PROJECT_ID
 const MAX_BYTES = 30 * 1024 * 1024;
+const MAX_THUMB_BYTES = 400 * 1024;
+const MAX_UPLOADS_PER_HOUR = 20; // حد الرفع لكل مستخدم
 const JWKS_URL =
   'https://www.googleapis.com/service_account/v1/jwk/securetoken@system.gserviceaccount.com';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
   'Access-Control-Max-Age': '86400',
 };
@@ -76,25 +78,56 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: CORS });
 }
 
-export async function onRequestPost({ request, env }) {
-  if (!env.VIDEOS || !env.R2_PUBLIC_URL || !env.FIREBASE_PROJECT_ID) {
-    return json({ error: 'server not configured' }, 500);
-  }
+const VIDEO_KEY = /^videos\/([A-Za-z0-9]+)\/[\w-]+\.(mp4|webm|mov|3gp|mkv|ogv)$/;
 
+async function authenticate(request, env) {
+  if (!env.VIDEOS || !env.R2_PUBLIC_URL || !env.FIREBASE_PROJECT_ID) {
+    return { error: json({ error: 'server not configured' }, 500) };
+  }
   const auth = request.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  let uid;
   try {
-    uid = await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID);
+    return { uid: await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID) };
   } catch {
-    return json({ error: 'unauthorized' }, 401);
+    return { error: json({ error: 'unauthorized' }, 401) };
   }
+}
+
+// رفع صورة مصغّرة بجانب الفيديو (نفس الاسم بامتداد jpg)
+async function handleThumb({ request, env }, uid) {
+  const videoKey = request.headers.get('X-Thumb-For') || '';
+  const m = VIDEO_KEY.exec(videoKey);
+  if (!m || m[1] !== uid) return json({ error: 'bad key' }, 403);
+  const body = await request.arrayBuffer();
+  if (body.byteLength === 0 || body.byteLength > MAX_THUMB_BYTES) return json({ error: 'bad thumb size' }, 413);
+  await env.VIDEOS.put(videoKey.replace(/\.[a-z0-9]+$/, '.jpg'), body, {
+    httpMetadata: { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' },
+  });
+  return json({ ok: true });
+}
+
+export async function onRequestPost(ctx) {
+  const { request, env } = ctx;
+  const a = await authenticate(request, env);
+  if (a.error) return a.error;
+  const uid = a.uid;
 
   const type = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (type === 'image/jpeg' && request.headers.get('X-Thumb-For')) return handleThumb(ctx, uid);
   if (!type.startsWith('video/')) return json({ error: 'video only' }, 415);
 
   const declared = Number(request.headers.get('Content-Length') || 0);
   if (declared > MAX_BYTES) return json({ error: 'too large' }, 413);
+
+  // حد الرفع: عدد ملفات المستخدم خلال آخر ساعة (المفاتيح مرتبة بالوقت)
+  const since = Date.now() - 3600 * 1000;
+  const recent = await env.VIDEOS.list({
+    prefix: `videos/${uid}/`,
+    startAfter: `videos/${uid}/${since}`,
+    limit: 100,
+  });
+  const recentVideos = recent.objects.filter((o) => !o.key.endsWith('.jpg')).length;
+  if (recentVideos >= MAX_UPLOADS_PER_HOUR) return json({ error: 'rate limit' }, 429);
 
   const body = await request.arrayBuffer();
   if (body.byteLength === 0) return json({ error: 'empty' }, 400);
@@ -109,4 +142,21 @@ export async function onRequestPost({ request, env }) {
   });
 
   return json({ url: `${env.R2_PUBLIC_URL.replace(/\/+$/, '')}/${key}` });
+}
+
+// حذف فيديو (وصورته المصغّرة) — صاحب الملف فقط
+export async function onRequestDelete({ request, env }) {
+  const a = await authenticate(request, env);
+  if (a.error) return a.error;
+  let key = '';
+  try {
+    const { url } = await request.json();
+    key = decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ''));
+  } catch {
+    return json({ error: 'bad request' }, 400);
+  }
+  const m = VIDEO_KEY.exec(key);
+  if (!m || m[1] !== a.uid) return json({ error: 'forbidden' }, 403);
+  await env.VIDEOS.delete([key, key.replace(/\.[a-z0-9]+$/, '.jpg')]);
+  return json({ ok: true });
 }
