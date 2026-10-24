@@ -1,10 +1,42 @@
 import { tr } from '../i18n/staticT';
+import { auth } from '../config/firebase';
 
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
+// رابط دالة رفع الفيديو إلى Cloudflare R2. إن لم يُضبط يعود الرفع إلى Cloudinary كما كان.
+const R2_UPLOAD_URL: string | undefined = import.meta.env.VITE_R2_UPLOAD_URL;
+
 const MAX_VIDEO_SIZE_MB = 30;
 const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024;
+
+const uploadVideoToR2 = async (
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> => {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error(tr('svc.up.network'));
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', R2_UPLOAD_URL as string);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Content-Type', file.type);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && res.url) resolve(res.url);
+        else reject(new Error(res?.error || tr('svc.up.failedMedia')));
+      } catch {
+        reject(new Error(tr('svc.up.parse')));
+      }
+    };
+    xhr.onerror = () => reject(new Error(tr('svc.up.network')));
+    xhr.send(file);
+  });
+};
 
 export const uploadVideoToCloudinary = (
   file: File,
@@ -17,6 +49,11 @@ export const uploadVideoToCloudinary = (
     }
     if (!file.type.startsWith('video/') && !file.type.startsWith('image/')) {
       reject(new Error(tr('svc.up.notMedia')));
+      return;
+    }
+    // الفيديو فقط يذهب إلى R2، والصور تبقى على Cloudinary
+    if (R2_UPLOAD_URL && file.type.startsWith('video/')) {
+      uploadVideoToR2(file, onProgress).then(resolve, reject);
       return;
     }
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
