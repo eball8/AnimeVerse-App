@@ -36,22 +36,22 @@ const b64urlToJson = (s) => JSON.parse(new TextDecoder().decode(b64urlToBytes(s)
 // التحقق من Firebase ID token (RS256) بدون أي مكتبات
 async function verifyFirebaseToken(token, projectId) {
   const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('bad token');
+  if (parts.length !== 3) throw new Error('malformed token');
   const header = b64urlToJson(parts[0]);
   const payload = b64urlToJson(parts[1]);
-  if (header.alg !== 'RS256' || !header.kid) throw new Error('bad header');
+  if (header.alg !== 'RS256' || !header.kid) throw new Error('bad header alg');
 
   const now = Math.floor(Date.now() / 1000);
-  if (payload.aud !== projectId) throw new Error('bad aud');
-  if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error('bad iss');
+  if (payload.aud !== projectId) throw new Error(`project id mismatch (token=${payload.aud}, server=${projectId})`);
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error('bad issuer');
   if (!payload.sub || typeof payload.sub !== 'string') throw new Error('bad sub');
-  if (payload.exp <= now) throw new Error('expired');
+  if (payload.exp <= now) throw new Error('token expired');
   if (payload.iat > now + 300) throw new Error('bad iat');
 
   const res = await fetch(JWKS_URL, { cf: { cacheTtl: 3600, cacheEverything: true } });
-  if (!res.ok) throw new Error('jwks');
+  if (!res.ok) throw new Error(`jwks fetch ${res.status}`);
   const jwk = (await res.json()).keys.find((k) => k.kid === header.kid);
-  if (!jwk) throw new Error('unknown kid');
+  if (!jwk) throw new Error('unknown key id');
 
   const key = await crypto.subtle.importKey(
     'jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']
@@ -87,9 +87,9 @@ async function authenticate(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   try {
-    return { uid: await verifyFirebaseToken(token, env.FIREBASE_PROJECT_ID) };
-  } catch {
-    return { error: json({ error: 'unauthorized' }, 401) };
+    return { uid: await verifyFirebaseToken(token, String(env.FIREBASE_PROJECT_ID).trim()) };
+  } catch (e) {
+    return { error: json({ error: `unauthorized: ${e && e.message ? e.message : 'invalid token'}` }, 401) };
   }
 }
 
