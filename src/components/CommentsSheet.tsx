@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { X, Send, Heart, MoreHorizontal, Pencil, Trash2, Flag, Check } from 'lucide-react';
+import { X, Send, Heart, MoreHorizontal, Pencil, Trash2, Flag, Check, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -15,10 +15,11 @@ import Avatar from './Avatar';
 import VerifiedBadge from './VerifiedBadge';
 import MentionText from './MentionText';
 import MentionInput from './MentionInput';
+import LongPress from './LongPress';
 import { useConfirm } from './ConfirmDialog';
 import { useMediaLock } from '../utils/mediaManager';
 import ReportFlow from './ReportFlow';
-import { postLink } from '../utils/links';
+import { copyText, postLink } from '../utils/links';
 
 interface Props {
   post: Post;
@@ -66,6 +67,9 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
   const toastTimer = useRef<number | undefined>(undefined);
   const likeBusy = useRef<Set<string>>(new Set());
   const briefs = useUserBriefs(comments.map((c) => c.authorId));
+
+  const copyLabel = lang === 'ar' ? 'نسخ التعليق' : lang === 'fr' ? 'Copier le commentaire' : 'Copy comment';
+  const copiedLabel = lang === 'ar' ? 'تم النسخ' : lang === 'fr' ? 'Copié' : 'Copied';
 
   // فتح التعليقات = إيقاف كل الفيديوهات في الخلفية
   useMediaLock();
@@ -204,6 +208,11 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
     setReportFor(c);
   };
 
+  const copyComment = async (c: PostComment) => {
+    setMenuFor(null);
+    if (await copyText(c.content)) showToast(copiedLabel);
+  };
+
   const goProfile = (uid: string) => {
     onClose();
     navigate(`/user/${uid}`);
@@ -224,26 +233,28 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
           />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
-            <span className="selectable">{a.name}</span>
-            <VerifiedBadge badge={a.badge} />
-            {c.authorId === post.authorId && (
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
-                {t('cm.creator')}
-              </span>
-            )}
-          </p>
-          <p className="selectable text-sm text-slate-300 break-words whitespace-pre-wrap">
-            {isReply && c.replyToUid && c.replyToName && (
-              <button
-                onClick={() => goProfile(c.replyToUid as string)}
-                className="text-primary-400 font-bold me-1.5"
-              >
-                {c.replyToName}
-              </button>
-            )}
-            <MentionText text={c.content} onNavigate={onClose} />
-          </p>
+          <LongPress onLongPress={() => setMenuFor(c)}>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
+              <span>{a.name}</span>
+              <VerifiedBadge badge={a.badge} />
+              {c.authorId === post.authorId && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
+                  {t('cm.creator')}
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-slate-300 break-words whitespace-pre-wrap">
+              {isReply && c.replyToUid && c.replyToName && (
+                <button
+                  onClick={() => goProfile(c.replyToUid as string)}
+                  className="text-primary-400 font-bold me-1.5"
+                >
+                  {c.replyToName}
+                </button>
+              )}
+              <MentionText text={c.content} onNavigate={onClose} />
+            </p>
+          </LongPress>
           <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
             <span>{timeAgo(c.createdAt, lang)}</span>
             {c.edited && <span>· {t('cm.edited')}</span>}
@@ -366,7 +377,7 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
           </button>
         </div>
 
-        {/* قائمة خيارات التعليق (تعديل / حذف / إبلاغ) */}
+        {/* قائمة خيارات التعليق: نسخ + (تعديل / حذف) لتعليقك، أو نسخ + إبلاغ لتعليق غيرك */}
         {menuFor && (
           <div className="absolute inset-0 z-30 bg-black/60 flex items-end" onClick={() => setMenuFor(null)}>
             <div
@@ -374,6 +385,12 @@ const CommentsSheet: React.FC<Props> = ({ post, onClose, onCountChange }) => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mx-auto w-10 h-1 rounded-full bg-white/15 mb-3" />
+              <button
+                onClick={() => copyComment(menuFor)}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold text-white hover:bg-white/5"
+              >
+                <Copy className="w-5 h-5 text-slate-300" /> {copyLabel}
+              </button>
               {menuFor.authorId === user?.uid && (
                 <button
                   onClick={() => startEdit(menuFor)}
