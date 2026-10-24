@@ -164,6 +164,48 @@ export const deleteVideoFromR2 = async (url?: string): Promise<void> => {
   } catch { /* تجاهل */ }
 };
 
+// ضغط الصور قبل الرفع: أقصى بعد 1920 بكسل، وجودة تنخفض تدريجياً حتى يصير الحجم ≤ 2 ميجا.
+// لا نمسّ GIF/SVG (قد تكون متحركة أو متجهية). عند أي فشل نرفع الملف الأصلي.
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_SIDE = 1920;
+
+const compressImage = async (file: File): Promise<File> => {
+  try {
+    if (!file.type.startsWith('image/') || /gif|svg/.test(file.type)) return file;
+    const src = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('img'));
+      i.src = src;
+    });
+    URL.revokeObjectURL(src);
+    const w0 = img.naturalWidth, h0 = img.naturalHeight;
+    if (!w0 || !h0) return file;
+    let scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(w0, h0));
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const c = document.createElement('canvas');
+      c.width = Math.round(w0 * scale);
+      c.height = Math.round(h0 * scale);
+      const ctx = c.getContext('2d');
+      if (!ctx) return file;
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      for (const q of [0.85, 0.75, 0.65]) {
+        const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', q));
+        if (blob && blob.size <= MAX_IMAGE_BYTES) {
+          // إن لم نوفّر شيئاً (الأصلي أصغر) نبقي الأصلي
+          if (blob.size >= file.size && file.size <= MAX_IMAGE_BYTES) return file;
+          return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+        }
+      }
+      scale *= 0.75; // ما زال كبيراً: نصغّر الأبعاد ونعيد المحاولة
+    }
+    return file;
+  } catch {
+    return file;
+  }
+};
+
 export const uploadVideoToCloudinary = (
   file: File,
   onProgress?: (percent: number) => void,
@@ -183,33 +225,36 @@ export const uploadVideoToCloudinary = (
       uploadVideoToR2(file, onProgress, coverFile).then(resolve, reject);
       return;
     }
-    const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', UPLOAD_PRESET);
+    compressImage(file).then((toSend) => {
+      const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+      const formData = new FormData();
+      formData.append('file', toSend);
+      formData.append('upload_preset', UPLOAD_PRESET);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        onProgress(percent);
-      }
-    };
-    xhr.onload = () => {
-      try {
-        const res = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) {
-          resolve(res.secure_url);
-        } else {
-          reject(new Error(res?.error?.message || tr('svc.up.failedMedia')));
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          onProgress(percent);
         }
-      } catch {
-        reject(new Error(tr('svc.up.parse')));
-      }
-    };
-    xhr.onerror = () => reject(new Error(tr('svc.up.network')));
-    xhr.send(formData);
+      };
+      xhr.onload = () => {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && res.secure_url) {
+            resolve(res.secure_url);
+          } else {
+            reject(new Error(res?.error?.message || tr('svc.up.failedMedia')));
+          }
+        } catch {
+          reject(new Error(tr('svc.up.parse')));
+        }
+      };
+      xhr.onerror = () => reject(new Error(tr('svc.up.network')));
+      xhr.send(formData);
+
+    });
   });
 };
 
