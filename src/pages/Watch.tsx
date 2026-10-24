@@ -5,6 +5,7 @@ import { db } from '../config/firebase';
 import { collection, query, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import { useConfirm } from '../components/ConfirmDialog';
 import { registerEpisode } from '../services/episodeService';
 import { logAdmin } from '../services/adminLog';
 import EpisodeRating from '../components/EpisodeRating';
@@ -13,6 +14,7 @@ import { EZV_STORE_URL, openExternal, playInEzv } from '../services/ezvPlayer';
 
 const Watch: React.FC = () => {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { animeId, episodeNumber } = useParams<{ animeId: string; episodeNumber: string }>();
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
@@ -131,7 +133,7 @@ const Watch: React.FC = () => {
   };
 
   const handleDeleteServer = async (server: any) => {
-    if (!window.confirm(t('wt.confirmDeleteServer'))) return;
+    if (!(await confirm({ title: t('wt.confirmDeleteServer') }))) return;
     try {
       await deleteDoc(doc(db, 'episodes', epKey, 'servers', server.id));
       logAdmin('delete_server', 'episode', epKey, server.name || server.id);
@@ -159,7 +161,8 @@ const Watch: React.FC = () => {
     if (result === 'opened') return;
 
     if (result === 'not-installed') {
-      if (window.confirm(t('wt.ezvMissing'))) await openExternal(EZV_STORE_URL);
+      const install = await confirm({ title: t('wt.ezvMissing'), danger: false });
+      if (install) await openExternal(EZV_STORE_URL);
       else await openExternal(link);
       return;
     }
