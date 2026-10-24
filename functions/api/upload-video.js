@@ -22,7 +22,7 @@ let keyCache = { at: 0, jwks: [], certs: {} };
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Thumb-For',
   'Access-Control-Max-Age': '86400',
 };
 
