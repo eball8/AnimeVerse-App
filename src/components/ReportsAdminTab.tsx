@@ -4,6 +4,7 @@ import { AlertTriangle, Ban, Check, Clock, Loader2, ShieldAlert, Trash2, X } fro
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from './ConfirmDialog';
+import { PickerField } from './OptionPicker';
 import AppealsAdminTab from './AppealsAdminTab';
 import { logAdmin } from '../services/adminLog';
 import {
@@ -27,6 +28,12 @@ const ACTION_LABEL: Record<ModAction, string> = {
   restrict: 'تقييد الحساب مؤقتاً',
   ban: 'حظر نهائي + حذف كل المحتوى',
 };
+
+const DAY_OPTIONS = [
+  { value: '3', label: '3 أيام' },
+  { value: '7', label: '7 أيام' },
+  { value: '30', label: '30 يوماً' },
+];
 
 const ReportsAdminTab: React.FC = () => {
   const { user } = useAuth();
@@ -139,18 +146,15 @@ const ReportsAdminTab: React.FC = () => {
         >
           {showAll ? 'عرض المعلّقة فقط' : 'عرض كل البلاغات'}
         </button>
-        <label className="flex items-center gap-2 text-[11px] text-slate-400">
+        <div className="flex items-center gap-2 text-[11px] text-slate-400">
           <Clock className="w-3.5 h-3.5" /> مدة التقييد
-          <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="px-2 py-1.5 rounded-xl bg-dark-950 border border-white/10 text-white text-xs"
-          >
-            <option value={3}>3 أيام</option>
-            <option value={7}>7 أيام</option>
-            <option value={30}>30 يوماً</option>
-          </select>
-        </label>
+          <PickerField
+            title="مدة التقييد"
+            value={String(days)}
+            options={DAY_OPTIONS}
+            onSelect={(v) => setDays(Number(v))}
+          />
+        </div>
       </div>
 
       {list.length === 0 && <p className="text-center text-sm text-slate-500 py-10">لا توجد بلاغات.</p>}
