@@ -30,6 +30,7 @@ import UserProfilePage from './pages/UserProfile';
 import EditProfile from './pages/EditProfile';
 import Library from './pages/Library';
 import Notifications from './pages/Notifications';
+import MyReports from './pages/MyReports';
 import Admin from './pages/Admin';
 import AccountStatus from './pages/AccountStatus';
 import DeepLinkHandler from './components/DeepLinkHandler';
@@ -96,6 +97,7 @@ const App: React.FC = () => {
                 <Route path="user/:uid" element={<UserProfilePage />} />
                 <Route path="library" element={<Library />} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="my-reports" element={<MyReports />} />
                 <Route path="account-status" element={<AccountStatus />} />
                 <Route path="admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
                 <Route path="settings" element={<Settings />} />
