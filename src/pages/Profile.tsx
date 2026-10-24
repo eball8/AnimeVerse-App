@@ -161,7 +161,7 @@ const Profile: React.FC = () => {
         )}
         {genderLabel && <p className="text-[11px] text-slate-500 mt-0.5">{genderLabel}</p>}
         {profile?.bio && (
-          <p className="selectable text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
+          <p className="text-xs text-slate-400 mt-3 max-w-xs mx-auto whitespace-pre-line">{profile.bio}</p>
         )}
 
         {/* العدّادات */}
