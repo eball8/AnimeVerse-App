@@ -10,13 +10,61 @@ const R2_UPLOAD_URL: string | undefined = import.meta.env.VITE_R2_UPLOAD_URL;
 const MAX_VIDEO_SIZE_MB = 30;
 const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024;
 
+// يلتقط إطاراً من الفيديو كصورة مصغّرة (9:16). عند أي فشل يعيد null ولا يوقف الرفع.
+const makeVideoThumb = (file: File): Promise<Blob | null> =>
+  new Promise((resolve) => {
+    const v = document.createElement('video');
+    const src = URL.createObjectURL(file);
+    let done = false;
+    const finish = (b: Blob | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(src);
+      v.removeAttribute('src');
+      v.load();
+      resolve(b);
+    };
+    const timer = setTimeout(() => finish(null), 8000);
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'metadata';
+    v.onerror = () => finish(null);
+    v.onloadedmetadata = () => {
+      try {
+        v.currentTime = Math.min(0.3, (v.duration || 1) / 2);
+      } catch {
+        finish(null);
+      }
+    };
+    v.onseeked = () => {
+      try {
+        const W = 360, H = 640;
+        const c = document.createElement('canvas');
+        c.width = W;
+        c.height = H;
+        const ctx = c.getContext('2d');
+        if (!ctx || !v.videoWidth) return finish(null);
+        const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+        const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+        ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        c.toBlob((b) => finish(b), 'image/jpeg', 0.7);
+      } catch {
+        finish(null);
+      }
+    };
+    v.src = src;
+  });
+
+const r2Key = (url: string): string => decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ''));
+
 const uploadVideoToR2 = async (
   file: File,
   onProgress?: (percent: number) => void
 ): Promise<string> => {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error(tr('svc.up.network'));
-  return new Promise((resolve, reject) => {
+  const url = await new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', R2_UPLOAD_URL as string);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -28,6 +76,7 @@ const uploadVideoToR2 = async (
       try {
         const res = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && res.url) resolve(res.url);
+        else if (xhr.status === 429) reject(new Error('Too many uploads. Try again later.'));
         else reject(new Error(res?.error || tr('svc.up.failedMedia')));
       } catch {
         reject(new Error(tr('svc.up.parse')));
@@ -36,6 +85,33 @@ const uploadVideoToR2 = async (
     xhr.onerror = () => reject(new Error(tr('svc.up.network')));
     xhr.send(file);
   });
+  // الصورة المصغّرة اختيارية: أي فشل فيها لا يمنع نشر الفيديو
+  try {
+    const thumb = await makeVideoThumb(file);
+    if (thumb) {
+      await fetch(R2_UPLOAD_URL as string, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'X-Thumb-For': r2Key(url) },
+        body: thumb,
+      });
+    }
+  } catch { /* تجاهل */ }
+  return url;
+};
+
+// حذف فيديو من R2 (صاحبه فقط). لا يفعل شيئاً لفيديوهات Cloudinary القديمة ولا يرمي أخطاء.
+export const deleteVideoFromR2 = async (url?: string): Promise<void> => {
+  try {
+    if (!R2_UPLOAD_URL || !url || url.includes('cloudinary.com')) return;
+    if (!/\/videos\/[^/]+\/[\w-]+\.[a-z0-9]+$/i.test(url)) return;
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) return;
+    await fetch(R2_UPLOAD_URL, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+  } catch { /* تجاهل */ }
 };
 
 export const uploadVideoToCloudinary = (
