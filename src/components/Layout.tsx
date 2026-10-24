@@ -9,6 +9,8 @@ import type { ChatPrefMap } from '../services/chatPrefsService';
 import { sendHeartbeat, HEARTBEAT_MS } from '../services/presenceService';
 import { useI18n } from '../i18n/I18nContext';
 import { subscribeNotifications } from '../services/notificationService';
+import { countUnreadReportNotifs } from '../services/reportService';
+import { useReportTickets } from '../hooks/useReportTickets';
 import { initE2EE } from '../services/cryptoService';
 import { setShareLikesWithFriends } from '../services/postService';
 import { getMutualFriendIds } from '../services/followService';
@@ -25,6 +27,10 @@ const Layout: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
+
+  // إشعارات البلاغات (استلام البلاغ + ردّ الإدارة) وجلب الردود دورياً
+  const reportTickets = useReportTickets(!!user);
+  const totalUnread = unread + countUnreadReportNotifs(reportTickets);
 
   // داخل المحادثة نخفي الشريط السفلي ليظهر صندوق الكتابة كاملاً
   const inChat = /^\/messages\/[^/]+/.test(pathname);
@@ -134,9 +140,9 @@ const Layout: React.FC = () => {
   const notificationsLink = (
     <NavLink to="/notifications" className={iconBtn} aria-label={t('header.notifications')}>
       <Bell className="w-5 h-5" />
-      {unread > 0 && (
+      {totalUnread > 0 && (
         <span className="absolute top-0 end-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
-          {unread > 9 ? '9+' : unread}
+          {totalUnread > 9 ? '9+' : totalUnread}
         </span>
       )}
     </NavLink>
