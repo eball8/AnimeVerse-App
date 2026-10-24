@@ -141,7 +141,7 @@ const Search: React.FC = () => {
                 className="relative aspect-[9/16] rounded-xl overflow-hidden bg-dark-900 border border-white/5"
               >
                 {videoThumb(p.mediaUrl) && (
-                  <img src={videoThumb(p.mediaUrl)} alt="" loading="lazy" className="w-full h-full object-cover" />
+                  <img src={videoThumb(p.mediaUrl)} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                 )}
                 <Play className="absolute inset-0 m-auto w-7 h-7 text-white/80" />
               </button>
