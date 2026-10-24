@@ -1,3 +1,4 @@
+//
 // https://animeverse-btn.pages.dev/download  →  تنزيل ملف APK مباشرة
 // الأولوية: APK_URL (متغير في Cloudflare) ثم آخر إصدار على GitHub Releases.
 const DEFAULT_APK =
