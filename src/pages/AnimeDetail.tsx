@@ -12,6 +12,7 @@ import { isAnimeUnlocked, lockAnime, unlockAnime } from '../services/animeLockSe
 import { useAuth } from '../context/AuthContext';
 import type { AnimeExtra } from '../services/malService';
 import { useI18n } from '../i18n/I18nContext';
+import { useConfirm } from '../components/ConfirmDialog';
 import LibraryControls from '../components/LibraryControls';
 
 const EP_PAGE = 100;
@@ -20,6 +21,7 @@ const AnimeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { isAdmin } = useAuth();
   const [addedEps, setAddedEps] = useState<number[]>([]);
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
@@ -137,7 +139,11 @@ const AnimeDetail: React.FC = () => {
   const toggleLock = async () => {
     const title = anime.title_english || anime.title;
     const opening = unlocked !== true;
-    if (!window.confirm(t(opening ? 'lock.unlockConfirm' : 'lock.relockConfirm'))) return;
+    const ok = await confirm({
+      title: t(opening ? 'lock.unlockConfirm' : 'lock.relockConfirm'),
+      danger: false,
+    });
+    if (!ok) return;
     setLockBusy(true);
     try {
       if (opening) await unlockAnime(String(anime.mal_id), title, imageUrl);
