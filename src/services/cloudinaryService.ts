@@ -164,10 +164,10 @@ export const deleteVideoFromR2 = async (url?: string): Promise<void> => {
   } catch { /* تجاهل */ }
 };
 
-// ضغط الصور قبل الرفع: أقصى بعد 1920 بكسل، وجودة تنخفض تدريجياً حتى يصير الحجم ≤ 2 ميجا.
+// ضغط الصور قبل الرفع (قوي لتوفير رصيد Cloudinary): أقصى بعد 1080 بكسل، وجودة تنخفض حتى يصير الحجم ≤ 400 كيلوبايت.
 // لا نمسّ GIF/SVG (قد تكون متحركة أو متجهية). عند أي فشل نرفع الملف الأصلي.
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-const MAX_IMAGE_SIDE = 1920;
+const MAX_IMAGE_BYTES = 400 * 1024;
+const MAX_IMAGE_SIDE = 1080;
 
 const compressImage = async (file: File): Promise<File> => {
   try {
@@ -183,14 +183,14 @@ const compressImage = async (file: File): Promise<File> => {
     const w0 = img.naturalWidth, h0 = img.naturalHeight;
     if (!w0 || !h0) return file;
     let scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(w0, h0));
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       const c = document.createElement('canvas');
       c.width = Math.round(w0 * scale);
       c.height = Math.round(h0 * scale);
       const ctx = c.getContext('2d');
       if (!ctx) return file;
       ctx.drawImage(img, 0, 0, c.width, c.height);
-      for (const q of [0.85, 0.75, 0.65]) {
+      for (const q of [0.75, 0.65, 0.55]) {
         const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', q));
         if (blob && blob.size <= MAX_IMAGE_BYTES) {
           // إن لم نوفّر شيئاً (الأصلي أصغر) نبقي الأصلي
