@@ -19,6 +19,7 @@ import Avatar from '../components/Avatar';
 import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
 import ReportFlow from '../components/ReportFlow';
+import { CopyButton } from '../components/CopyButton';
 import { recordProfileView } from '../services/profileInsightsService';
 import { markProfileVisited } from '../services/storyService'; // ← أضفنا هذا السطر
 
@@ -200,10 +201,13 @@ const UserProfilePage: React.FC = () => {
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{p.displayName}</h2>
-        <p className="selectable text-sm text-slate-500">
-          @{p.username}
-          {p.pronouns ? <span className="text-slate-400"> · {p.pronouns}</span> : null}
-        </p>
+        <div className="flex items-center justify-center gap-2 mt-0.5">
+          <p className="text-sm text-slate-500">
+            @{p.username}
+            {p.pronouns ? <span className="text-slate-400"> · {p.pronouns}</span> : null}
+          </p>
+          <CopyButton value={p.username || ''} />
+        </div>
         {badgeOf(p) && (
           <div className="mt-1.5 flex justify-center">
             <VerifiedBadge badge={badgeOf(p)} withText />
