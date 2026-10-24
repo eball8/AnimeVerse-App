@@ -49,7 +49,12 @@ export const shareLink = async (
 
 // صورة مصغّرة خفيفة لفيديو Cloudinary (بدل تحميل الفيديو نفسه)
 export const videoThumb = (url?: string): string | undefined => {
-  if (!url || !url.includes('/video/upload/')) return undefined;
+  if (!url) return undefined;
+  if (!url.includes('/video/upload/')) {
+    // فيديو على R2: الصورة المصغّرة بجانبه بنفس الاسم وامتداد jpg
+    const m = url.match(/^(https:\/\/[^?#]+\/videos\/[^/]+\/[\w-]+)\.(mp4|webm|mov|3gp|mkv|ogv)$/i);
+    return m ? `${m[1]}.jpg` : undefined;
+  }
   return url
     .replace('/video/upload/', '/video/upload/so_0,w_360,h_640,c_fill,q_auto/')
     .replace(/\.[a-z0-9]+(\?.*)?$/i, '.jpg');
