@@ -1,4 +1,4 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { uploadVideoToCloudinary } from './cloudinaryService';
 
@@ -63,12 +63,26 @@ export const reportFileError = (file: File): string | null => {
 /* ---- تذاكر الردود (محفوظة في جهاز المُبلِّغ فقط) ---- */
 const TICKETS_KEY = 'av_report_tickets_v1';
 const TICKET_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const CHANGE_EVENT = 'av-report-tickets-changed';
 
 export interface LocalTicket {
   id: string;
   targetType: ReportTargetType;
   createdAt: number;
+  /** ظهرت نافذة الرد للمستخدم وأغلقها */
   seen: boolean;
+  category?: string;
+  categoryLabel?: string;
+  reportedUsername?: string;
+  /** حالة الرد القادمة من الإدارة (تظهر بعد المراجعة) */
+  status?: string;
+  /** الإجراء المتخذ: dismiss / warn / delete / restrict / ban */
+  action?: string;
+  repliedAt?: number;
+  /** false = إشعار «تم استلام بلاغك» لم يُقرأ بعد */
+  ackRead?: boolean;
+  /** false = إشعار الرد لم يُقرأ بعد */
+  replyRead?: boolean;
 }
 
 const makeTicketId = (): string => {
@@ -97,16 +111,97 @@ const writeTickets = (list: LocalTicket[]): void => {
   } catch {
     /* لا يؤثر على عمل التطبيق */
   }
+  try {
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+  } catch {
+    /* لا يؤثر على عمل التطبيق */
+  }
 };
 
 export const getTickets = (): LocalTicket[] => readTickets();
 
-const rememberTicket = (id: string, targetType: ReportTargetType): void => {
-  writeTickets([...readTickets(), { id, targetType, createdAt: Date.now(), seen: false }]);
+/** اشتراك في أي تغيير على تذاكر البلاغات (يُستدعى فوراً مرة أولى) */
+export const subscribeTickets = (cb: (list: LocalTicket[]) => void): (() => void) => {
+  const run = () => cb(readTickets());
+  run();
+  window.addEventListener(CHANGE_EVENT, run);
+  window.addEventListener('storage', run);
+  return () => {
+    window.removeEventListener(CHANGE_EVENT, run);
+    window.removeEventListener('storage', run);
+  };
+};
+
+const patchTicket = (id: string, patch: Partial<LocalTicket>): void => {
+  writeTickets(readTickets().map((t) => (t.id === id ? { ...t, ...patch } : t)));
+};
+
+const rememberTicket = (id: string, input: ReportInput): void => {
+  writeTickets([
+    ...readTickets(),
+    {
+      id,
+      targetType: input.targetType,
+      createdAt: Date.now(),
+      seen: false,
+      category: clip(input.category, 40) || undefined,
+      categoryLabel: clip(input.categoryLabel, 120) || undefined,
+      reportedUsername: input.reportedUsername ? clip(input.reportedUsername, 60) : undefined,
+      ackRead: false,
+    },
+  ]);
 };
 
 export const markTicketSeen = (id: string): void => {
   writeTickets(readTickets().map((t) => (t.id === id ? { ...t, seen: true } : t)));
+};
+
+/** عدد إشعارات البلاغات غير المقروءة (الاستلام + الردود) */
+export const countUnreadReportNotifs = (list: LocalTicket[]): number =>
+  list.reduce(
+    (n, t) => n + (t.ackRead === false ? 1 : 0) + (t.status && t.replyRead === false ? 1 : 0),
+    0
+  );
+
+/** وضع علامة «مقروء» على كل إشعارات البلاغات */
+export const markReportNotifsRead = (): void => {
+  const list = readTickets();
+  if (countUnreadReportNotifs(list) === 0) return;
+  writeTickets(
+    list.map((t) => ({
+      ...t,
+      ackRead: t.ackRead === false ? true : t.ackRead,
+      replyRead: t.status && t.replyRead === false ? true : t.replyRead,
+    }))
+  );
+};
+
+/** جلب ردود الإدارة للبلاغات التي لم يصل ردها بعد وحفظها محلياً */
+let syncing = false;
+export const syncTicketReplies = async (): Promise<void> => {
+  if (syncing) return;
+  syncing = true;
+  try {
+    const waiting = readTickets().filter((t) => !t.status);
+    for (const tk of waiting) {
+      try {
+        const s = await getDoc(doc(db, 'reportTickets', tk.id));
+        if (!s.exists()) continue;
+        const d = s.data();
+        patchTicket(tk.id, {
+          status: String(d.status || 'reviewed'),
+          action: d.action ? String(d.action) : undefined,
+          repliedAt: d.createdAt?.toMillis ? d.createdAt.toMillis() : Date.now(),
+          // إن كانت نافذة الرد قد ظهرت سابقاً فلا نعتبره إشعاراً جديداً
+          replyRead: tk.seen === true,
+        });
+      } catch {
+        /* نتجاهل ونحاول لاحقاً */
+      }
+    }
+  } finally {
+    syncing = false;
+  }
 };
 
 export const submitReport = async (input: ReportInput): Promise<void> => {
@@ -145,7 +240,7 @@ export const submitReport = async (input: ReportInput): Promise<void> => {
   if (screenshots.length) data.screenshots = screenshots;
 
   await addDoc(collection(db, 'reports'), data);
-  rememberTicket(ticketId, input.targetType);
+  rememberTicket(ticketId, input);
 };
 
 /* ---- منع تكرار البلاغ على نفس المحتوى من نفس الجهاز ---- */
