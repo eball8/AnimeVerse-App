@@ -24,6 +24,7 @@ import Avatar from '../components/Avatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import type { BadgeType } from '../types';
 import MentionText from '../components/MentionText';
+import LongPress from '../components/LongPress';
 import { CollabAvatarStack, ContributorsSheet, useCollab, useCollabNames } from '../components/CollabHeader';
 import CommentsSheet from '../components/CommentsSheet';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -57,6 +58,7 @@ interface ItemProps {
   onRepost: (p: Post) => void;
   onShare: (p: Post) => void;
   onCopy: (p: Post) => void;
+  onCopyText: (text: string) => void;
   onOpenAuthor: (uid: string) => void;
   onFollow: (p: Post) => void;
   onMore: (p: Post) => void;
@@ -311,9 +313,11 @@ const ReelItem: React.FC<ItemProps> = (p) => {
           )}
         </div>
         {post.content && (
-          <p className="selectable text-xs text-white/90 line-clamp-3 break-words pointer-events-auto">
-            <MentionText text={post.content} linkClassName="text-white font-black underline underline-offset-2" />
-          </p>
+          <LongPress onLongPress={() => p.onCopyText(post.content)} className="pointer-events-auto">
+            <p className="text-xs text-white/90 line-clamp-3 break-words">
+              <MentionText text={post.content} linkClassName="text-white font-black underline underline-offset-2" />
+            </p>
+          </LongPress>
         )}
         {borrowedAudio && (
           <p className="text-[11px] text-white/80 flex items-center gap-1">
@@ -339,7 +343,7 @@ const Reels: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { user, profile, isAdmin } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const confirm = useConfirm();
 
   const [tab, setTab] = useState<Tab>('reels');
@@ -559,6 +563,13 @@ const Reels: React.FC = () => {
     if (await copyText(reelLink(post.id))) showToast(t('common.linkCopied'));
   };
 
+  // ضغطة مطوّلة على وصف الريل: ينسخ النص مباشرة بدون تحديد
+  const onCopyText = async (text: string) => {
+    if (!text) return;
+    const label = lang === 'ar' ? 'تم النسخ' : lang === 'fr' ? 'Copié' : 'Copied';
+    if (await copyText(text)) showToast(label);
+  };
+
   const onDelete = async (post: Post) => {
     if (!post.id) return;
     if (!(await confirm({ title: t('post.deleteConfirm') }))) return;
@@ -649,6 +660,7 @@ const Reels: React.FC = () => {
                   onRepost={onRepost}
                   onShare={onShare}
                   onCopy={onCopy}
+                  onCopyText={onCopyText}
                   onOpenAuthor={(uid) => navigate(`/user/${uid}`)}
                   onFollow={onFollow}
                   onMore={setMenuPost}
