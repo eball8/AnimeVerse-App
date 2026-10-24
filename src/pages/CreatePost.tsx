@@ -44,6 +44,10 @@ const CreatePost: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
+  // غلاف اختياري للفيديو (صورة مصغّرة يختارها المستخدم)
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
@@ -226,7 +230,23 @@ const CreatePost: React.FC = () => {
     return true;
   };
 
+  const clearCover = () => {
+    if (coverPreview) URL.revokeObjectURL(coverPreview);
+    setCoverFile(null);
+    setCoverPreview(null);
+  };
+
+  const onPickCover = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f || !f.type.startsWith('image/')) return;
+    if (coverPreview) URL.revokeObjectURL(coverPreview);
+    setCoverFile(f);
+    setCoverPreview(URL.createObjectURL(f));
+  };
+
   const clearMedia = () => {
+    clearCover();
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     setFile(null);
     setPreview(null);
@@ -298,7 +318,7 @@ const CreatePost: React.FC = () => {
     setError('');
     try {
       let mediaUrl = '';
-      if (file) mediaUrl = await uploadVideoToCloudinary(file, (p: number) => setProgress(p));
+      if (file) mediaUrl = await uploadVideoToCloudinary(file, (p: number) => setProgress(p), mediaType === 'video' ? coverFile : null);
 
       if (mode === 'story') {
         await createStory({
@@ -427,6 +447,25 @@ const CreatePost: React.FC = () => {
             </div>
             {preview && (
               <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black">{mediaPreview}</div>
+            )}
+            {preview && mediaType === 'video' && (
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 text-start active:bg-white/10 transition"
+              >
+                <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                  {coverPreview ? (
+                    <img src={coverPreview} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImagePlus className="w-4 h-4 text-primary-300" />
+                  )}
+                </span>
+                <span className="flex-1 min-w-0 text-[13px] font-black text-white">
+                  {coverPreview ? t('cp.coverChosen') : t('cp.coverPick')}
+                </span>
+              </button>
             )}
 
             {/* دعوة مساهمين: منشور تعاوني بنمط إنستغرام */}
@@ -725,6 +764,7 @@ const CreatePost: React.FC = () => {
         />
       )}
 
+      <input ref={coverInputRef} type="file" accept="image/*" onChange={onPickCover} className="hidden" />
       <input ref={galleryInputRef} type="file" accept="image/*,video/*" onChange={onInputFile} className="hidden" />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={onInputFile} className="hidden" />
 
