@@ -14,6 +14,7 @@ import VerifiedBadge from './VerifiedBadge';
 import type { BadgeType } from '../types';
 import Avatar from './Avatar';
 import MentionText from './MentionText';
+import LongPress from './LongPress';
 import PostShareSheet from './PostShareSheet';
 import ReportFlow from './ReportFlow';
 import {
@@ -132,10 +133,11 @@ interface MediaProps {
   onDoubleLike: () => void;
   openReelsLabel: string;
   mediaAlt: string;
+  onCopyText: () => void;
 }
 
 /* ---------- الوسائط: بعرض الشاشة كاملاً ---------- */
-const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoubleLike, openReelsLabel, mediaAlt }) => {
+const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoubleLike, openReelsLabel, mediaAlt, onCopyText }) => {
   const navigate = useNavigate();
   const boxRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -234,20 +236,22 @@ const PostMedia: React.FC<MediaProps> = ({ post, isVideo, content, liked, onDoub
     if (!content) return null;
     const long = content.length > 220;
     return (
-      <div
-        onClick={onTap}
-        className="relative w-full min-h-[260px] px-7 py-12 flex items-center justify-center bg-gradient-to-br from-primary-600/30 via-dark-900 to-accent-500/30 select-none"
-      >
-        <p
-          dir="auto"
-          className={`selectable break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
-            long ? 'text-base text-start' : 'text-2xl text-center'
-          }`}
+      <LongPress onLongPress={onCopyText} className="w-full">
+        <div
+          onClick={onTap}
+          className="relative w-full min-h-[260px] px-7 py-12 flex items-center justify-center bg-gradient-to-br from-primary-600/30 via-dark-900 to-accent-500/30 select-none"
         >
-          <MentionText text={content} />
-        </p>
-        {burst > 0 && <HeartBurst k={burst} />}
-      </div>
+          <p
+            dir="auto"
+            className={`break-words whitespace-pre-wrap font-black text-white leading-relaxed ${
+              long ? 'text-base text-start' : 'text-2xl text-center'
+            }`}
+          >
+            <MentionText text={content} />
+          </p>
+          {burst > 0 && <HeartBurst k={burst} />}
+        </div>
+      </LongPress>
     );
   }
 
@@ -371,6 +375,7 @@ const PostCard: React.FC<Props> = ({
   const { user } = useAuth();
 
   const [flash, setFlash] = useState(false);
+  const [textToast, setTextToast] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -431,6 +436,16 @@ const PostCard: React.FC<Props> = ({
   const onCopy = async () => {
     if (url && (await copyText(url))) doFlash();
   };
+
+  // ضغطة مطوّلة على نص المنشور: ينسخ النص مباشرة بدون تحديد (مثل فيسبوك)
+  const copyPostText = async () => {
+    if (!content) return;
+    if (await copyText(content)) {
+      setTextToast(true);
+      window.setTimeout(() => setTextToast(false), 1600);
+    }
+  };
+  const copiedLabel = lang === 'ar' ? 'تم النسخ' : lang === 'fr' ? 'Copié' : 'Copied';
 
   // زر المشاركة: يفتح نافذة (أصدقاء + قصتك + تطبيقات) بدل نسخ الرابط مباشرة
   const onShare = () => {
@@ -608,6 +623,7 @@ const PostCard: React.FC<Props> = ({
         onDoubleLike={likeNow}
         openReelsLabel={t('postCard.openReels')}
         mediaAlt={t('postCard.media')}
+        onCopyText={copyPostText}
       />
 
       {/* شريط الأزرار */}
@@ -643,18 +659,20 @@ const PostCard: React.FC<Props> = ({
 
       {/* النص المرافق */}
       {caption && (
-        <p
-          dir="auto"
-          className={`selectable px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
-            expanded ? '' : 'line-clamp-2'
-          }`}
-        >
-          <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
-            {authorName}
-            <VerifiedBadge badge={authorBadge} className="ms-1" />
-          </button>
-          <MentionText text={caption} />
-        </p>
+        <LongPress onLongPress={copyPostText}>
+          <p
+            dir="auto"
+            className={`px-3 mt-1 text-[13.5px] leading-relaxed text-slate-200 break-words whitespace-pre-wrap text-start ${
+              expanded ? '' : 'line-clamp-2'
+            }`}
+          >
+            <button onClick={() => navigate(`/user/${post.authorId}`)} className="font-extrabold text-white me-1.5 align-baseline">
+              {authorName}
+              <VerifiedBadge badge={authorBadge} className="ms-1" />
+            </button>
+            <MentionText text={caption} />
+          </p>
+        </LongPress>
       )}
       {caption && longCaption && !expanded && (
         <button onClick={() => setExpanded(true)} className="px-3 text-[13px] text-slate-500 font-semibold">
@@ -873,6 +891,14 @@ const PostCard: React.FC<Props> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {textToast && (
+        <div className="fixed inset-x-0 bottom-24 flex justify-center pointer-events-none z-[200]">
+          <span className="px-4 py-2 rounded-full bg-black/85 border border-white/10 text-xs font-bold text-white shadow-lg">
+            {copiedLabel}
+          </span>
         </div>
       )}
     </div>
