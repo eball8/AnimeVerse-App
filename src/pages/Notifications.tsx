@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   collection,
@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import {
   Bell,
+  Flag,
   Heart,
   MessageCircle,
   UserPlus,
@@ -28,6 +29,10 @@ import type {
   AppNotification,
   NotificationType,
 } from '../services/notificationService';
+import { markReportNotifsRead } from '../services/reportService';
+import { ackMessage, outcomeFor, repliedTitle } from '../services/reportMessages';
+import type { OutcomeTone } from '../services/reportMessages';
+import { useReportTickets } from '../hooks/useReportTickets';
 import { pickAuthor, useUserBriefs } from '../services/userCache';
 import { timeAgo } from '../utils/timeAgo';
 import Avatar from '../components/Avatar';
@@ -63,6 +68,26 @@ const MOD_TYPE = 'moderation';
 const MOD_PREFIX = 'mod:';
 const MOD_DANGER_CODES = ['danger', 'restrict', 'ban'];
 
+// إشعارات البلاغات (استلام البلاغ + ردّ الإدارة): تُبنى من تذاكر هذا الجهاز
+interface ReportEntry {
+  key: string;
+  ms: number;
+  title: string;
+  text: string;
+  unread: boolean;
+  tone: OutcomeTone;
+}
+
+type FeedItem =
+  | { kind: 'n'; ms: number; n: AppNotification }
+  | { kind: 'r'; ms: number; r: ReportEntry };
+
+const REPORT_TONE: Record<OutcomeTone, { bg: string; icon: string; title: string }> = {
+  pending: { bg: 'bg-amber-500/15', icon: 'text-amber-400', title: 'text-amber-400' },
+  action: { bg: 'bg-emerald-500/15', icon: 'text-emerald-400', title: 'text-emerald-400' },
+  none: { bg: 'bg-slate-500/20', icon: 'text-slate-300', title: 'text-slate-300' },
+};
+
 const Notifications: React.FC = () => {
   const { user } = useAuth();
   const { t, lang } = useI18n();
@@ -93,6 +118,8 @@ const Notifications: React.FC = () => {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [anns, setAnns] = useState<any[]>([]);
   const marked = useRef(false);
+  const tickets = useReportTickets(true);
+  const keepUnread = useRef<Set<string>>(new Set());
 
   const briefs = useUserBriefs(items.map((n) => n.fromUid));
 
@@ -145,6 +172,60 @@ const Notifications: React.FC = () => {
     };
   }, []);
 
+  const reportEntries = useMemo<ReportEntry[]>(() => {
+    const out: ReportEntry[] = [];
+    for (const tk of tickets) {
+      // التذاكر القديمة (قبل هذه الميزة) لا تُنشئ إشعار «تم الاستلام»
+      if (tk.ackRead !== undefined) {
+        const ack = ackMessage(lang);
+        out.push({
+          key: `${tk.id}:ack`,
+          ms: tk.createdAt,
+          title: ack.title,
+          text: ack.text,
+          unread: tk.ackRead === false,
+          tone: 'pending',
+        });
+      }
+      if (tk.status && tk.replyRead !== undefined) {
+        const o = outcomeFor(lang, tk);
+        out.push({
+          key: `${tk.id}:reply`,
+          ms: tk.repliedAt ?? tk.createdAt,
+          title: repliedTitle(lang),
+          text: o.text,
+          unread: tk.replyRead === false,
+          tone: o.tone,
+        });
+      }
+    }
+    return out;
+  }, [tickets, lang]);
+
+  // نُبقي التمييز ظاهراً أثناء وجودك في الصفحة ثم نضع علامة «مقروء»
+  useEffect(() => {
+    let any = false;
+    reportEntries.forEach((e) => {
+      if (e.unread) {
+        keepUnread.current.add(e.key);
+        any = true;
+      }
+    });
+    if (any) markReportNotifsRead();
+  }, [reportEntries]);
+
+  const feed = useMemo<FeedItem[]>(() => {
+    const list: FeedItem[] = [
+      ...items.map((n) => ({
+        kind: 'n' as const,
+        ms: n.createdAt?.toMillis?.() ?? Date.now(),
+        n,
+      })),
+      ...reportEntries.map((r) => ({ kind: 'r' as const, ms: r.ms, r })),
+    ];
+    return list.sort((a, b) => b.ms - a.ms);
+  }, [items, reportEntries]);
+
   const openNotification = (notification: AppNotification) => {
     if (String(notification.type) === MOD_TYPE) {
       navigate('/account-status');
@@ -165,6 +246,129 @@ const Notifications: React.FC = () => {
     ) {
       navigate(`/post/${notification.postId}`);
     }
+  };
+
+  const renderReport = (r: ReportEntry) => {
+    const hot = r.unread || keepUnread.current.has(r.key);
+    const tone = REPORT_TONE[r.tone];
+
+    return (
+      <button
+        key={r.key}
+        type="button"
+        onClick={() => navigate('/my-reports')}
+        className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start ${
+          hot
+            ? 'bg-primary-500/10 border-primary-500/30'
+            : 'bg-white/5 border-white/10'
+        }`}
+      >
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${tone.bg}`}
+        >
+          <Flag className={`w-5 h-5 ${tone.icon}`} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-xs font-bold mb-1 ${tone.title}`}>{r.title}</p>
+          <p className="text-xs text-white break-words">{r.text}</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            {timeAgo({ toMillis: () => r.ms }, lang)}
+          </p>
+        </div>
+      </button>
+    );
+  };
+
+  const renderNotification = (notification: AppNotification) => {
+    const Icon = icons[notification.type] || Bell;
+
+    const author = pickAuthor(
+      briefs,
+      notification.fromUid,
+      notification.fromName,
+      notification.fromPhotoURL
+    );
+
+    const isSecurity =
+      notification.type === 'new_device';
+    const isModeration = String(notification.type) === MOD_TYPE;
+    const isSystem = isSecurity || isModeration;
+    const modCode = (notification.text || '').startsWith(MOD_PREFIX)
+      ? notification.text.slice(MOD_PREFIX.length)
+      : '';
+    const isDanger = isModeration && MOD_DANGER_CODES.includes(modCode);
+
+    return (
+      <button
+        key={notification.id}
+        type="button"
+        onClick={() => openNotification(notification)}
+        className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start ${
+          notification.read
+            ? 'bg-white/5 border-white/10'
+            : 'bg-primary-500/10 border-primary-500/30'
+        }`}
+      >
+        {isSystem ? (
+          <div
+            className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+              isDanger ? 'bg-red-500/15' : 'bg-amber-500/15'
+            }`}
+          >
+            <ShieldAlert
+              className={`w-5 h-5 ${isDanger ? 'text-red-400' : 'text-amber-400'}`}
+            />
+          </div>
+        ) : (
+          <Avatar
+            src={author.photo}
+            seed={notification.fromUid}
+            name={author.name}
+            className="w-10 h-10 rounded-full object-cover bg-dark-900 shrink-0"
+          />
+        )}
+
+        <div className="flex-1 min-w-0">
+          {isSystem && (
+            <p
+              className={`text-xs font-bold mb-1 ${
+                isDanger ? 'text-red-400' : 'text-amber-400'
+              }`}
+            >
+              {isModeration ? t('as.notifLabel') : t('notif.securityAlert')}
+            </p>
+          )}
+
+          <p className="text-xs text-white break-words">
+            <b>
+              {isModeration
+                ? t('as.notifFrom')
+                : isSecurity
+                ? t('notif.accountSecurity')
+                : author.name === 'مستخدم'
+                ? t('notif.someone')
+                : author.name}
+            </b>{' '}
+            {localizeText(notification)}
+          </p>
+
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            {timeAgo(notification.createdAt, lang)}
+          </p>
+        </div>
+
+        <Icon
+          className={`w-4 h-4 shrink-0 ${
+            isDanger
+              ? 'text-red-400'
+              : isSystem
+              ? 'text-amber-400'
+              : 'text-primary-400'
+          }`}
+        />
+      </button>
+    );
   };
 
   return (
@@ -211,103 +415,16 @@ const Notifications: React.FC = () => {
         );
       })}
 
-      {items.length === 0 && anns.length === 0 && (
+      {feed.length === 0 && anns.length === 0 && (
         <p className="text-center text-sm text-slate-500 py-16">
           {t('notif.empty')}
         </p>
       )}
 
       <div className="space-y-2">
-        {items.map((notification) => {
-          const Icon = icons[notification.type] || Bell;
-
-          const author = pickAuthor(
-            briefs,
-            notification.fromUid,
-            notification.fromName,
-            notification.fromPhotoURL
-          );
-
-          const isSecurity =
-            notification.type === 'new_device';
-          const isModeration = String(notification.type) === MOD_TYPE;
-          const isSystem = isSecurity || isModeration;
-          const modCode = (notification.text || '').startsWith(MOD_PREFIX)
-            ? notification.text.slice(MOD_PREFIX.length)
-            : '';
-          const isDanger = isModeration && MOD_DANGER_CODES.includes(modCode);
-
-          return (
-            <button
-              key={notification.id}
-              type="button"
-              onClick={() => openNotification(notification)}
-              className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-start ${
-                notification.read
-                  ? 'bg-white/5 border-white/10'
-                  : 'bg-primary-500/10 border-primary-500/30'
-              }`}
-            >
-              {isSystem ? (
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                    isDanger ? 'bg-red-500/15' : 'bg-amber-500/15'
-                  }`}
-                >
-                  <ShieldAlert
-                    className={`w-5 h-5 ${isDanger ? 'text-red-400' : 'text-amber-400'}`}
-                  />
-                </div>
-              ) : (
-                <Avatar
-                  src={author.photo}
-                  seed={notification.fromUid}
-                  name={author.name}
-                  className="w-10 h-10 rounded-full object-cover bg-dark-900 shrink-0"
-                />
-              )}
-
-              <div className="flex-1 min-w-0">
-                {isSystem && (
-                  <p
-                    className={`text-xs font-bold mb-1 ${
-                      isDanger ? 'text-red-400' : 'text-amber-400'
-                    }`}
-                  >
-                    {isModeration ? t('as.notifLabel') : t('notif.securityAlert')}
-                  </p>
-                )}
-
-                <p className="text-xs text-white break-words">
-                  <b>
-                    {isModeration
-                      ? t('as.notifFrom')
-                      : isSecurity
-                      ? t('notif.accountSecurity')
-                      : author.name === 'مستخدم'
-                      ? t('notif.someone')
-                      : author.name}
-                  </b>{' '}
-                  {localizeText(notification)}
-                </p>
-
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {timeAgo(notification.createdAt, lang)}
-                </p>
-              </div>
-
-              <Icon
-                className={`w-4 h-4 shrink-0 ${
-                  isDanger
-                    ? 'text-red-400'
-                    : isSystem
-                    ? 'text-amber-400'
-                    : 'text-primary-400'
-                }`}
-              />
-            </button>
-          );
-        })}
+        {feed.map((entry) =>
+          entry.kind === 'r' ? renderReport(entry.r) : renderNotification(entry.n)
+        )}
       </div>
     </div>
   );
