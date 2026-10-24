@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import type { AnimeExtra } from '../services/malService';
 import { useI18n } from '../i18n/I18nContext';
 import { useConfirm } from '../components/ConfirmDialog';
+import { CopyableText } from '../components/CopyButton';
 import LibraryControls from '../components/LibraryControls';
 
 const EP_PAGE = 100;
@@ -205,7 +206,9 @@ const AnimeDetail: React.FC = () => {
           />
           <div className="flex-1 pb-1">
             <h1 className="text-xl font-black text-white leading-tight mb-1">
-              {anime.title_english || anime.title}
+              <CopyableText value={anime.title_english || anime.title}>
+                {anime.title_english || anime.title}
+              </CopyableText>
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
               {extra?.malScore != null && (
