@@ -11,56 +11,95 @@ const MAX_VIDEO_SIZE_MB = 30;
 const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024;
 
 // يلتقط إطاراً من الفيديو كصورة مصغّرة (9:16). عند أي فشل يعيد null ولا يوقف الرفع.
+// مصمّم ليتحمّل WebView في أندرويد: لا يعتمد على حدث واحد، وله مهلة احتياطية.
 const makeVideoThumb = (file: File): Promise<Blob | null> =>
   new Promise((resolve) => {
     const v = document.createElement('video');
     const src = URL.createObjectURL(file);
     let done = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const finish = (b: Blob | null) => {
       if (done) return;
       done = true;
-      clearTimeout(timer);
+      timers.forEach(clearTimeout);
       URL.revokeObjectURL(src);
       v.removeAttribute('src');
       v.load();
       resolve(b);
     };
-    const timer = setTimeout(() => finish(null), 8000);
-    v.muted = true;
-    v.playsInline = true;
-    v.preload = 'metadata';
-    v.onerror = () => finish(null);
-    v.onloadedmetadata = () => {
+    const draw = () => {
+      if (done) return;
       try {
-        v.currentTime = Math.min(0.3, (v.duration || 1) / 2);
+        if (!v.videoWidth || !v.videoHeight || v.readyState < 2) return;
+        const W = 360, H = 640;
+        const c = document.createElement('canvas');
+        c.width = W;
+        c.height = H;
+        const ctx = c.getContext('2d');
+        if (!ctx) return finish(null);
+        const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+        const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+        ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        c.toBlob((b) => finish(b && b.size > 0 ? b : null), 'image/jpeg', 0.7);
       } catch {
         finish(null);
       }
     };
-    v.onseeked = () => {
+    timers.push(setTimeout(() => finish(null), 15000));
+    v.muted = true;
+    v.defaultMuted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.preload = 'auto';
+    v.onerror = () => finish(null);
+    v.onseeked = draw;
+    v.onloadeddata = () => {
+      try {
+        const t = Math.min(0.5, (v.duration || 1) / 2);
+        if (t > 0) v.currentTime = t;
+      } catch { /* نكمل بالإطار الحالي */ }
+      // إن لم يصل حدث seeked نرسم الإطار المتاح بعد لحظة
+      timers.push(setTimeout(draw, 1200));
+    };
+    v.src = src;
+    v.load();
+  });
+
+// يحوّل صورة اختارها المستخدم إلى غلاف JPEG بقياس 360x640 (أقل من حد الخادم 400KB)
+const coverToJpeg = (file: File): Promise<Blob | null> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    const src = URL.createObjectURL(file);
+    img.onload = () => {
       try {
         const W = 360, H = 640;
         const c = document.createElement('canvas');
         c.width = W;
         c.height = H;
         const ctx = c.getContext('2d');
-        if (!ctx || !v.videoWidth) return finish(null);
-        const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
-        const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
-        ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
-        c.toBlob((b) => finish(b), 'image/jpeg', 0.7);
+        if (!ctx || !img.naturalWidth) return resolve(null);
+        const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+        const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+        ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        c.toBlob((b) => resolve(b), 'image/jpeg', 0.8);
       } catch {
-        finish(null);
+        resolve(null);
       }
+      URL.revokeObjectURL(src);
     };
-    v.src = src;
+    img.onerror = () => {
+      URL.revokeObjectURL(src);
+      resolve(null);
+    };
+    img.src = src;
   });
 
 const r2Key = (url: string): string => decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ''));
 
 const uploadVideoToR2 = async (
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  coverFile?: File | null
 ): Promise<string> => {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error(tr('svc.up.network'));
@@ -85,15 +124,26 @@ const uploadVideoToR2 = async (
     xhr.onerror = () => reject(new Error(tr('svc.up.network')));
     xhr.send(file);
   });
-  // الصورة المصغّرة اختيارية: أي فشل فيها لا يمنع نشر الفيديو
+  // الصورة المصغّرة اختيارية: أي فشل فيها لا يمنع نشر الفيديو (نحاول مرتين)
   try {
-    const thumb = await makeVideoThumb(file);
+    // الغلاف الذي اختاره المستخدم له الأولوية، وإلا نلتقط إطاراً من الفيديو
+    const thumb = (coverFile ? await coverToJpeg(coverFile) : null) || (await makeVideoThumb(file));
     if (thumb) {
-      await fetch(R2_UPLOAD_URL as string, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'X-Thumb-For': r2Key(url) },
-        body: thumb,
-      });
+      for (let i = 0; i < 2; i++) {
+        try {
+          const r = await fetch(R2_UPLOAD_URL as string, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'X-Thumb-For': r2Key(url) },
+            body: thumb,
+          });
+          if (r.ok) break;
+          console.warn('thumb upload failed', r.status);
+        } catch (e) {
+          console.warn('thumb upload error', e);
+        }
+      }
+    } else {
+      console.warn('thumb generation returned null');
     }
   } catch { /* تجاهل */ }
   return url;
@@ -116,7 +166,8 @@ export const deleteVideoFromR2 = async (url?: string): Promise<void> => {
 
 export const uploadVideoToCloudinary = (
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  coverFile?: File | null
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (file.size > MAX_VIDEO_SIZE_BYTES) {
@@ -129,7 +180,7 @@ export const uploadVideoToCloudinary = (
     }
     // الفيديو فقط يذهب إلى R2، والصور تبقى على Cloudinary
     if (R2_UPLOAD_URL && file.type.startsWith('video/')) {
-      uploadVideoToR2(file, onProgress).then(resolve, reject);
+      uploadVideoToR2(file, onProgress, coverFile).then(resolve, reject);
       return;
     }
     const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
