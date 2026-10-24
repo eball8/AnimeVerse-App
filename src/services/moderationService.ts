@@ -293,6 +293,7 @@ export const applyAction = async (
     if (typeof r.ticketId === 'string' && r.ticketId) {
       await setDoc(doc(db, 'reportTickets', r.ticketId), {
         status: eff === 'dismiss' ? 'no_violation' : 'violation',
+        action: eff,
         targetType: String(r.targetType),
         createdAt: serverTimestamp(),
       });
