@@ -29,6 +29,7 @@ import type { DeviceItem, PlayerPref } from '../services/settingsService';
 import { clearMyFriendActivity } from '../services/postService';
 import Avatar from '../components/Avatar';
 import ReportFlow from '../components/ReportFlow';
+import { useConfirm } from '../components/ConfirmDialog';
 import { searchUsers } from '../services/searchService';
 import { profileLink } from '../utils/links';
 import type { UserProfile } from '../types';
@@ -280,13 +281,15 @@ const DevicesSection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { devices, reload, trusted, current, loaded, failed } = useDevices(user!.uid);
   const { lang, t } = useI18n();
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   if (!user) return null;
 
   const remove = async (d: DeviceItem) => {
-    if (!confirm(t('sx.removeConfirm', { name: d.label }))) return;
+    const ok = await confirm({ title: t('sx.removeConfirm', { name: d.label }) });
+    if (!ok) return;
     setBusyId(d.id);
     setMsg(null);
     try {
@@ -574,6 +577,7 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { trusted, current, loaded, failed } = useDevices(user!.uid);
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [state, setState] = useState<E2EEInit['state'] | 'loading' | 'error'>('loading');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
@@ -627,7 +631,8 @@ const E2EESection: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const doReset = async () => {
     const bad = pinProblem();
     if (bad) return setMsg({ kind: 'err', text: bad });
-    if (!confirm(t('sx.resetConfirm'))) return;
+    const ok = await confirm({ title: t('sx.resetConfirm') });
+    if (!ok) return;
     setBusy(true);
     setMsg(null);
     try {
