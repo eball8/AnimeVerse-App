@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { notify } from './notificationService';
+import { releaseVideoIfUnused } from './mediaCleanup';
 import { getMutualFriendIds } from './followService';
 import { isValidUsername } from '../utils/username';
 import { markPostInteraction } from './storyService'; // ← أضفنا هذا السطر
@@ -439,12 +440,14 @@ export const deletePost = async (postId: string): Promise<void> => {
   const ref = doc(db, 'posts', postId);
   let authorId: string | undefined;
   let isRepost = false;
+  let videoUrl: string | undefined;
   try {
     const snap = await getDoc(ref);
     if (!snap.exists()) return;
-    const data = snap.data() as { authorId?: string; repostOfId?: string };
+    const data = snap.data() as { authorId?: string; repostOfId?: string; mediaUrl?: string; mediaType?: string };
     authorId = data.authorId;
     isRepost = !!data.repostOfId;
+    if (!isRepost && data.mediaType === 'video' && data.mediaUrl) videoUrl = data.mediaUrl;
   } catch (e) {
     console.error('delete: read failed', e);
   }
@@ -461,6 +464,7 @@ export const deletePost = async (postId: string): Promise<void> => {
     await deleteDoc(ref);
   }
   if (authorId && !isRepost) announcePostsChanged(authorId, -1);
+  if (videoUrl) void releaseVideoIfUnused(videoUrl);
 };
 
 export const reconcilePostsCount = async (uid: string): Promise<number> => {
