@@ -3,6 +3,7 @@ import { Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getLibItem, saveLibItem } from '../services/libraryService';
 import { useI18n } from '../i18n/I18nContext';
+import { PickerField } from './OptionPicker';
 import type { LibStatus } from '../services/libraryService';
 
 interface Props {
@@ -11,9 +12,11 @@ interface Props {
   imageUrl: string;
 }
 
+const STATUSES: LibStatus[] = ['none', 'watching', 'planned', 'completed', 'dropped'];
+
 const LibraryControls: React.FC<Props> = ({ animeId, title, imageUrl }) => {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [favorite, setFavorite] = useState(false);
   const [status, setStatus] = useState<LibStatus>('none');
   const [busy, setBusy] = useState(false);
@@ -40,6 +43,8 @@ const LibraryControls: React.FC<Props> = ({ animeId, title, imageUrl }) => {
 
   if (!user) return null;
 
+  const sheetTitle = lang === 'ar' ? 'حالة المشاهدة' : lang === 'fr' ? 'Statut de visionnage' : 'Watch status';
+
   return (
     <div className="flex items-center gap-2">
       <button
@@ -49,15 +54,16 @@ const LibraryControls: React.FC<Props> = ({ animeId, title, imageUrl }) => {
       >
         <Heart className={`w-5 h-5 ${favorite ? 'fill-red-400' : ''}`} />
       </button>
-      <select
-        value={status}
-        onChange={(e) => save(favorite, e.target.value as LibStatus)}
-        className="flex-1 px-3 py-2.5 rounded-xl bg-dark-900 border border-white/10 text-xs font-bold text-white"
-      >
-        {(['none', 'watching', 'planned', 'completed', 'dropped'] as LibStatus[]).map((k) => (
-          <option key={k} value={k}>{t(`lib.status.${k}`)}</option>
-        ))}
-      </select>
+      <div className="flex-1">
+        <PickerField
+          full
+          title={sheetTitle}
+          value={status}
+          disabled={busy}
+          onSelect={(v) => save(favorite, v as LibStatus)}
+          options={STATUSES.map((k) => ({ value: k, label: t(`lib.status.${k}`) }))}
+        />
+      </div>
     </div>
   );
 };
