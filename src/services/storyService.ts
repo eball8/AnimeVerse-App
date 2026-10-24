@@ -1,4 +1,5 @@
 import { auth, db } from '../config/firebase';
+import { releaseVideoIfUnused } from './mediaCleanup';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, where,
   doc, deleteDoc, Timestamp, getDoc, getDocs, setDoc, updateDoc, writeBatch }
 from 'firebase/firestore';
@@ -46,7 +47,14 @@ export const createStory = async (data: NewStory) => {
 };
 
 export const deleteStory = async (storyId: string) => {
+  let videoUrl: string | undefined;
+  try {
+    const s = await getDoc(doc(db, 'stories', storyId));
+    const d = s.data() as { mediaUrl?: string; mediaType?: string } | undefined;
+    if (d?.mediaType === 'video' && d.mediaUrl) videoUrl = d.mediaUrl;
+  } catch { /* تجاهل */ }
   await deleteDoc(doc(db, 'stories', storyId));
+  if (videoUrl) void releaseVideoIfUnused(videoUrl);
   try {
     const me = auth.currentUser?.uid;
     if (!me) return;
