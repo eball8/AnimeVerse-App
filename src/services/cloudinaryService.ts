@@ -37,9 +37,22 @@ const makeVideoThumb = (file: File): Promise<Blob | null> =>
         c.height = H;
         const ctx = c.getContext('2d');
         if (!ctx) return finish(null);
-        const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
-        const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
-        ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        const ratio = v.videoWidth / v.videoHeight;
+        if (ratio > 0.7) {
+          // فيديو عريض (مثل يوتيوب): خلفية ضبابية + الإطار كاملاً بدل قصّه وتكبيره
+          const bs = Math.max(W / v.videoWidth, H / v.videoHeight);
+          const bw = v.videoWidth * bs, bh = v.videoHeight * bs;
+          ctx.filter = 'blur(16px) brightness(0.7)';
+          ctx.drawImage(v, (W - bw) / 2, (H - bh) / 2, bw, bh);
+          ctx.filter = 'none';
+          const fs = Math.min(W / v.videoWidth, H / v.videoHeight);
+          const fw = v.videoWidth * fs, fh = v.videoHeight * fs;
+          ctx.drawImage(v, (W - fw) / 2, (H - fh) / 2, fw, fh);
+        } else {
+          const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+          const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+          ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        }
         c.toBlob((b) => finish(b && b.size > 0 ? b : null), 'image/jpeg', 0.7);
       } catch {
         finish(null);
@@ -65,27 +78,36 @@ const makeVideoThumb = (file: File): Promise<Blob | null> =>
     v.load();
   });
 
-// يحوّل صورة اختارها المستخدم إلى غلاف JPEG بقياس 360x640 (أقل من حد الخادم 400KB)
-const coverToJpeg = (file: File): Promise<Blob | null> =>
+// يجهّز الغلاف الذي اختاره المستخدم: يبقى بنسبته الأصلية (بلا قصّ)، ويُصغَّر فقط
+// حتى لا يتجاوز 720 بكسل في أطول ضلع، وجودته تنخفض عند الحاجة لتبقى ≤ 400 كيلوبايت.
+export const coverToJpeg = (file: File): Promise<Blob | null> =>
   new Promise((resolve) => {
     const img = new Image();
     const src = URL.createObjectURL(file);
-    img.onload = () => {
+    img.onload = async () => {
       try {
-        const W = 360, H = 640;
-        const c = document.createElement('canvas');
-        c.width = W;
-        c.height = H;
-        const ctx = c.getContext('2d');
-        if (!ctx || !img.naturalWidth) return resolve(null);
-        const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-        const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
-        ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-        c.toBlob((b) => resolve(b), 'image/jpeg', 0.8);
+        const w0 = img.naturalWidth, h0 = img.naturalHeight;
+        if (!w0 || !h0) return resolve(null);
+        let scale = Math.min(1, 720 / Math.max(w0, h0));
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(w0 * scale));
+          c.height = Math.max(1, Math.round(h0 * scale));
+          const ctx = c.getContext('2d');
+          if (!ctx) return resolve(null);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          for (const q of [0.8, 0.65, 0.5]) {
+            const b = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', q));
+            if (b && b.size > 0 && b.size <= 400 * 1024) return resolve(b);
+          }
+          scale *= 0.75;
+        }
+        resolve(null);
       } catch {
         resolve(null);
+      } finally {
+        URL.revokeObjectURL(src);
       }
-      URL.revokeObjectURL(src);
     };
     img.onerror = () => {
       URL.revokeObjectURL(src);
@@ -127,7 +149,9 @@ const uploadVideoToR2 = async (
   // الصورة المصغّرة اختيارية: أي فشل فيها لا يمنع نشر الفيديو (نحاول مرتين)
   try {
     // الغلاف الذي اختاره المستخدم له الأولوية، وإلا نلتقط إطاراً من الفيديو
-    const thumb = (coverFile ? await coverToJpeg(coverFile) : null) || (await makeVideoThumb(file));
+    const preparedCover =
+      coverFile && coverFile.type === 'image/jpeg' && coverFile.size <= 400 * 1024 ? coverFile : coverFile ? await coverToJpeg(coverFile) : null;
+    const thumb = preparedCover || (await makeVideoThumb(file));
     if (thumb) {
       for (let i = 0; i < 2; i++) {
         try {
