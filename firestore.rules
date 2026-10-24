@@ -298,7 +298,7 @@ service cloud.firestore {
         && (!('mediaUrl' in request.resource.data)
             || request.resource.data.mediaUrl == ''
             || request.resource.data.mediaUrl.matches(
-              'https://res\\.cloudinary\\.com/.*'
+              'https://(res\\.cloudinary\\.com|pub-ef6a9fcb3287402491347a55ca7e8ff1\\.r2\\.dev)/.*'
             ))
         && (!('mediaType' in request.resource.data)
             || request.resource.data.mediaType in ['image', 'video'])
@@ -418,7 +418,7 @@ service cloud.firestore {
         && validText(request.resource.data.authorName, 1, 50)
         && request.resource.data.mediaUrl is string
         && request.resource.data.mediaUrl.matches(
-          'https://res\\.cloudinary\\.com/.*'
+          'https://(res\\.cloudinary\\.com|pub-ef6a9fcb3287402491347a55ca7e8ff1\\.r2\\.dev)/.*'
         )
         && request.resource.data.mediaType in ['image', 'video']
         && (!('caption' in request.resource.data)
