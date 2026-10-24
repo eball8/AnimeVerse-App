@@ -14,6 +14,7 @@ import Avatar from '../components/Avatar';
 import InsightsCard from '../components/InsightsCard';
 import ProfileTabs from '../components/ProfileTabs';
 import ProfileShareSheet from '../components/ProfileShareSheet';
+import { CopyButton } from '../components/CopyButton';
 import type { UserProfile } from '../types';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { badgeOf } from '../types';
@@ -146,10 +147,13 @@ const Profile: React.FC = () => {
           className="w-24 h-24 mx-auto rounded-full object-cover ring-4 ring-primary-500/40 mb-3"
         />
         <h2 className="text-xl font-black text-white">{profile?.displayName}</h2>
-        <p className="selectable text-sm text-slate-500">
-          @{profile?.username}
-          {profile?.pronouns ? <span className="text-slate-400"> · {profile.pronouns}</span> : null}
-        </p>
+        <div className="flex items-center justify-center gap-2 mt-0.5">
+          <p className="text-sm text-slate-500">
+            @{profile?.username}
+            {profile?.pronouns ? <span className="text-slate-400"> · {profile.pronouns}</span> : null}
+          </p>
+          <CopyButton value={profile?.username || ''} />
+        </div>
         {badgeOf(profile) && (
           <div className="mt-1.5 flex justify-center">
             <VerifiedBadge badge={badgeOf(profile)} withText />
